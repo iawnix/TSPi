@@ -232,7 +232,7 @@ class _FilesystemResearchMap:
     """Read-only ResearchMap projection for the new Research State filesystem boundary.
 
     The Web contract still speaks ``research-map/1`` while the new Research State
-    stores its context as ``research_map_context_1``.  This adapter translates
+    stores its context as ``research_map_context_2``.  This adapter translates
     only the read shape; all mutations remain owned by the Research State filesystem boundary.
     """
 
@@ -257,9 +257,9 @@ class _FilesystemResearchMap:
             raise ResearchWebError("research_workspace_id_mismatch")
         if liveness.get("workspace_id") != workspace_id:
             raise ResearchWebError("research_workspace_id_mismatch")
-        if context.get("schema_version") != "research_map_context_1":
+        if context.get("schema_version") != "research_map_context_2":
             raise ResearchWebError("unsupported_research_context_schema")
-        if liveness.get("schema_version") != "research_liveness_1":
+        if liveness.get("schema_version") != "research_liveness_2":
             raise ResearchWebError("unsupported_research_liveness_schema")
         if manifest.get("state") != "ready":
             raise ResearchWebError("invalid_workspace_state")

@@ -29,4 +29,4 @@ disposition；Skill 解释用法，不定义第二套调度器或 capability 注
 continuation 请求。Host 使用已有输入回执消费它，不推导科学流程。相同 revision 不产生
 新唤醒，连续接续预算由 State 管理。Monitor 只负责 Job 变化和配置的排队阈值事件。
 eligible_node_ids 表示依赖与策略允许执行；ready_node_ids 排除已有运行 Attempt 的范围。
-同一合格范围下的新独立 workId 可以提交，但不能据此猜测还有未规划的工作。
+同一合格范围下的新独立 work_id 可以提交，但不能据此猜测还有未规划的工作。

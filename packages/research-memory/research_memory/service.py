@@ -20,7 +20,7 @@ class ContextPack:
     context: dict[str, Any]
     liveness: dict[str, Any]
     memory: dict[str, Any]
-    schema_version: str = "research_context_pack_1"
+    schema_version: str = "research_context_pack_2"
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -36,17 +36,17 @@ class ContextPack:
 class ResearchContextBuilder:
     """Read State and its projection to construct a bounded context pack."""
 
-    def build(self, root: str | Path) -> ContextPack:
-        from research_state import read_context, read_liveness
-        state = read_context(root)
-        liveness = read_liveness(root)
-        memory = _read_memory(Path(root))
-        memory.setdefault("schema_version", "research_memory_index_1")
-        memory.setdefault("authority", "research_memory")
-        memory.setdefault("scope", "workspace")
-        memory.setdefault("research_obligations", state.get("research_obligations", []))
-        memory["projection_stale"] = memory.get("revision", 0) != int(state.get("revision", 0))
-        return ContextPack(int(state.get("revision", 0)), state, liveness, memory)
+    def build(self, root: str | Path, *, max_bytes=16000, event_ids=()) -> ContextPack:
+        from research_state import read_liveness
+        from research_state.transactions import TransactionCoordinator
+        from .decision_context import build_decision_context
+        with TransactionCoordinator(root).locked():
+            decision = build_decision_context(root, max_bytes=max_bytes, event_ids=event_ids)
+            liveness = read_liveness(root)
+            memory = _read_memory(Path(root))
+            memory.setdefault("research_obligations", [])
+            memory["projection_stale"] = memory.get("revision", 0) != decision["revision"]
+        return ContextPack(decision["revision"], decision, liveness, memory)
 
 
 class ResearchMemoryService(ResearchContextBuilder):

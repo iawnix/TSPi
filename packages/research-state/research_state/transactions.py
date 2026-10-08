@@ -27,6 +27,17 @@ _LOCAL = threading.local()
 _STAGING: ContextVar[tuple[Path, dict[str, Any]] | None] = ContextVar("state_transaction_staging", default=None)
 
 
+def read_json(path: Path):
+    """Read your writes when composing mutations inside one transaction."""
+    path = Path(path).resolve()
+    staging = _STAGING.get()
+    if staging is not None and path.is_relative_to(staging[0]):
+        relative = str(path.relative_to(staging[0]))
+        if relative in staging[1]:
+            return copy.deepcopy(staging[1][relative])
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 class TransactionError(RuntimeError):
     pass
 
@@ -263,6 +274,11 @@ def state_transaction(operation: str):
         def invoke(root, request=None):
             request = request or {}
             coordinator = TransactionCoordinator(root)
+            staging = _STAGING.get()
+            if staging is not None:
+                if staging[0] != coordinator.root:
+                    raise TransactionError("nested_transaction_workspace_mismatch")
+                return fn(root, request)
             request_id = request.get("request_id") or request.get("transaction_id") or f"{operation}_{uuid.uuid4().hex}"
             payload = {key: value for key, value in request.items() if key not in {"root", "workspace_root"}}
             with coordinator.locked():
@@ -279,6 +295,8 @@ def state_transaction(operation: str):
                     result = fn(root, request)
                 finally:
                     _STAGING.reset(token)
+                if not writes and not request.get("request_id"):
+                    return result
                 return coordinator.commit_files(request_id, operation, payload, writes=writes, result=result)["result"]
         return invoke
     return decorate

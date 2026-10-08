@@ -31,7 +31,7 @@ def prepare(config, environment, backend, skill, xyz, arguments, python=None, wo
     for name in collect:
         if not name or Path(name).is_absolute() or '..' in Path(name).parts:
             raise ValueError('collected file must be relative to results')
-        extra_outputs.append({'path':f'results/{name}', 'required':True, 'minBytes':1})
+        extra_outputs.append({'path':f'results/{name}', 'required':True, 'min_bytes':1})
     for dependency in dependencies:
         src, sep, dest = dependency.partition('=')
         if not sep or not dest or Path(dest).is_absolute() or '..' in Path(dest).parts or dest in {input_name, 'results', 'skills'} or dest.startswith(('results/', 'skills/')):
@@ -52,13 +52,16 @@ def prepare(config, environment, backend, skill, xyz, arguments, python=None, wo
     identity = binding_digest({'environment':environment, 'backend':backend, 'skill':skill, 'arguments':arguments,
         'input_format':input_name, 'collect':sorted(set(collect)), 'resources':resources,
         'input_sha256':hashlib.sha256(source.read_bytes()).hexdigest(), 'dependencies':dependency_hashes, 'configuration':binding_digest(settings)})[7:]
+    from job_runtime.inputs import content_digest
+    for item in inputs:
+        item['sha256'] = content_digest(Path(item['source']))
     work_id = work_id or 'work_' + identity[:48]
-    return {'requestId':'skill_'+hashlib.sha256(work_id.encode()).hexdigest()[:48], 'workId':work_id,'command':argv,'platform':environment,'inputs':inputs,
+    return {'request_id':'skill_'+hashlib.sha256(work_id.encode()).hexdigest()[:48], 'work_id':work_id,'command':argv,'platform':environment,'inputs':inputs,
             'environment':binding.get('environment',{}),
-            'outputs':[{'path':'results/result.json','required':True,'minBytes':2,'mediaType':'application/json'},
-                       {'path':'results/geometry.xyz','required':not bool(input_gjf),'minBytes':1,'mediaType':'chemical/x-xyz'},
-                       *([{'path':'results/gaussian.out','required':True,'minBytes':1,'mediaType':'text/plain'},
-                          {'path':'results/parsed.json','required':True,'minBytes':2,'mediaType':'application/json'}] if input_gjf else []), *extra_outputs],
+            'outputs':[{'path':'results/result.json','required':True,'min_bytes':2,'media_type':'application/json'},
+                       {'path':'results/geometry.xyz','required':not bool(input_gjf),'min_bytes':1,'media_type':'chemical/x-xyz'},
+                       *([{'path':'results/gaussian.out','required':True,'min_bytes':1,'media_type':'text/plain'},
+                          {'path':'results/parsed.json','required':True,'min_bytes':2,'media_type':'application/json'}] if input_gjf else []), *extra_outputs],
             'metadata':{**submission, 'skill':skill,'resources_sha256':resources, 'python_binding':python_binding, 'configuration_sha256':binding_digest(settings)}}
 
 
@@ -83,7 +86,7 @@ def main():
     if a.output:
         path = Path(a.output).resolve(); path.parent.mkdir(parents=True,exist_ok=True)
         path.write_bytes(encoded)
-        print(json.dumps({'requestFile':str(path),'requestSha256':hashlib.sha256(encoded).hexdigest()}))
+        print(json.dumps({'request_file':str(path),'request_sha256':hashlib.sha256(encoded).hexdigest()}))
     else:
         print(encoded.decode(),end='')
 

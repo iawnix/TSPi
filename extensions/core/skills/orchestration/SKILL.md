@@ -81,7 +81,7 @@ Keep optional diagnostics separate from required Node updates in ChangeSets.
 Required strategy/input evidence failures must still be repaired before execution.
 
 Read [runtime boundaries](references/runtime_boundaries.md) for scoped user waits.
-Prefer one Node per independently executable method/environment cell and a separate dependent delivery Node. A Node is research scope, not a process lock. If independent Jobs share a Node, preserve distinct helper-generated workId values; a running Attempt without a new work identity requires reconciliation, not another submission. Read the exact listed email Skill location; a failed
+Prefer one Node per independently executable method/environment cell and a separate dependent delivery Node. A Node is research scope, not a process lock. If independent Jobs share a Node, preserve distinct helper-generated work_id values; a running Attempt without a new work identity requires reconciliation, not another submission. Read the exact listed email Skill location; a failed
 path lookup is not evidence that email or a recipient is unavailable.
 
 - [Public contract / 公开契约](references/public_contract.md): generated tool names and dispositions.

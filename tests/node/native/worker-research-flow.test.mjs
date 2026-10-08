@@ -36,10 +36,12 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
       PYTHONDONTWRITEBYTECODE: "1", TS_NOTIFICATION_CONFIG: config });
     delete process.env.TS_JOB_CONFIG;
     await execute(python, [join(packageRoot, "apps/agent-cli/workspace_mode.py"), "--root", workspace, "--workspace-id", "flow"]);
+    const fixtureJobId = "job_" + createHash("sha256").update("fixture_run").digest("hex").slice(0, 48);
     const preparedPath = join(workspace, "prepared.json");
-    const prepared = JSON.stringify({requestId:"fixture_run", workId:"fixture_work", metadata:{skill:"fixture", configuration_sha256:"fixture"},
-      command:[python,"-c","from pathlib import Path;Path('result.txt').write_text('fixture evidence')"],outputs:[{path:"result.txt",required:true,minBytes:1}]});
+    const prepared = JSON.stringify({request_id:"fixture_run", work_id:"fixture_work", metadata:{skill:"fixture", configuration_sha256:"fixture"},
+      command:[python,"-c","from pathlib import Path;Path('result.txt').write_text('fixture evidence')"],outputs:[{path:"result.txt",required:true,min_bytes:1}]});
     await writeFile(preparedPath, prepared);
+    await writeFile(join(workspace, "large-history.txt"), "Historical artifact metadata\n".repeat(12000) + "TAIL_MUST_BE_TRUNCATED\n");
     const call = (name, args) => ({ name, arguments: args });
     const steps = [
       ...["extensions/core/skills/research-state/SKILL.md", "extensions/core/skills/orchestration/SKILL.md",
@@ -51,23 +53,24 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
       call("research_read", { mode: "context" }),
       call("research_change", { rationale: "Initialize a bounded fixture", operations: [
         { type: "create_claim", id: "claim_flow", statement: "The fixture can produce a file" },
-        { type: "create_node", id: "node_flow", title: "Fixture", objective: "Produce evidence", claim_ids: ["claim_flow"] },
+        { type: "create_node", id: "node_flow", title: "Fixture", objective: "Produce evidence", completion_exemption: "Fixture exercises transport and durable evidence only", claim_ids: ["claim_flow"] },
         { type: "set_focus", claim_ids: ["claim_flow"], node_ids: ["node_flow"] },
       ] }),
-      call("research_strategy", { claimId: "claim_flow", strategyOperation: "plan", plan: {
+      call("research_strategy", { strategy_operation: "plan", plan: {
         id: "strategy_flow", claim_id: "claim_flow", node_id: "node_flow", objective: "Produce a file",
         rationale: "Exercise the real execution chain", status: "active",
       } }),
-      call("research_checkpoint", {checkpoint:{id:"checkpoint_continue",disposition:"continue_required",node_ids:["node_flow"],claim_ids:["claim_flow"]}}),
+      call("read", { path: join(workspace, "large-history.txt") }),
+      call("research_checkpoint", {checkpoint:{id:"checkpoint_continue",disposition:"continue_required",reason:"Continue authorized fixture",node_ids:["node_flow"],claim_ids:["claim_flow"]}}),
       "Preparation complete; continue the authorized plan.",
-      call("job_start", {nodeId:"node_flow",requestFile:preparedPath,requestSha256:createHash("sha256").update(prepared).digest("hex")}),
-      call("research_checkpoint", {checkpoint:{id:"checkpoint_job_wait",disposition:"waiting_external",node_ids:["node_flow"],unresolved_refs:["attempt_"+createHash("sha256").update("job_fixture_run").digest("hex").slice(0,32)]}}),
+      call("job_start", {node_id:"node_flow",request_file:preparedPath,request_sha256:createHash("sha256").update(prepared).digest("hex")}),
+      call("research_checkpoint", {checkpoint:{id:"checkpoint_job_wait",disposition:"waiting_external",reason:"Wait for fixture process",node_ids:["node_flow"],unresolved_refs:["attempt_"+createHash("sha256").update(fixtureJobId).digest("hex").slice(0,32)]}}),
       "Waiting for the fixture Job.",
-      call("job_status", { jobId: "job_fixture_run" }),
-      call("job_collect", { jobId: "job_fixture_run" }),
+      call("job_status", { job_id: fixtureJobId }),
+      call("job_collect", { job_id: fixtureJobId }),
       call("research_interpretation", { interpretation: {
-        id: "interpretation_flow", claimId: "claim_flow",
-        attemptRef: "attempt_" + createHash("sha256").update("job_fixture_run").digest("hex").slice(0, 32),
+        kind: "result", id: "interpretation_flow", claim_id: "claim_flow",
+        attempt_ref: "attempt_" + createHash("sha256").update(fixtureJobId).digest("hex").slice(0, 32),
         summary: "The fixture produced and collected its required evidence file.", outcome: "supports",
       } }),
       // First end without a disposition: exactly one repair is expected.
@@ -84,8 +87,14 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
       let body = ""; for await (const part of req) body += part;
       const request = JSON.parse(body); requests.push(request);
       const step = steps[requests.length - 1] || "Unexpected continuation.";
+      if (step?.name === "research_interpretation") {
+        const ctx = JSON.parse(await readFile(join(workspace, "research_map/context.json"), "utf8"));
+        const attempt = ctx.attempts[0];
+        step.arguments.interpretation.result_receipt_ref = attempt.metadata.latest_result_receipt_ref;
+        step.arguments.interpretation.direct_evidence_refs = attempt.output_artifact_ids;
+      }
       if (step?.name === "job_status") {
-        const statusFile = join(workspace, "runs/jobs/job_fixture_run/status.json");
+        const statusFile = join(workspace, `runs/jobs/${fixtureJobId}/status.json`);
         for (let i = 0; i < 100 && !existsSync(statusFile); i++) await new Promise(done => setTimeout(done, 20));
         assert.ok(existsSync(statusFile), "fixture process must finish before collection");
       }
@@ -104,7 +113,7 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     await writeFile(join(agentDir, "models.json"), JSON.stringify({ providers: { fixture: {
       baseUrl: `http://127.0.0.1:${server.address().port}/v1`, apiKey: "fixture-only", api: "openai-completions",
       models: [{ id: "fixture", name: "Fixture", reasoning: false, input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 200000, maxTokens: 4096 }],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 400000, maxTokens: 4096 }],
     } } }));
     const { createTspiHarnessBackend } = await import(pathToFileURL(join(packageRoot, "apps/app-server/tspi-harness-backend.mjs")));
     const packageAlias = join(root, "current-package");
@@ -158,6 +167,22 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     assert.equal(context.attempts[0].metadata.job_metadata.work_id, "fixture_work");
     assert.equal(context.attempts[0].metadata.job_metadata.configuration_sha256, "fixture");
     assert.ok(context.artifacts.length > 0);
+    for (const request of requests) {
+      const snapshots = request.messages.filter(m => JSON.stringify(m.content).includes("<research_state_snapshot>"));
+      assert.equal(snapshots.length, 1, "each real provider request has exactly one current projection");
+    }
+    const lastSnapshot = JSON.stringify(requests.at(-1).messages.at(-1));
+    const truncated = toolResults.find(result => String(result.content).includes("Historical artifact metadata"));
+    assert.ok(truncated, "actual Native read result must reach the provider");
+    assert.match(String(truncated.content), /Showing lines|truncated/);
+    assert.doesNotMatch(String(truncated.content), /TAIL_MUST_BE_TRUNCATED/);
+    const afterTruncation = requests[steps.findIndex(step => step?.name === "read" && step.arguments.path.endsWith("large-history.txt")) + 1];
+    assert.match(JSON.stringify(afterTruncation.messages.at(-1)), /claim_flow/);
+    assert.match(JSON.stringify(afterTruncation.messages.at(-1)), /node_flow/);
+    assert.match(lastSnapshot, /claim_flow/);
+    assert.match(lastSnapshot, /succeeded/);
+    assert.equal(read.snapshot.messages.some(m => JSON.stringify(m).includes("<research_state_snapshot>")), false, "projection must not enter durable transcript");
+    assert.ok((await readdir(join(workspace, "operations/contexts"))).length > 0);
     assert.equal(context.attempt_interpretations.length, 1);
     assert.equal(context.attempt_interpretations[0].id, "interpretation_flow");
     assert.equal(context.attempt_interpretations[0].claim_id, "claim_flow");

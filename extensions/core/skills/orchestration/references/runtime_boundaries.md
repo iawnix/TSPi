@@ -39,5 +39,5 @@ through its existing durable input receipts. Unchanged revisions cannot create
 new wakes; continuation budget is State-owned. Monitor remains responsible only
 for Job changes and configured queue-wait threshold events. `eligible_node_ids`
 means dependency/strategy admission; `ready_node_ids` excludes running scopes.
-An independent workId can admit another Job in an eligible running scope without
+An independent work_id can admit another Job in an eligible running scope without
 making it an automatically ready plan. Neither Skill nor Host reconstructs this rule.

@@ -1,11 +1,11 @@
 # ResearchMap 状态模型
 
 `ResearchMap` 是一个研究项目的规范类型化科学状态。Research State filesystem boundary 将其持久化到
-`research_map/context.json`（`schema_version=research_map_context_1`）。有效 Context 始终包含
+`research_map/context.json`（`schema_version=research_map_context_2`）。有效 Context 始终包含
 数组 collection：`phases`、`claims`、`nodes`、`findings`、`gates`、`claim_relations`、
 `attempts`、`artifacts`、`evidence_links`、`lifecycle_actions`、`strategy_plans`、
 `strategy_reviews`、`attempt_interpretations`；`focus.claim_ids` 与 `focus.node_ids` 也必须是
-数组。生命周期投影到 `lifecycle/liveness.json`（`research_liveness_1`）；
+数组。生命周期投影到 `lifecycle/liveness.json`（`research_liveness_2`）；
 `workspace_manifest.json` 绑定 identity、mode、root 和 admission。已废弃的 SQLite 与
 `research_map.json` 文件会被拒绝，不是运行时权威。
 
@@ -62,8 +62,8 @@ Agent 只能调用公共 `research_read`，并通过对应的有界 `mode`（`ma
 使用 `/research`。Strategy、interpretation、checkpoint、Evidence Registry 与 map 变更都使用
 各自的类型化 Research State command；不要创建通用 memory write。
 
-`research_read mode=evidence` 可选筛选字段为 `recordType`（`attempt`、`artifact` 或 `link`）、
-`nodeId`、`artifactId`、`subjectId` 和 `limit`（1--2048）。`recordType=link` 读取
+`research_read mode=evidence` 可选筛选字段为 `record_type`（`attempt`、`artifact` 或 `link`）、
+`node_id`、`artifact_id`、`subject_id` 和 `limit`（1--2048）。`record_type=link` 读取
 `evidence_links`，不会产生第二套写入协议。
 
 生命周期动作是通过 `research.change` 管理的 State 记录，`research_checkpoint` 是 turn checkpoint。

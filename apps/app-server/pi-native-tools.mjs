@@ -1,3 +1,4 @@
+import { withJobQueryRecovery, recordJobLookup } from "./job-query-recovery.mjs";
 import { resolvePreparedJob } from "./prepared-job.mjs";
 import { resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
@@ -34,23 +35,25 @@ export function createStateTool(options = {}) {
       const root = boundWorkspaceRoot(params, toolContext);
       if (mode === "decisions") {
         return toolResult(await NATIVE_COMMANDS.execute("research.decisions", root, {
-          claimId: params.claimId,
+          claim_id: params.claim_id, offset: params.offset,
           limit: params.limit,
         }, context?.abortSignal));
       }
       const command = `research.${mode}`;
       const commandParams = mode === "detail"
         ? { kind: params.kind, id: params.id }
-        : mode === "locate" ? { query: params.query }
-          : mode === "decisions" ? { claimId: params.claimId, limit: params.limit }
+        : mode === "locate" ? { query: params.query, limit: params.limit, offset: params.offset }
+          : mode === "decisions" ? { claim_id: params.claim_id, limit: params.limit }
             : mode === "evidence" ? {
-              recordType: params.recordType,
-              nodeId: params.nodeId,
-              artifactId: params.artifactId,
-              subjectId: params.subjectId,
+              attempt_id: params.attempt_id, job_id: params.job_id, offset: params.offset,
+              record_type: params.record_type,
+              node_id: params.node_id,
+              artifact_id: params.artifact_id,
+              subject_id: params.subject_id,
               limit: params.limit,
-            } : {};
+            } : mode === "context" ? { max_bytes: params.max_bytes, event_ids: params.event_ids } : {};
       const result = await NATIVE_COMMANDS.execute(command, root, commandParams, context?.abortSignal);
+      if (["locate", "evidence"].includes(mode)) recordJobLookup(root);
       return { ...toolResult(result), details: { result } };
     },
   };
@@ -67,8 +70,8 @@ export function createChangeTool() {
           principal: toolContext?.principal,
           authority: RESEARCH_STATE_WRITE_AUTHORITY,
           rationale: params.rationale,
-          expected_revision: params.expectedRevision,
-          basis_refs: params.basisRefs || [],
+          expected_revision: params.expected_revision,
+          basis_refs: params.basis_refs || [],
           operations: params.operations,
         } }, context?.abortSignal);
       // A rejected ChangeSet is not a persisted write. Do not read and return
@@ -101,13 +104,13 @@ export function createResearchLifecycleTool() {
       const root = boundWorkspaceRoot(params, toolContext);
       if (params.operation === "strategy") {
         requireNativeWrites("research_strategy", toolContext);
-        if (!params.strategyOperation || !params[params.strategyOperation]) throw new Error("research_strategy requires strategyOperation and plan or review");
+        if (!params.strategy_operation || !params[params.strategy_operation]) throw new Error("research_strategy requires strategy_operation and plan or review");
         return toolResult(await NATIVE_COMMANDS.execute("research.strategy", root, { request: create_research_lifecycle_request({
           operation: "strategy", principal: toolContext?.principal,
-          strategy_operation: params.strategyOperation,
+          strategy_operation: params.strategy_operation,
           plan: params.plan, review: params.review,
-          rationale: params.rationale, basis_refs: params.basisRefs || [],
-          expected_revision: params.expectedRevision, event_id: params.eventId,
+          rationale: params.rationale, basis_refs: params.basis_refs || [],
+          expected_revision: params.expected_revision, event_id: params.event_id,
         }) }, context?.abortSignal));
       }
       if (params.operation === "interpret") {
@@ -116,8 +119,8 @@ export function createResearchLifecycleTool() {
         return toolResult(await NATIVE_COMMANDS.execute("research.interpretation", root, { request: create_research_lifecycle_request({
           operation: "interpretation", principal: toolContext?.principal,
           interpretation: params.interpretation, rationale: params.rationale,
-          basis_refs: params.basisRefs || [], expected_revision: params.expectedRevision,
-          event_id: params.eventId,
+          basis_refs: params.basis_refs || [], expected_revision: params.expected_revision,
+          event_id: params.event_id,
         }) }, context?.abortSignal));
       }
       if (params.operation === "checkpoint") {
@@ -125,9 +128,9 @@ export function createResearchLifecycleTool() {
         if (!params.checkpoint) throw new Error("research_checkpoint requires checkpoint");
         return toolResult(await NATIVE_COMMANDS.execute("research.checkpoint", root, { request: create_research_lifecycle_request({
           operation: "checkpoint", principal: toolContext?.principal,
-          checkpoint: normalizeCheckpointPayload(params.checkpoint, toolContext, params.eventId),
-          rationale: params.rationale, basis_refs: params.basisRefs || [],
-          expected_revision: params.expectedRevision, event_id: params.eventId,
+          checkpoint: normalizeCheckpointPayload(params.checkpoint, toolContext, params.event_id),
+          rationale: params.rationale, basis_refs: params.basis_refs || [],
+          expected_revision: params.expected_revision, event_id: params.event_id,
         }) }, context?.abortSignal));
       }
       throw new Error("research lifecycle operation must be strategy, interpret, or checkpoint");
@@ -135,14 +138,14 @@ export function createResearchLifecycleTool() {
   };
 }
 
-export function normalizeCheckpointPayload(value, toolContext, eventId) {
+export function normalizeCheckpointPayload(value, toolContext, event_id) {
   const checkpoint = { ...value };
   if (checkpoint.status !== undefined) throw new Error("research_checkpoint uses disposition; status is not a checkpoint field");
   if (!checkpoint.disposition) throw new Error("research_checkpoint requires disposition");
-  const turnId = checkpoint.turn_id || toolContext?.operation_id || eventId || `turn_${Date.now()}`;
+  const turnId = checkpoint.turn_id || toolContext?.operation_id || event_id || `turn_${Date.now()}`;
   checkpoint.turn_id = turnId;
   checkpoint.session_id = toolContext?.session_id || toolContext?.sessionId;
-  checkpoint.id ||= eventId || `checkpoint_${turnId}`;
+  checkpoint.id ||= event_id || `checkpoint_${turnId}`;
   return checkpoint;
 }
 
@@ -221,7 +224,9 @@ export function createJobArtifactTools(options = {}) {
     }
     const root = boundWorkspaceRoot(params, toolContext);
     if (name === "job_start") params = resolvePreparedJob(params, root);
-    const result = await runtime[method]({ ...params, root, request_id: params.requestId || `${toolContext?.operation_id || "turn"}:${_id}`, principal: toolContext?.principal, session_id: toolContext?.session_id || toolContext?.sessionId });
+    const invoke = () => runtime[method]({ ...params, root, request_id: params.request_id || `${toolContext?.operation_id || "turn"}:${_id}`, principal: toolContext?.principal, session_id: toolContext?.session_id });
+    const result = await (["job_status", "job_collect", "job_reconcile"].includes(name)
+      ? withJobQueryRecovery(root, method, params, invoke) : invoke());
     return toolResult(result);
   };
   const contracts = TOOL_CONTRACTS;

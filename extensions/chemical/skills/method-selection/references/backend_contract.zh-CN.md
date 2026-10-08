@@ -4,7 +4,7 @@ Skill 负责科学输入、argv、解析与验证，使用随包安装的脚本�
 
 ## 提交
 
-method-selection/scripts/prepare_job.py 读取 job.toml，返回 command（argv）、platform（配置的执行环境）、environment（进程环境变量对象）、inputs（source/destination 文件或目录映射）、outputs（path、required、minBytes、mediaType）及普通 metadata。补充 nodeId、timeoutSeconds 和需要的 metadata.resources（cpus、memory_mb、walltime）后 job_start。cwd 是隔离 Job 根下的相对子目录，不是任意工作区路径。
+method-selection/scripts/prepare_job.py 读取 job.toml，返回 command（argv）、platform（配置的执行环境）、environment（进程环境变量对象）、inputs（source/destination 文件或目录映射）、outputs（path、required、min_bytes、media_type）及普通 metadata。补充 node_id、timeout_seconds 和需要的 metadata.resources（cpus、memory_mb、walltime）后 job_start。cwd 是隔离 Job 根下的相对子目录，不是任意工作区路径。
 
 输入复制为带路径和摘要的快照，保持脚本 import 目录结构。Runtime 负责本地/远程进程控制；Skill 可以在 Job 内同步调用科学程序，不能自行后台化或另行提交调度任务。
 

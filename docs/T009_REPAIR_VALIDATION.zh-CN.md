@@ -6,8 +6,8 @@
 
 - Host 的 next_run 固定映射到当前 Pi 正式接口 followUp；prompt/abort 同样使用正式接口，移除对动态 RPC 代理的 typeof 猜测。已知未准入错误与未知提交结果分开，保留原始 dispatch_error。迟到的有效准入响应保留真实 entry/operation ID。
 - 带所属 session 的 continue_required checkpoint 由 State 生成持久 continuation；Host 经现有输入回执消费。Host 重启恢复相同请求身份，不重新规划科学工作。相同研究 revision 不重复唤醒；连续推进自动接续最多八次；跨轮无研究进展时返回 no_research_progress。外部等待、用户等待和终态不产生接续，失败/中止的 Pi 轮次也不会被自动重启。
-- State 区分 eligible_node_ids（策略和依赖允许）与 ready_node_ids（没有运行 Attempt）。同一研究 Node 下的独立任务使用不同 workId；已有 workId 指向原 Attempt，先收集/对账。同一个 requestId 仍需由执行器验证不可变参数，不能覆盖旧提交。
-- method-selection helper 支持 --output，输出 requestFile/requestSha256。job_start 校验工作区边界和摘要后完整传递请求，不允许混入 command 等覆盖字段。相同输入、方法、参数和配置生成稳定身份，主动新计算可以显式指定 --work-id。Attempt 保留 work_id、环境和脚本/配置摘要。
+- State 区分 eligible_node_ids（策略和依赖允许）与 ready_node_ids（没有运行 Attempt）。同一研究 Node 下的独立任务使用不同 work_id；已有 work_id 指向原 Attempt，先收集/对账。同一个 requestId 仍需由执行器验证不可变参数，不能覆盖旧提交。
+- method-selection helper 支持 --output，输出 request_file/request_sha256。job_start 校验工作区边界和摘要后完整传递请求，不允许混入 command 等覆盖字段。相同输入、方法、参数和配置生成稳定身份，主动新计算可以显式指定 --work-id。Attempt 保留 work_id、环境和脚本/配置摘要。
 - job.toml 的 environment/backend submission 表承载 queue、resources 和可选 queue_wait_seconds，backend 覆盖环境默认值。科学 helper 的远程准备必须有明确队列，不能把 allowed_queues 当默认选择。示例配置选择 fata；现有安装不会被静默改队列。
 - job_status 返回 scheduler_id/state、queue、等待时间、调度器 comment，以及配置 commands.checkjob 时的有界诊断文本。正常 Q/R 不再把缺少退出回执写成错误；可选 checkjob 失败不覆盖已知调度状态。配置等待阈值后，Monitor 仅生成一次 queue_wait_exceeded 事件，无变化不会周期性唤醒。
 - 中英文 Skill 和运行边界同步了完整请求提交、共享 Node 工作身份、队列诊断和 State 接续约定。

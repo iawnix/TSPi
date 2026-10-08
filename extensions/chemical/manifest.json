@@ -11,7 +11,8 @@
     {
       "name": "validation",
       "path": "skills/validation",
-      "sha256": "sha256:726008fc109e0ae82621716723b7af4b96b4d997e2ff5bfe343e87cce5dc270e"
+      "sha256": "sha256:7d3281afaf4cc2ef78e4e34f661f9d2c0e1c162165653adca6c2e8ed018b5a95",
+      "resources_sha256": "sha256:7db489fb9e10de6e38e1d678d45470c4e05caadb0891a63bc81d5fceedc3d6ea"
     },
     {
       "name": "irc",
@@ -26,19 +27,19 @@
     {
       "name": "method-selection",
       "path": "skills/method-selection",
-      "sha256": "sha256:fba8cfbc5d23821839450ff29b18518a176efd3467cdfe5543db53653b3e3d89",
-      "resources_sha256": "sha256:e914bab5d6c0590b6e6eb6eb7e8bad6c760fd8820bd6e482adde63a931712789"
+      "sha256": "sha256:303fd45e83b8cc7df0cc912f1467b1e7545ef4b30febddf20fc341e9007970c0",
+      "resources_sha256": "sha256:4392146a2d5875a252fb1de39b7518994f8ae97879930c0eeb0ba5d31570b665"
     },
     {
       "name": "cf22d",
       "path": "skills/cf22d",
-      "sha256": "sha256:84f69b1fa3cc33e22cb38e0c4410a585c8f61bbbcafd7e810640e2c25899bc98",
+      "sha256": "sha256:6b38265b07b96691755ab82a815838ae445e23f6e19f739ce51d1adcea259b3b",
       "resources_sha256": "sha256:01c9d5a8871e1167ae34c1572204f496344038b0cb2e33a5d944aa596242b32e"
     },
     {
       "name": "xtb",
       "path": "skills/xtb",
-      "sha256": "sha256:e5dfcc2e07e2e7b02b145560071fc8232be05e3f99415b0454505cd39c28ea50",
+      "sha256": "sha256:edc54af8a731c5e20e1418e67e8b0e6cac229535f38671486ca67b6af291a760",
       "resources_sha256": "sha256:8e04a3a57621a52352e8c73d88f29253a04d209e891abf1d2554c3bc0270c5cd"
     },
     {
@@ -54,8 +55,8 @@
     {
       "name": "gaussian",
       "path": "skills/gaussian",
-      "sha256": "sha256:44641d14cbd2541c3cd5a1e898d62ae8e44c1274922026e6a16db079c477af78",
-      "resources_sha256": "sha256:65e31971825e4f5d686b21f706f70429afa4674547f906ca5af989a314ec3481"
+      "sha256": "sha256:9892aeecf844405d8b219adda83046e4724bba6cfd198588abf2aeadbe9d41f4",
+      "resources_sha256": "sha256:ccc318e25543bde51584370d4373b0e00cb91ad1818de1356bc4a2b43a8290bf"
     },
     {
       "name": "chemical-input",
@@ -73,6 +74,14 @@
       "path": "skills/report",
       "sha256": "sha256:9de015b4c1222b6a45e4942e6e6c8e93a5bf5e674f50b6dddfc6c5b1a1661720",
       "resources_sha256": "sha256:fdf01101de83600b2e19c5342de2058ddce9e3902a422ea7e89b09cc1a43dfb9"
+    }
+  ],
+  "validators": [
+    {
+      "id": "chemical.gaussian_frequency",
+      "version": "1",
+      "entry": "skills/validation/scripts/gaussian_frequency.py",
+      "sha256": "sha256:d1fea479cb61a1a57b4f70c9642bdb398d2ca5a435344e28c8f0d11483259202"
     }
   ]
 }

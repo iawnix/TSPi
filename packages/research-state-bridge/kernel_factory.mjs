@@ -20,7 +20,7 @@ export const RESEARCH_KERNEL_FACTORY_VERSION = "research_state_factory_1";
 // a second state-machine implementation.
 export const RESEARCH_KERNEL_BACKENDS = Object.freeze(["python"]);
 
-const WORKSPACE_MANIFEST_SCHEMA = "research_state_workspace_1";
+const WORKSPACE_MANIFEST_SCHEMA = "research_state_workspace_2";
 const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
 
 function require_object(value, label) {

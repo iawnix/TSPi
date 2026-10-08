@@ -92,8 +92,31 @@ command = ["/opt/g16"]
             input_gjf=source, dependencies=[str(checkpoint)+'=previous.chk'], collect=collect)
     first = request(['irc.chk'])
     assert first == request(['irc.chk'])
-    assert {'source': str(checkpoint), 'destination': 'previous.chk'} in first['inputs']
+    assert any(item['source'] == str(checkpoint) and item['destination'] == 'previous.chk' and len(item['sha256']) == 64 for item in first['inputs'])
     assert any(item['path'] == 'results/irc.chk' and item['required'] for item in first['outputs'])
-    assert request()['requestId'] != first['requestId']
+    assert request()['request_id'] != first['request_id']
     checkpoint.write_bytes(b'checkpoint version 2')
-    assert request(['irc.chk'])['requestId'] != first['requestId']
+    assert request(['irc.chk'])['request_id'] != first['request_id']
+
+
+def test_fixed_width_tight_wrap_and_primary_failure(tmp_path):
+    from gaussian_io import parse_log, compact_route
+    expected = '#p M062X/6-31G** Opt=(TS,CalcFC,NoEigenTest,MaxCycles=200) Freq SCF=Tight Int=UltraFine'
+    log = tmp_path/'gaussian.out'
+    log.write_text(expected.replace('SCF=Tight', 'SCF=Ti\n ght') + '\n ----------------\n'
+                   ' Optimization stopped.\n -- Number of steps exceeded, NStep=114\n'
+                   ' Error termination via Lnk1e\n Error: segmentation violation\n')
+    summary = parse_log(log, expected_route=expected)['summary']
+    assert summary['route_expectation']['matched']
+    assert summary['primary_failure']['kind'] == 'optimization_limit'
+    assert any(d['kind']=='signal' for d in summary['diagnostics'])
+    assert compact_route(expected) != compact_route(expected.replace('SCF=Tight','SCF=Loose'))
+
+
+@pytest.mark.parametrize('target', ['route', 'title'])
+def test_reject_coordinate_in_route_or_title_before_dispatch(tmp_path, target):
+    path = gjf(tmp_path/'input.gjf')
+    old = ' Freq\n\n' if target == 'route' else 'fixture\n\n'
+    path.write_text(path.read_text().replace(old, old[:-1] + 'H 2.45 2.00 -0.64\n\n'))
+    with pytest.raises(ValueError, match='coordinate record in route/title'):
+        helper.inspect_input(path, 'M062X','6-31G**',0,0,12,4000)

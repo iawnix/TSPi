@@ -21,7 +21,7 @@ from referencing import Registry, Resource
 from tspi_foundation.io import sha256_json
 
 
-CONTRACT_DIR = Path(__file__).resolve().parents[2] / "research-compute" / "research_compute" / "contracts"
+CONTRACT_DIR = Path(__file__).resolve().parent / "contracts"
 
 
 class CalculationContractError(ValueError):

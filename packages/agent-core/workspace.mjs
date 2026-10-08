@@ -7,7 +7,7 @@ import { create_workspace_port } from "./ports.mjs";
 import { assert_workspace_mode, require_matching_mode } from "./session_mode.mjs";
 import { require_workspace_id } from "./workspace_id.mjs";
 
-export const WORKSPACE_MANIFEST_SCHEMA = "research_state_workspace_1";
+export const WORKSPACE_MANIFEST_SCHEMA = "research_state_workspace_2";
 export const WORKSPACE_STATES = Object.freeze(["initializing", "ready", "admission_pending", "failed"]);
 export const RETIRED_WORKSPACE_FILES = Object.freeze([
   "workspace.json", "research_map.json", "research.db", "transactions.jsonl",
@@ -152,7 +152,7 @@ export async function validate_workspace_files(manifest, root, { allow_partial_a
   } catch (error) {
     throw new Error("research_workspace_documents_invalid", { cause: error });
   }
-  if (context.schema_version !== "research_map_context_1"
+  if (context.schema_version !== "research_map_context_2"
     || context.workspace_id !== manifest.workspace_id
     || (context.map_id !== undefined && context.map_id !== `map_${manifest.workspace_id}`)
     || context.workspace_mode !== "research"
@@ -164,7 +164,7 @@ export async function validate_workspace_files(manifest, root, { allow_partial_a
     || RESEARCH_CONTEXT_COLLECTIONS.some((name) => !Array.isArray(context[name]))) {
     throw new Error("research_context_invalid");
   }
-  if (liveness.schema_version !== "research_liveness_1"
+  if (liveness.schema_version !== "research_liveness_2"
     || liveness.workspace_id !== manifest.workspace_id
     || !Number.isSafeInteger(liveness.revision) || liveness.revision < 0
     || liveness.revision !== context.revision
@@ -188,7 +188,7 @@ export async function validate_workspace_files(manifest, root, { allow_partial_a
     || !Array.isArray(memory.entries)) {
     throw new Error("research_memory_invalid");
   }
-  if (checkpoint.schema_version !== "research_checkpoint_1"
+  if (checkpoint.schema_version !== "research_checkpoint_2"
     || checkpoint.workspace_id !== manifest.workspace_id) {
     throw new Error("research_checkpoint_invalid");
   }
@@ -238,7 +238,7 @@ function research_seed(manifest) {
   const collections = Object.fromEntries(RESEARCH_CONTEXT_COLLECTIONS.map((name) => [name, []]));
   return {
     context: {
-      schema_version: "research_map_context_1",
+      schema_version: "research_map_context_2",
       workspace_id: manifest.workspace_id,
       map_id: `map_${manifest.workspace_id}`,
       title: manifest.workspace_id,
@@ -255,7 +255,7 @@ function research_seed(manifest) {
       focus: { claim_ids: [], node_ids: [] },
     },
     liveness: {
-      schema_version: "research_liveness_1",
+      schema_version: "research_liveness_2",
       workspace_id: manifest.workspace_id,
       memory_scope: manifest.memory_scope,
       research_state_scope: manifest.research_state_scope,
@@ -280,7 +280,7 @@ function research_seed(manifest) {
       entries: [],
     },
     checkpoint: {
-      schema_version: "research_checkpoint_1",
+      schema_version: "research_checkpoint_2",
       checkpoint_id: "checkpoint_0",
       workspace_id: manifest.workspace_id,
       kind: "workspace_genesis",
@@ -471,11 +471,11 @@ export function create_workspace_initializer() {
     const liveness_path = join(attached.workspace_root, "lifecycle", "liveness.json");
     const context = await read_json(context_path);
     const liveness = await read_json(liveness_path);
-    if (context.schema_version !== "research_map_context_1"
+    if (context.schema_version !== "research_map_context_2"
       || context.workspace_id !== attached.workspace_id
       || (context.map_id !== undefined && context.map_id !== `map_${attached.workspace_id}`)
       || context.workspace_mode !== "research"
-      || liveness.schema_version !== "research_liveness_1"
+      || liveness.schema_version !== "research_liveness_2"
       || liveness.workspace_id !== attached.workspace_id) {
       throw new Error("research_workspace_identity_mismatch");
     }

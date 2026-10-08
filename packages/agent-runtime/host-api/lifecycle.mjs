@@ -113,7 +113,7 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
     }
     const operations = args?.operations || args?.changeSet?.operations || args?.change?.operations;
     const evidenceUpdate = toolName === "research_change" && Array.isArray(operations) && operations.length > 0
-      && operations.every((operation) => ["create_finding", "register_artifact", "link_evidence", "register_evidence_link", "transition_attempt", "update_attempt"].includes(operation?.type));
+      && operations.every((operation) => ["create_finding", "register_artifact", "link_evidence", "transition_attempt"].includes(operation?.type));
     const targetPhase = evidenceUpdate ? "interpret" : metadataForTool.phase;
     if (durableLiveness?.tool_admission?.accepted === false) {
       return { ...snapshot(), ...durableLiveness.tool_admission };

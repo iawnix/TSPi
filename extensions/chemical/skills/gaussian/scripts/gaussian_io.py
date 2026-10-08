@@ -25,6 +25,7 @@ ROUTE_KEYWORDS_WITH_KNOWN_LINE_WRAPS = (
     ("maxcycle", "MaxCycle"),
     ("ultrafine", "UltraFine"),
     ("verytight", "VeryTight"),
+    ("tight", "Tight"),
     ("calcfc", "CalcFC"),
     ("nosymm", "NoSymm"),
     ("freq", "Freq"),
@@ -715,6 +716,25 @@ def parse_thermochemistry(lines: list[str]) -> dict[str, object]:
     return result
 
 
+def failure_diagnostics(lines: list[str], start_line: int = 1) -> dict[str, object]:
+    patterns = (
+        ("input_syntax", r"QPErr"),
+        ("optimization_limit", r"Number of steps exceeded"),
+        ("scf_convergence", r"Convergence failure"),
+        ("signal", r"segmentation violation"),
+        ("execution_error", r"Error termination"),
+    )
+    events = []
+    for index, line in enumerate(lines):
+        for kind, pattern in patterns:
+            if re.search(pattern, line, re.I):
+                events.append({"kind": kind, "line": start_line + index, "text": line.strip()})
+                break
+    explicit = [event for event in events if event["kind"] in {"input_syntax", "optimization_limit", "scf_convergence"}]
+    primary = (explicit or events or [None])[0]
+    return {"primary_failure": primary, "diagnostics": events}
+
+
 def parse_log(
     log_path: Path,
     section_index: int | None = None,
@@ -787,6 +807,7 @@ def parse_log(
         "final_convergence_satisfied": final_convergence_satisfied,
         "final_geometry_atoms": len(atoms),
     }
+    summary.update(failure_diagnostics(section_lines, section["start_line"]))
     summary.update(parse_thermochemistry(section_lines))
     return {"summary": summary, "frequencies": section_frequencies, "atoms": atoms}
 

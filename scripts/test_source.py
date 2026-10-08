@@ -141,10 +141,22 @@ def main(argv: list[str] | None = None) -> int:
             )
             environment.pop("PYTEST_ADDOPTS", None)
             environment.pop("PYTEST_PLUGINS", None)
+            # pytest/conftest bootstrap may prepend checkout paths. Bind every
+            # first-party namespace to the installed wheel before collection,
+            # so its submodules keep the wheel's __path__ throughout the run.
+            wheel_test_program = (
+                "import importlib,json,pathlib,sys;"
+                f"names={sorted(runtime.PYTHON_PACKAGE_NAMES)!r};"
+                "origins={n:importlib.import_module(n).__file__ for n in names};"
+                f"prefix=pathlib.Path({str(overlay)!r});"
+                "assert all(pathlib.Path(p).resolve().is_relative_to(prefix) for p in origins.values()), origins;"
+                "print('Verified wheel namespace origins: '+json.dumps(origins),flush=True);"
+                "import pytest;sys.exit(pytest.main(sys.argv[1:]))"
+            )
             command = [
                 str(overlay_python),
-                "-m",
-                "pytest",
+                "-c",
+                wheel_test_program,
                 *pytest_args,
             ]
             completed = subprocess.run(

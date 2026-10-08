@@ -50,9 +50,9 @@ method or stop independent cells.
 
 ## Executable request preparation
 
-Use [scripts/prepare_job.py](scripts/prepare_job.py) to generate the generic Job request from job.toml. Pass --config "$TS_JOB_CONFIG", --environment, --backend, --skill, --xyz, then -- followed by runner arguments. Use the installation TSPI_PYTHON to run this preparation helper. The public job_runtime.config_contract resolves structured Conda bindings from job.toml: backend.python overrides environment.python. Remote scripts run with the configured conda_executable and prefix; do not guess Python or pass --python. CF22D uses backends.pyscf.python without a second Python command binding. Add nodeId/timeoutSeconds and verify the request before job_start. The helper stages complete script directories and `_shared` imports.
+Use [scripts/prepare_job.py](scripts/prepare_job.py) to generate the generic Job request from job.toml. Pass --config "$TS_JOB_CONFIG", --environment, --backend, --skill, --xyz, then -- followed by runner arguments. Use the installation TSPI_PYTHON to run this preparation helper. The public job_runtime.config_contract resolves structured Conda bindings from job.toml: backend.python overrides environment.python. Remote scripts run with the configured conda_executable and prefix; do not guess Python or pass --python. CF22D uses backends.pyscf.python without a second Python command binding. Add node_id/timeout_seconds and verify the request before job_start. The helper stages complete script directories and `_shared` imports.
 
-Preserve the prepared requestId when recovering the same submission. A lost tool response does not authorize a new ID; intentional recalculation uses a new request.
+Preserve the prepared request_id when recovering the same submission. A lost tool response does not authorize a new ID; intentional recalculation uses a new request.
 
 For an explicit Gaussian calculation, replace `--xyz` with `--input-gjf <file>`.
 Use `--dependency /absolute/source.chk=previous.chk` for each input checkpoint or
@@ -68,11 +68,11 @@ Python dependencies are installation-owned Conda environments configured in job.
 
 
 Save helper output with `--output <workspace>/prepared/<cell>.json` (before `--`).
-The helper prints `requestFile` and `requestSha256`; pass these unchanged to
-`job_start`, adding only `nodeId` and optional `timeoutSeconds`. Do not copy
+The helper prints `request_file` and `request_sha256`; pass these unchanged to
+`job_start`, adding only `node_id` and optional `timeout_seconds`. Do not copy
 individual command/input fields. Inspect the file if needed; changing it requires
 recomputing its digest. Repeated preparation of identical inputs/configuration
-preserves workId/requestId. Use `--work-id` only for intentional new work.
+preserves work_id/request_id. Use `--work-id` only for intentional new work.
 
 Remote preparation requires an explicit `submission.queue` in the environment
 or backend's job.toml table. `submission.resources` supplies CPU/memory/walltime;

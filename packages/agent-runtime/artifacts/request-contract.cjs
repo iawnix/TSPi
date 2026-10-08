@@ -20,34 +20,34 @@ const OUTPUT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 function validateRenderRequest(rootValue, input, resolvedArtifacts) {
   const root = requireWorkspaceRoot(rootValue);
   if (!isPlainObject(input)) throw new Error("render request must be an object");
-  rejectUnknownKeys(input, ["operation", "nodeId", "inputArtifactIds", "outputName"], "render request");
+  rejectUnknownKeys(input, ["operation", "node_id", "input_artifact_ids", "outputName"], "render request");
   const operation = requireEnum(input.operation, "render operation", RENDER_OPERATIONS);
-  const nodeId = requireAct(root, input.nodeId);
-  const inputArtifactIds = uniqueStrings(input.inputArtifactIds, "inputArtifactIds", 8, ARTIFACT_ID);
-  if ((operation === "render" || operation === "animate" || operation === "curve" || operation === "energy" || operation === "scan" || operation === "convergence") && inputArtifactIds.length !== 1) {
+  const node_id = requireAct(root, input.node_id);
+  const input_artifact_ids = uniqueStrings(input.input_artifact_ids, "input_artifact_ids", 8, ARTIFACT_ID);
+  if ((operation === "render" || operation === "animate" || operation === "curve" || operation === "energy" || operation === "scan" || operation === "convergence") && input_artifact_ids.length !== 1) {
     throw new Error(`${operation} requires exactly one input artifact`);
   }
-  if (operation === "compare" && inputArtifactIds.length < 2) {
+  if (operation === "compare" && input_artifact_ids.length < 2) {
     throw new Error("compare requires at least two input artifacts");
   }
-  if (operation === "mechanism" && inputArtifactIds.length !== 3) {
+  if (operation === "mechanism" && input_artifact_ids.length !== 3) {
     throw new Error("mechanism requires exactly three ordered input artifacts: reactant, transition state, product");
   }
-  if (!Array.isArray(resolvedArtifacts) || resolvedArtifacts.length !== inputArtifactIds.length) {
+  if (!Array.isArray(resolvedArtifacts) || resolvedArtifacts.length !== input_artifact_ids.length) {
     throw new Error("render artifact resolution does not match the request");
   }
   const byId = new Map(resolvedArtifacts.map((item) => [item?.artifact_id, item]));
-  const artifacts = inputArtifactIds.map((artifactId) => {
-    const artifact = byId.get(artifactId);
-    if (!isPlainObject(artifact) || artifact.artifact_id !== artifactId) {
-      throw new Error(`render artifact was not resolved: ${artifactId}`);
+  const artifacts = input_artifact_ids.map((artifact_id) => {
+    const artifact = byId.get(artifact_id);
+    if (!isPlainObject(artifact) || artifact.artifact_id !== artifact_id) {
+      throw new Error(`render artifact was not resolved: ${artifact_id}`);
     }
     const ref = requireString(artifact.path, "artifact path", 4096);
     const path = resolve(root, ...ref.split("/"));
     assertWithin(root, path);
     assertNoSymlinkComponents(root, ref);
-    if (!existsSync(path) || !statSync(path).isFile()) throw new Error(`render input does not exist: ${artifactId}`);
-    return { artifactId, ref, path, sha256: requireDigest(artifact.sha256, "artifact sha256") };
+    if (!existsSync(path) || !statSync(path).isFile()) throw new Error(`render input does not exist: ${artifact_id}`);
+    return { artifact_id, ref, path, sha256: requireDigest(artifact.sha256, "artifact sha256") };
   });
   if (["curve", "energy", "scan", "convergence"].includes(operation)) {
     if (!/\.json$/i.test(artifacts[0].ref)) throw new Error(`${operation} input artifact must be a .json file`);
@@ -58,12 +58,12 @@ function validateRenderRequest(rootValue, input, resolvedArtifacts) {
   }
   if (operation === "animate" && !/\.gif$/i.test(outputName)) throw new Error("animate outputName must end in .gif");
   if (operation !== "animate" && !/\.png$/i.test(outputName)) throw new Error(`${operation} outputName must end in .png`);
-  const outputRef = `nodes/${nodeId}/outputs/render/${outputName}`;
+  const outputRef = `nodes/${node_id}/outputs/render/${outputName}`;
   const outputPath = resolve(root, ...outputRef.split("/"));
   assertWithin(root, outputPath);
   assertNoSymlinkComponents(root, outputRef);
   if (existsSync(outputPath)) throw new Error(`render output already exists: ${outputName}`);
-  return { operation, nodeId, artifacts, outputName, outputRef, outputPath };
+  return { operation, node_id, artifacts, outputName, outputRef, outputPath };
 }
 
 function validateReportRequest(rootValue, input, resolvedArtifacts = []) {
@@ -78,13 +78,13 @@ function validateReportRequest(rootValue, input, resolvedArtifacts = []) {
     throw new Error("report asset resolution does not match the request");
   }
   const resolvedById = new Map(resolvedArtifacts.map((item) => [item?.artifact_id, item]));
-  const assets = assetArtifactIds.map((artifactId) => {
-    const artifact = resolvedById.get(artifactId);
-    if (!isPlainObject(artifact) || artifact.artifact_id !== artifactId) {
-      throw new Error(`report asset was not resolved: ${artifactId}`);
+  const assets = assetArtifactIds.map((artifact_id) => {
+    const artifact = resolvedById.get(artifact_id);
+    if (!isPlainObject(artifact) || artifact.artifact_id !== artifact_id) {
+      throw new Error(`report asset was not resolved: ${artifact_id}`);
     }
     if (typeof artifact.path !== "string" || !/\.(?:gif|png)$/i.test(artifact.path)) {
-      throw new Error(`report asset must be a .png or .gif artifact: ${artifactId}`);
+      throw new Error(`report asset must be a .png or .gif artifact: ${artifact_id}`);
     }
     return artifact;
   });
@@ -108,7 +108,7 @@ function validateCreatedRenderOutput(rootValue, outputRef) {
   return { ref, size_bytes: statSync(path).size, sha256: sha256Bytes(readFileSync(path)) };
 }
 
-function validateCreatedReportPackage(rootValue, packageRef, expectedManifestDigest, expectedRevision, expectedRuntimeRevision) {
+function validateCreatedReportPackage(rootValue, packageRef, expectedManifestDigest, expected_revision, expectedRuntimeRevision) {
   const root = requireWorkspaceRoot(rootValue);
   const ref = requireString(packageRef, "report package ref", 4096);
   const packagePath = resolve(root, ...ref.split("/"));
@@ -124,7 +124,7 @@ function validateCreatedReportPackage(rootValue, packageRef, expectedManifestDig
   }
   const manifest = JSON.parse(manifestBytes.toString("utf8"));
   if (manifest.schema_version !== "ts-report-package/5") throw new Error("report package manifest schema is invalid");
-  if (manifest.workspace_revision !== expectedRevision) throw new Error("report package revision mismatch");
+  if (manifest.workspace_revision !== expected_revision) throw new Error("report package revision mismatch");
   if (manifest.runtime_revision !== expectedRuntimeRevision) throw new Error("report package runtime revision mismatch");
   const listed = new Set((manifest.files || []).map((item) => item?.ref).filter((item) => typeof item === "string"));
   const actual = collectRegularFileRefs(packagePath);
@@ -136,21 +136,21 @@ function validateCreatedReportPackage(rootValue, packageRef, expectedManifestDig
 }
 
 function requireAct(root, value) {
-  const nodeId = requireString(value, "nodeId", 128);
-  if (!NODE_ID.test(nodeId)) throw new Error("nodeId must be a ResearchNode ID");
+  const node_id = requireString(value, "node_id", 128);
+  if (!NODE_ID.test(node_id)) throw new Error("node_id must be a ResearchNode ID");
   const map = readResearchMap(root);
   const matches = Array.isArray(map.nodes)
-    ? map.nodes.filter((item) => isPlainObject(item) && item.id === nodeId)
+    ? map.nodes.filter((item) => isPlainObject(item) && item.id === node_id)
     : [];
-  if (map.schema_version !== "research-map/1" || matches.length !== 1) throw new Error(`unknown ResearchNode: ${nodeId}`);
-  return nodeId;
+  if (map.schema_version !== "research-map/1" || matches.length !== 1) throw new Error(`unknown ResearchNode: ${node_id}`);
+  return node_id;
 }
 
 function requireWorkspaceRoot(value) {
   if (typeof value !== "string" || !value || !isAbsolute(value)) throw new Error("workspace root must be absolute");
   const root = realpathSync(value);
   const workspace = JSON.parse(readFileSync(resolve(root, "workspace_manifest.json"), "utf8"));
-  if (workspace.schema_version !== "research_state_workspace_1" || workspace.workspace_mode !== "research") {
+  if (workspace.schema_version !== "research_state_workspace_2" || workspace.workspace_mode !== "research") {
     throw new Error("artifact tools require a ResearchMap workspace");
   }
   const map = readResearchMap(root);

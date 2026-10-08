@@ -9,7 +9,7 @@ from tests.unit.test_job_recovery import workspace
 
 def test_terminal_job_wakes_once_and_reclaims_failed_delivery(tmp_path):
     workspace(tmp_path)
-    job=dispatch('start',{'root':str(tmp_path),'jobId':'job_wake','nodeId':'node_1',
+    job=dispatch('start',{'root':str(tmp_path),'job_id':'job_wake','node_id':'node_1',
         'session_id':'session_original','command':[sys.executable,'-c','pass']})
     for _ in range(100):
         command(tmp_path,'tick',{})
@@ -48,7 +48,7 @@ def test_long_queue_emits_one_diagnostic_event_without_poll_wakes(tmp_path, monk
     from job_runtime import JobState
     from tspi_runtime import job_monitor
     workspace(tmp_path)
-    dispatch('start',{'root':str(tmp_path),'jobId':'job_queue','nodeId':'node_1','session_id':'s',
+    dispatch('start',{'root':str(tmp_path),'job_id':'job_queue','node_id':'node_1','session_id':'s',
         'metadata':{'queue_wait_seconds':60},'command':[sys.executable,'-c','pass']})
     status = SimpleNamespace(state=JobState.QUEUED,exit_code=None,error=None,diagnostics={'wait_seconds':10})
     monkeypatch.setattr(job_monitor,'_runtime',lambda root:SimpleNamespace(job_status=lambda receipt:status))
@@ -76,7 +76,7 @@ def test_batches_are_stable_across_retry_and_new_events(tmp_path):
     again=command(tmp_path,'pending',{})['deliveries']
     assert again[:2]==rows
     assert again[2]['request_id']!=rows[0]['request_id']
-    add('event_old',claim_token='old-uncertain-rpc')
+    add('event_old',claim_token='uncertain-rpc',batch_event_ids=['event_old'])
     old=command(tmp_path,'pending',{})['deliveries'][-1]
     assert old['request_id']=='job-wake:event_old'
 

@@ -14,7 +14,7 @@ def test_email_bash_preflight_has_no_calculation_dependency_but_needs_lifecycle_
     def admit():
         return state.read_liveness(tmp_path, {"tool": tool})["tool_admission"]
     assert admit()["accepted"]
-    job = {"name": "job_start", "effect": "execution_control", "args": {"nodeId": "node_delivery"}}
+    job = {"name": "job_start", "effect": "execution_control", "args": {"node_id": "node_delivery"}}
     assert state.read_liveness(tmp_path, {"tool": job})["tool_admission"]["code"] == "research_node_not_ready"
     change(tmp_path, [{"type": "set_node_state", "node_id": "node_1", "state": "blocked", "summary": "Missing binding"}])
     state.checkpoint(tmp_path, {**AUTH, "id": "checkpoint_blocked", "disposition": "blocked", "reason": "Missing binding"})
@@ -69,7 +69,7 @@ def test_blocked_delivery_does_not_block_calculation_or_monitor(tmp_path):
     ])
     with pytest.raises(state.AgentWorkspaceError, match="user_wait_scope_invalid"):
         state.checkpoint(tmp_path, {**AUTH, "id": "checkpoint_bad", "disposition": "user_input_required", "reason": "Need recipient", "node_ids": ["node_delivery"]})
-    live = state.read_liveness(tmp_path, {"tool": {"name": "job_start", "effect": "execution_control", "args": {"nodeId": "node_1"}}})
+    live = state.read_liveness(tmp_path, {"tool": {"name": "job_start", "effect": "execution_control", "args": {"node_id": "node_1"}}})
     assert live["tool_admission"]["accepted"]
     change(tmp_path, [{"type": "register_attempt", "id": "attempt_running", "node_id": "node_1", "state": "running"}])
     state.checkpoint(tmp_path, {**AUTH, "id": "checkpoint_external", "disposition": "waiting_external", "unresolved_refs": ["attempt_running"]})
@@ -89,22 +89,24 @@ def test_dependencies_and_optional_bad_finding_preserve_independent_readiness(tm
     live = state.read_liveness(tmp_path)
     assert "node_1" in live["ready_node_ids"]
     assert "node_child" not in live["ready_node_ids"]
-    denied = state.read_liveness(tmp_path, {"tool": {"name": "job_start", "effect": "execution_control", "args": {"nodeId": "node_child"}}})
+    denied = state.read_liveness(tmp_path, {"tool": {"name": "job_start", "effect": "execution_control", "args": {"node_id": "node_child"}}})
     assert denied["tool_admission"]["code"] == "research_node_not_ready"
 
 
 def test_independent_work_in_shared_research_scope_and_duplicate_guard(tmp_path):
     workspace(tmp_path)
-    change(tmp_path, [{"type":"register_attempt", "id":"attempt_remote", "node_id":"node_1", "state":"running",
+    from research_state.write_origin import runtime_write
+    with runtime_write():
+        change(tmp_path, [{"type":"register_attempt", "id":"attempt_remote", "node_id":"node_1", "state":"running",
                        "metadata":{"job_id":"job_remote", "job_metadata":{"work_id":"remote_cf22d"}}}])
     def admit(**args):
-        return state.read_liveness(tmp_path, {"tool":{"name":"job_start","effect":"execution_control","args":{"nodeId":"node_1",**args}}})["tool_admission"]
-    assert admit(workId="local_xtb")["accepted"]
-    assert admit(workId="remote_cf22d")["code"] == "research_work_already_submitted"
+        return state.read_liveness(tmp_path, {"tool":{"name":"job_start","effect":"execution_control","args":{"node_id":"node_1",**args}}})["tool_admission"]
+    assert admit(work_id="local_xtb")["accepted"]
+    assert admit(work_id="remote_cf22d")["code"] == "research_work_already_submitted"
     assert admit()["code"] == "research_work_identity_required"
-    assert admit(requestId="remote")["accepted"]
+    assert admit(job_id="job_remote")["accepted"]
     change(tmp_path, [{"type":"set_node_state","node_id":"node_1","state":"blocked","summary":"Actual missing input"}])
-    assert not admit(workId="local_xtb")["accepted"]
+    assert not admit(work_id="local_xtb")["accepted"]
 
 
 def test_continuation_is_durable_bounded_and_checkpoint_renaming_is_not_progress(tmp_path):

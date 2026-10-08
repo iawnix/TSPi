@@ -154,10 +154,8 @@ test("Research State runtime keeps semantic refs and durable checkpoint liveness
     const liveness = await restarted.read_liveness();
     assert.equal(liveness.lifecycle, "continue_required");
     assert.equal(liveness.continue_required[0].id, "node_transition.state.v2");
-    await restarted.checkpoint({ principal: "root_agent", authority: "kernel_write", workspace_id: "workspace_fs_kernel", checkpoint_id: "checkpoint_semantic.2", disposition: "terminal" });
-    const terminal = await restarted.read_liveness();
-    assert.equal(terminal.lifecycle, "terminal");
-    assert.equal(terminal.continue_required, undefined);
+    await assert.rejects(restarted.checkpoint({ principal: "root_agent", authority: "kernel_write", workspace_id: "workspace_fs_kernel", checkpoint_id: "checkpoint_semantic.2", disposition: "terminal" }), /requires closed Nodes/);
+    assert.equal((await restarted.read_liveness()).lifecycle, "continue_required");
     await restarted.apply_change({
       principal: "root_agent", authority: "kernel_write",
       workspace_id: "workspace_fs_kernel",
@@ -234,11 +232,11 @@ test("Research State runtime records findings, gates, attempts, artifacts and in
     const result = await kernel.apply_change({ principal: "root_agent", authority: "kernel_write", workspace_id: "workspace_fs_kernel", expected_revision: 0, operations: [
       { type: "create_claim", id: "claim_1", statement: "Hypothesis" },
       { type: "create_node", id: "node_1", title: "Run", objective: "Execute", claim_ids: ["claim_1"] },
-      { type: "create_artifact", id: "artifact_1", node_id: "node_1", location: "runs/input.xyz", sha256: "abc", size_bytes: 4 },
-      { type: "create_attempt", id: "attempt_1", node_id: "node_1", capability: "xtb", capability_version: "1", state: "completed", output_artifact_ids: ["artifact_1"] },
+      { type: "register_artifact", id: "artifact_1", node_id: "node_1", location: "runs/input.xyz", sha256: "abc", size_bytes: 4 },
+      { type: "register_attempt", id: "attempt_1", node_id: "node_1", capability: "xtb", capability_version: "1", state: "completed", output_artifact_ids: ["artifact_1"] },
       { type: "create_finding", id: "finding_1", node_id: "node_1", claim_ids: ["claim_1"], statement: "Observed", kind: "fact", source_refs: ["artifact_1"] },
       { type: "create_gate", id: "gate_1", scope: "node", target_id: "node_1" },
-      { type: "create_evidence", id: "evidence_1", artifact_id: "artifact_1", subject_type: "finding", subject_id: "finding_1", relation: "supports" },
+      { type: "link_evidence", id: "evidence_1", artifact_id: "artifact_1", subject_type: "finding", subject_id: "finding_1", relation: "supports" },
       { type: "evaluate_gate", gate_id: "gate_1", verdict: "pass", evidence_refs: ["artifact_1"] },
       { type: "create_strategy_plan", id: "strategy_1", claim_id: "claim_1", node_id: "node_1", objective: "Validate", rationale: "Need evidence" },
       { type: "create_interpretation", id: "interpretation_1", claim_id: "claim_1", node_id: "node_1", attempt_ref: "attempt_1", summary: "Supports", outcome: "supports", artifact_refs: ["artifact_1"], finding_ids: ["finding_1"], gate_ids: ["gate_1"] },
@@ -261,16 +259,16 @@ test("Research State runtime enforces Attempt transitions and links outputs to e
     await kernel.apply_change({ principal: "root_agent", authority: "kernel_write", workspace_id: "workspace_fs_kernel", expected_revision: 0, operations: [
       { type: "create_claim", id: "claim_1", statement: "Hypothesis" },
       { type: "create_node", id: "node_1", title: "Run", objective: "Execute", claim_ids: ["claim_1"] },
-      { type: "create_attempt", id: "attempt_1", node_id: "node_1", capability: "xtb", capability_version: "1", state: "started" },
+      { type: "register_attempt", id: "attempt_1", node_id: "node_1", capability: "xtb", capability_version: "1", state: "started" },
       { type: "create_finding", id: "finding_1", node_id: "node_1", claim_ids: ["claim_1"], statement: "Observed", kind: "fact" },
     ] });
     await kernel.apply_change({ principal: "root_agent", authority: "kernel_write", workspace_id: "workspace_fs_kernel", expected_revision: 1, operations: [
       { type: "transition_attempt", attempt_id: "attempt_1", state: "running", started_at: "2026-09-26T01:00:00Z", updated_at: "2026-09-26T01:00:00Z" },
-      { type: "create_artifact", id: "artifact_1", node_id: "node_1", location: "runs/out.xyz", producer_attempt_id: "attempt_1", size_bytes: 4 },
-      { type: "create_evidence", id: "evidence_1", artifact_id: "artifact_1", attempt_ref: "attempt_1", subject_type: "finding", subject_id: "finding_1", relation: "supports" },
+      { type: "register_artifact", id: "artifact_1", node_id: "node_1", location: "runs/out.xyz", producer_attempt_id: "attempt_1", size_bytes: 4 },
+      { type: "link_evidence", id: "evidence_1", artifact_id: "artifact_1", attempt_ref: "attempt_1", subject_type: "finding", subject_id: "finding_1", relation: "supports" },
     ] });
     await kernel.apply_change({ principal: "root_agent", authority: "kernel_write", workspace_id: "workspace_fs_kernel", expected_revision: 2, operations: [
-      { type: "update_attempt", attempt_id: "attempt_1", state: "succeeded", finished_at: "2026-09-26T01:01:00Z" },
+      { type: "transition_attempt", attempt_id: "attempt_1", state: "succeeded", finished_at: "2026-09-26T01:01:00Z" },
     ] });
     const context = await kernel.read_context();
     const attempt = context.attempts[0];

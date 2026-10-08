@@ -65,7 +65,7 @@ export async function readExtensionManifest(manifestPath) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || parsed.schema_version !== MANIFEST_SCHEMA) {
     throw new Error(`invalid TSPi extension manifest: ${path}`);
   }
-  assertKnownKeys(parsed, new Set(["schema_version", "name", "version", "skills", "providers", "server"]), "extension manifest");
+  assertKnownKeys(parsed, new Set(["schema_version", "name", "version", "skills", "providers", "server", "validators"]), "extension manifest");
   const name = validateName(parsed.name, "extension");
   const version = validateVersion(parsed.version, `extension ${name}`);
   if (!Array.isArray(parsed.skills)) throw new Error(`extension ${name} skills must be an array`);
@@ -75,6 +75,16 @@ export async function readExtensionManifest(manifestPath) {
   for (const value of parsed.skills) skills.push(await validateSkill(value, root, name));
   const providers = [];
   for (const value of parsed.providers || []) providers.push(await validateProvider(value, root, name));
+  const validators = [];
+  for (const validator of parsed.validators || []) {
+    assertKnownKeys(validator, new Set(["id", "version", "entry", "sha256"]), "validator");
+    if (!validator.id || !validator.version) throw new Error("validator identity is required");
+    const entry = resolve(root, validator.entry);
+    if (!entry.startsWith(root + "/")) throw new Error("validator entry escapes extension");
+    const digest = `sha256:${createHash("sha256").update(await readFile(entry)).digest("hex")}`;
+    if (digest !== validator.sha256) throw new Error("validator digest mismatch");
+    validators.push(Object.freeze({ ...validator, entry }));
+  }
   const server = parsed.server === undefined ? undefined : await validateServer(parsed.server, root, name);
   return Object.freeze({
     schema_version: MANIFEST_SCHEMA,
@@ -84,6 +94,7 @@ export async function readExtensionManifest(manifestPath) {
     root,
     skills: Object.freeze(skills),
     providers: Object.freeze(providers),
+    validators: Object.freeze(validators),
     ...(server ? { server } : {}),
   });
 }

@@ -17,7 +17,7 @@ export function isFilesystemResearchWorkspace(root) {
     || !isPhysicalFile(join(workspaceRoot, "lifecycle", "liveness.json"))) return false;
   try {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-    return manifest?.schema_version === "research_state_workspace_1"
+    return manifest?.schema_version === "research_state_workspace_2"
       && manifest.workspace_mode === "research"
       && manifest.state === "ready";
   } catch {

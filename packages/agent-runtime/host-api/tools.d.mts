@@ -98,29 +98,35 @@ export function createPublicToolAliases(tools: any[], options?: { includeDecisio
 export interface WorkspaceToolParams { root?: string }
 type StateReadFields = WorkspaceToolParams & {
   query?: string;
-  kind?: "phase" | "claim" | "node" | "finding" | "gate";
+  kind?: "phase" | "claim" | "node" | "finding" | "gate" | "attempt" | "artifact" | "lifecycle_action" | "interpretation" | "strategy";
   id?: string;
-  nodeRef?: string;
-  claimId?: string;
-  recordType?: "attempt" | "artifact" | "link";
-  nodeId?: string;
-  artifactId?: string;
-  subjectId?: string;
+  node_ref?: string;
+  claim_id?: string;
+  record_type?: "attempt" | "artifact" | "link";
+  node_id?: string;
+  attempt_id?: string;
+  job_id?: string;
+  event_ids?: string[];
+  offset?: number;
+  max_bytes?: number;
+  artifact_id?: string;
+  subject_id?: string;
   limit?: number;
-  storageOperation?: "status";
+  storage_operation?: "status";
 };
 export type StateToolParams = StateReadFields & {
   mode?: "map" | "summary" | "context" | "liveness" | "detail" | "locate" | "validate" | "operations" | "decisions" | "evidence" | "storage";
 };
 export type ResearchMapOperation =
   | { type: "create_phase"; id: string; title: string; objective?: string; created_at?: string; metadata?: Record<string, unknown> }
-  | { type: "create_claim"; id: string; statement: string; status?: "proposed" | "supported" | "contradicted" | "inconclusive" | "withdrawn"; predictions?: string[]; falsifiers?: string[]; created_at?: string; metadata?: Record<string, unknown> }
-  | { type: "create_node"; id: string; title: string; objective: string; phase_id?: string; claim_ids?: string[]; dependency_ids?: string[]; created_at?: string; metadata?: Record<string, unknown> }
+  | { type: "create_claim"; id: string; statement: string; source_refs?: string[]; constraints?: string[]; status?: "proposed" | "supported" | "contradicted" | "inconclusive" | "withdrawn"; predictions?: string[]; falsifiers?: string[]; created_at?: string; metadata?: Record<string, unknown> }
+  | { type: "create_node"; id: string; title: string; objective: string; completion_exemption?: string; phase_id?: string; claim_ids?: string[]; dependency_ids?: string[]; created_at?: string; metadata?: Record<string, unknown> }
   | { type: "create_finding"; id: string; node_id: string; statement: string; kind: "fact" | "issue"; claim_ids?: string[]; source_refs?: string[]; value?: unknown; datatype?: string; unit?: string; provenance?: Record<string, unknown>; status?: "open" | "confirmed" | "resolved" | "accepted" | "superseded"; severity?: string; resolution?: string; created_at?: string; metadata?: Record<string, unknown> }
   | { type: "create_gate"; id: string; scope: "node" | "claim"; target_id: string; criteria?: unknown[]; created_at?: string; metadata?: Record<string, unknown> }
+  | { type: "revise_gate"; gate_id: string; criteria: unknown[]; reason: string }
   | { type: "set_lifecycle_action"; id: string; scope: "node" | "claim" | "gate"; target_id: string; action: "inspect" | "finalize" | "launch" | "analyze" | "review" | "evaluate" | "close"; status?: "required" | "deferred" | "blocked" | "completed"; reason?: string; request_id?: string; created_at?: string; metadata?: Record<string, unknown> }
   | { type: "resolve_lifecycle_action"; id: string; status: "required" | "deferred" | "blocked" | "completed"; reason?: string; request_id?: string }
-  | { type: "evaluate_gate"; gate_id: string; verdict: "pass" | "fail" | "inconclusive" | "blocked"; message?: string; evidence_refs?: string[]; created_at?: string }
+  | { type: "evaluate_gate"; gate_id: string; assessments: Array<Record<string, unknown>>; verdict: "pass" | "fail" | "inconclusive" | "blocked"; message?: string; evidence_refs?: string[]; created_at?: string }
   | { type: "set_node_state"; node_id: string; state: "planned" | "active" | "paused" | "blocked"; outcome?: never; summary?: string }
   | { type: "set_node_state"; node_id: string; state: "closed"; outcome: "completed" | "inconclusive" | "stopped"; summary?: string }
   | { type: "set_claim_status"; claim_id: string; status: "proposed" | "supported" | "contradicted" | "inconclusive" | "withdrawn" }
@@ -129,24 +135,24 @@ export type ResearchMapOperation =
 export interface ChangeToolParams extends WorkspaceToolParams {
   rationale: string;
   operations: ResearchMapOperation[];
-  basisRefs?: string[];
-  expectedRevision?: number;
+  basis_refs?: string[];
+  expected_revision?: number;
 }
 export interface LifecycleToolParams extends WorkspaceToolParams {
   operation: "strategy" | "interpret" | "checkpoint";
-  strategyOperation?: "plan" | "review";
+  strategy_operation?: "plan" | "review";
   plan?: Record<string, unknown>;
   review?: Record<string, unknown>;
   interpretation?: Record<string, unknown>;
   checkpoint?: Record<string, unknown>;
   rationale?: string;
-  basisRefs?: string[];
-  expectedRevision?: number;
-  eventId?: string;
+  basis_refs?: string[];
+  expected_revision?: number;
+  event_id?: string;
 }
 export interface MoleculeStructureToolParams extends WorkspaceToolParams {
   operation: "generate";
-  nodeId: string;
+  node_id: string;
   smiles: string;
   charge: number;
   multiplicity: number;
@@ -154,39 +160,46 @@ export interface MoleculeStructureToolParams extends WorkspaceToolParams {
 }
 export interface CompareToolParams extends WorkspaceToolParams {
   operation: "compare";
-  nodeId: string;
+  node_id: string;
   referenceArtifactId: string;
   targetArtifactId: string;
   parameters?: Record<string, unknown>;
 }
 export interface AnalyzeToolParams extends WorkspaceToolParams {
   operation: "run";
-  nodeId: string;
+  node_id: string;
   capability: string;
   capabilityVersion: string;
   inputArtifacts: Record<string, string[]>;
   parameters: Record<string, unknown>;
 }
 export interface JobStartToolParams extends WorkspaceToolParams {
-  nodeId?: string;
-  command: string[];
+  node_id?: string;
+  command?: string[];
+  request_id?: string;
+  request_file?: string;
+  request_sha256?: string;
+  work_id?: string;
+  validator_id?: string;
+  input_artifact_ids?: string[];
+  repeat?: { predecessor_job_id: string; reason: string; budget: string };
   cwd?: string;
   environment?: Record<string, string>;
-  inputs?: string[];
-  outputs?: Array<{ path: string; mediaType?: string }>;
-  timeoutSeconds?: number;
+  inputs?: Array<string | { source: string; destination: string; sha256?: string }>;
+  outputs?: Array<{ path: string; media_type?: string }>;
+  timeout_seconds?: number;
   platform?: string;
 }
-export interface JobStatusToolParams extends WorkspaceToolParams { jobId: string }
-export interface JobCollectToolParams extends WorkspaceToolParams { jobId: string; outputPaths?: string[] }
-export interface JobCancelToolParams extends WorkspaceToolParams { jobId: string }
+export interface JobStatusToolParams extends WorkspaceToolParams { job_id?: string; attempt_id?: string; event_id?: string }
+export interface JobCollectToolParams extends WorkspaceToolParams { job_id?: string; attempt_id?: string; event_id?: string }
+export interface JobCancelToolParams extends WorkspaceToolParams { job_id?: string; attempt_id?: string; event_id?: string }
 export interface JobProbeToolParams extends WorkspaceToolParams { platform?: string }
-export interface JobReconcileToolParams extends WorkspaceToolParams { jobId: string }
-export interface ArtifactRegisterToolParams extends WorkspaceToolParams { path: string; nodeId?: string; jobId?: string; mediaType?: string }
-export interface ArtifactCreateToolParams extends WorkspaceToolParams { content: string; name: string; nodeId?: string; mediaType?: string }
-export interface ArtifactReadToolParams extends WorkspaceToolParams { artifactId: string; offset?: number; limit?: number }
-export interface ArtifactDeriveToolParams extends WorkspaceToolParams { inputArtifactIds: string[]; operation: string; parameters?: Record<string, unknown> }
-export interface ArtifactLinkToolParams extends WorkspaceToolParams { artifactId: string; subjectId: string; relation?: string }
+export interface JobReconcileToolParams extends WorkspaceToolParams { job_id?: string; attempt_id?: string; event_id?: string }
+export interface ArtifactRegisterToolParams extends WorkspaceToolParams { path: string; node_id?: string; job_id?: string; media_type?: string }
+export interface ArtifactCreateToolParams extends WorkspaceToolParams { content: string; name: string; node_id?: string; media_type?: string }
+export interface ArtifactReadToolParams extends WorkspaceToolParams { artifact_id: string; offset?: number; limit?: number }
+export interface ArtifactDeriveToolParams extends WorkspaceToolParams { input_artifact_ids: string[]; operation: string; parameters?: Record<string, unknown> }
+export interface ArtifactLinkToolParams extends WorkspaceToolParams { artifact_id: string; subject_id: string; relation?: string }
 export interface NotifyToolParams extends WorkspaceToolParams {
   operation: "send";
   event: "progress" | "node_completed" | "calculation_failed" | "calculation_ambiguous" | "study_completed";

@@ -661,7 +661,7 @@ async function monitorWorkspaceIdentity(project) {
   try {
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
     if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)
-      || manifest.schema_version !== "research_state_workspace_1"
+      || manifest.schema_version !== "research_state_workspace_2"
       || manifest.workspace_mode !== "research"
       || manifest.state !== "ready"
       || typeof manifest.workspace_id !== "string"

@@ -10,7 +10,7 @@ import { create_app_server } from "../../apps/app-server/index.mjs";
 function workspace_manifest(workspace_root, workspace_mode = "research", workspace_id = "workspace_boundary") {
   const research = workspace_mode === "research";
   return {
-    schema_version: "research_state_workspace_1",
+    schema_version: "research_state_workspace_2",
     workspace_id,
     workspace_root,
     profile_id: `${workspace_mode}_workspace_1`,

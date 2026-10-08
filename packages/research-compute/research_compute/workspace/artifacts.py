@@ -298,9 +298,9 @@ def workspace_root(root: str | Path) -> Path:
         liveness = read_json(workspace / "lifecycle" / "liveness.json")
     except (OSError, ValueError) as exc:
         raise WorkspaceArtifactError(f"cannot read canonical ResearchMap state: {exc}") from exc
-    if not isinstance(context, dict) or context.get("schema_version") != "research_map_context_1":
+    if not isinstance(context, dict) or context.get("schema_version") != "research_map_context_2":
         raise WorkspaceArtifactError("invalid ResearchMap context")
-    if not isinstance(liveness, dict) or liveness.get("schema_version") != "research_liveness_1":
+    if not isinstance(liveness, dict) or liveness.get("schema_version") != "research_liveness_2":
         raise WorkspaceArtifactError("invalid ResearchMap liveness")
     if context.get("workspace_id") != identity.get("workspace_id") or liveness.get("workspace_id") != identity.get("workspace_id"):
         raise WorkspaceArtifactError("workspace identity does not match canonical ResearchMap state")

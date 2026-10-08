@@ -1169,7 +1169,7 @@ function readWorkspaceManifestSync(root) {
     const info = lstatSync(physical);
     if (!info.isDirectory() || info.isSymbolicLink()) return null;
     const manifest = JSON.parse(readFileSync(join(physical, "workspace_manifest.json"), "utf8"));
-    if (manifest?.schema_version !== "research_state_workspace_1"
+    if (manifest?.schema_version !== "research_state_workspace_2"
       || !WORKSPACE_ID.test(manifest.workspace_id)
       || manifest.workspace_mode !== "research"
       || manifest.state !== "ready"

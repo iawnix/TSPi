@@ -172,7 +172,7 @@ def _validate_manifest_context(
 ) -> None:
     if manifest is None:
         return
-    if manifest.get("schema_version") != "research_state_workspace_1":
+    if manifest.get("schema_version") != "research_state_workspace_2":
         _finding(findings, "error", "unsupported_workspace_manifest", "workspace manifest schema is unsupported", "workspace_manifest.json")
     mode = manifest.get("workspace_mode")
     kernel = manifest.get("research_state")
@@ -189,7 +189,7 @@ def _validate_manifest_context(
     elif mode != "research":
         _finding(findings, "error", "research_workspace_required", "workspace must use the Research workspace contract", "workspace_manifest.json")
     if context is not None:
-        if context.get("schema_version") != "research_map_context_1":
+        if context.get("schema_version") != "research_map_context_2":
             _finding(findings, "error", "unsupported_research_context", "ResearchMap context schema is unsupported", "research_map/context.json")
         if manifest.get("workspace_id") != context.get("workspace_id"):
             _finding(findings, "error", "workspace_identity_mismatch", "manifest and ResearchMap context workspace IDs differ", "research_map/context.json")

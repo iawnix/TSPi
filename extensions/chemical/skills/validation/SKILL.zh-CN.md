@@ -14,11 +14,14 @@ description: 根据鞍点、目标振动模式、结构、电子态与立体化�
 终止或单个负频本身不充分。
 
 将每个已核验属性记录为粒度明确的 FactFinding，将歧义、缺失检查、竞争振动模式、
-污染或结构不匹配记录为 IssueFinding。Finding 不会自动设置 Node 或 Claim 状态。只有
-明确验收条件需要留下评估时才使用 Gate。
+污染或结构不匹配记录为 IssueFinding。Finding 不会自动设置 Node 或 Claim 状态。
+启动验证 Job 前，用 Gate 登记明确的验收条件；任何完成条件豁免都必须在创建 Node 时说明。
 
 鞍点与振动模式证据见
 [transition_state_validation.zh-CN.md](references/transition_state_validation.zh-CN.md)，路径
 计算后的盆地身份判据见
 [connectivity_validation.zh-CN.md](references/connectivity_validation.zh-CN.md)，映射、对齐
 与立体化学比较见 [structure_validation.zh-CN.md](references/structure_validation.zh-CN.md)。
+
+
+注册验证器：调用 `job_start`，提供 `validator_id="chemical.gaussian_frequency"`、`node_id`、新的 `request_id` 和 `input_artifact_ids=[已收集的 parsed.json Artifact ID]`。验证器版本为 `1`。运行时记录实际执行及输入摘要。它仅检查正常结束和恰好一个负频率；振动模式性质、几何与 IRC 连通性仍须分别验证。

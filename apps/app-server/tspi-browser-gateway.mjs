@@ -17,7 +17,7 @@ if (!options.connect?.startsWith("unix://") || !options.workspace || !options["s
 const workspaceRoot = resolve(options.workspace);
 let workspaceManifest;
 try { workspaceManifest = JSON.parse(readFileSync(join(workspaceRoot, "workspace_manifest.json"), "utf8")); } catch (error) { throw new Error(`Cannot read workspace manifest: ${workspaceRoot}`, { cause: error }); }
-if (workspaceManifest?.schema_version !== "research_state_workspace_1"
+if (workspaceManifest?.schema_version !== "research_state_workspace_2"
   || workspaceManifest.state !== "ready"
   || resolve(workspaceManifest.workspace_root || "") !== workspaceRoot) {
   throw new Error("Gateway workspace manifest is invalid or not admitted");

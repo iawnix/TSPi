@@ -1,7 +1,7 @@
 # ChangeSet 合同
 
 `research_change` 是 `ResearchMap` 唯一的公共变更边界。其公共 payload 包含
-`rationale`、可选 `basisRefs`、可选 `expectedRevision` 和非空 `operations` 数组。Host 会在发往
+`rationale`、可选 `basis_refs`、可选 `expected_revision` 和非空 `operations` 数组。Host 会在发往
 Research State 的内部请求中附加 `principal=root_agent` 与 `authority=kernel_write`；这两个 authority 字段
 不是公共 tool 参数。
 使用不熟悉的 operation 前，先查询 `research_read mode=operations` 获取当前目录。
@@ -38,3 +38,15 @@ memory 与 manifest。被拒绝的请求不会改变之前的 map。不要直接
 `FactFinding`；局限、异常、冲突或未决问题使用 `IssueFinding`。`create_gate` 与
 `evaluate_gate` 构成 Gate 生命周期。Claim status 与 Gate verdict 相互独立；Gate 评估
 不会静默改变 Claim。
+
+
+启动计算前，为 Node 登记明确 Gate，或在创建 Node 时用 `completion_exemption` 写出豁免理由。
+每个条件必须有 `id` 和 `source_type`：`runtime_fact`、`validator_result` 或 `agent_assessment`。
+评估通过 `assessments` 覆盖每个条件；机器条件引用真实 `result_receipt_ref`，代理评估必须提供理由。
+修改条件用 `revise_gate` 并提供 `criteria` 与 `reason`；保留旧版本，旧评估不再表示新条件通过。
+
+`context` 是有限决策视图，详情使用 `detail`；证据用 `attempt_id`/`job_id` 过滤，`offset`/`limit` 分页。
+Claim 的 `source_refs` 与 `constraints` 保存目标来源和约束。不要把模型文字登记成计算原始输出。
+最终解释使用 `kind=result`，引用 `job_collect` 返回的回执与直接证据；其他运行放在比较或背景角色。
+`kind=observation`、`execution_issue` 引用运行时 `execution_observation_ref`。
+更正解释使用 `supersedes_id`。输出版本变化会使依赖解释与机器 Gate 评估需要复核。

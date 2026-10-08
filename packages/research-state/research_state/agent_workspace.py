@@ -24,9 +24,9 @@ from typing import Any, Iterator, Protocol
 from .admission import tool_admission
 from .workspace import WorkspaceModeError, _validate_layout, validate_workspace_manifest
 
-CONTEXT_SCHEMA = "research_map_context_1"
-LIVENESS_SCHEMA = "research_liveness_1"
-CHECKPOINT_SCHEMA = "research_checkpoint_1"
+CONTEXT_SCHEMA = "research_map_context_2"
+LIVENESS_SCHEMA = "research_liveness_2"
+CHECKPOINT_SCHEMA = "research_checkpoint_2"
 ADMISSION_RESULT_SCHEMA = "research_admission_result/1"
 ADMISSION_PENDING = "admission_pending"
 ADMITTED = "admitted"
@@ -46,20 +46,19 @@ RESEARCH_CONTEXT_COLLECTIONS = (
 )
 
 # Attempt state is an operational lifecycle and does not change ResearchNode
-# state. ``completed`` remains readable for the initial workspace release;
-# providers should emit ``succeeded`` for new runs.
+# state. Execution, collection and scientific validation are separate facts.
 ATTEMPT_STATES = (
-    "started", "running", "succeeded", "failed", "timed_out", "cancelled", "completed",
+    "started", "running", "succeeded", "failed", "timed_out", "cancelled", "unknown",
 )
-ATTEMPT_TERMINAL_STATES = frozenset({"succeeded", "failed", "timed_out", "cancelled", "completed"})
+ATTEMPT_TERMINAL_STATES = frozenset({"succeeded", "failed", "timed_out", "cancelled"})
 ATTEMPT_TRANSITIONS = {
-    "started": frozenset({"started", "running", *ATTEMPT_TERMINAL_STATES}),
-    "running": frozenset({"running", *ATTEMPT_TERMINAL_STATES}),
+    "started": frozenset({"started", "running", "unknown", *ATTEMPT_TERMINAL_STATES}),
+    "running": frozenset({"running", "unknown", *ATTEMPT_TERMINAL_STATES}),
     "succeeded": frozenset({"succeeded"}),
     "failed": frozenset({"failed"}),
     "timed_out": frozenset({"timed_out"}),
     "cancelled": frozenset({"cancelled"}),
-    "completed": frozenset({"completed"}),
+    "unknown": frozenset({"unknown", "started", "running", *ATTEMPT_TERMINAL_STATES}),
 }
 
 
@@ -160,7 +159,8 @@ def _validate_context_collections(context: dict[str, Any]) -> None:
 
 def _read_json(path: Path, label: str) -> dict[str, Any]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        from .transactions import read_json
+        value = read_json(path)
     except FileNotFoundError as exc:
         raise AgentWorkspaceError(f"{label}_missing") from exc
     except (OSError, json.JSONDecodeError) as exc:
@@ -242,7 +242,7 @@ def _load_state(
         _validate_layout(manifest, path, allow_partial_admission=allow_partial_admission)
     except WorkspaceModeError as exc:
         raise AgentWorkspaceError(str(exc)) from exc
-    if manifest.get("schema_version") != "research_state_workspace_1":
+    if manifest.get("schema_version") != "research_state_workspace_2":
         raise AgentWorkspaceError("unsupported_workspace_manifest")
     if manifest.get("workspace_mode") != "research":
         raise AgentWorkspaceError("research_workspace_mode_required")
@@ -360,8 +360,8 @@ def _require_decision_ready(
     ):
         return
     execution_types = {
-        "create_attempt", "register_attempt", "transition_attempt", "update_attempt", "reconcile_attempt",
-        "create_artifact", "register_artifact", "create_evidence", "link_evidence",
+        "register_attempt", "transition_attempt", "reconcile_attempt",
+        "register_artifact", "link_evidence",
         "register_evidence", "create_finding", "resolve_issue", "create_gate", "evaluate_gate",
     }
     if any(
@@ -431,7 +431,7 @@ def _liveness_projection(context, liveness, checkpoint=None):
     if result.get("disposition") == "user_input_required":
         result["lifecycle"] = "user_input_required"
     nodes = {n["id"]: n for n in _items(context, "nodes")}
-    running = [a for a in _items(context, "attempts") if a.get("state") in {"started", "running"}]
+    running = [a for a in _items(context, "attempts") if a.get("state") in {"started", "running", "unknown"} or a.get("metadata", {}).get("execution_conflict")]
     running_nodes = {a.get("node_id") for a in running}
     plans = [p for p in _items(context, "strategy_plans") if p.get("status", "proposed") in {"proposed", "active"}]
     ready = [n["id"] for n in nodes.values()
@@ -533,7 +533,7 @@ def _base_liveness_projection(
         if not isinstance(attempt, dict):
             continue
         state = attempt.get("state") or attempt.get("status")
-        if state not in {"started", "running"}:
+        if state not in {"started", "running", "unknown"}:
             continue
         attempt_node = attempt.get("node_id") or attempt.get("node_ref")
         attempt_id = attempt.get("id") or attempt.get("attempt_id") or attempt.get("intent_id")
@@ -714,10 +714,18 @@ def _validate_checkpoint_lifecycle(context: dict[str, Any], checkpoint: dict[str
         if missing:
             raise AgentWorkspaceError("continue_required checkpoint needs an active StrategyPlan for Claims: " + ", ".join(missing))
     if disposition == "terminal":
+        from .invariants import active_attempts
+        active = active_attempts(context)
+        if active:
+            raise AgentWorkspaceError("terminal_with_active_attempts: " + ", ".join(active))
+        from .invariants import validate_context
+        problems = validate_context(context)["issues"]
+        if problems:
+            raise AgentWorkspaceError("terminal_state_inconsistent: " + ", ".join(i["code"] for i in problems))
         scoped_nodes = set(node_ids)
         for claim_id in claim_ids:
             scoped_nodes.update(claim_by_id[claim_id].get("node_ids", []))
-        open_nodes = sorted(node_id for node_id in scoped_nodes if node_id in node_by_id and node_by_id[node_id].get("state") != "closed")
+        open_nodes = sorted(node_id for node_id, node in node_by_id.items() if node.get("state") != "closed")
         if open_nodes:
             raise AgentWorkspaceError("terminal checkpoint requires closed Nodes: " + ", ".join(open_nodes))
     scoped_nodes = set(node_ids)
@@ -736,11 +744,9 @@ def _validate_checkpoint_lifecycle(context: dict[str, Any], checkpoint: dict[str
 
 
 def _expected_revision(request: dict[str, Any], current: int) -> None:
-    snake = request.get("expected_revision")
-    camel = request.get("expectedRevision")
-    if snake is not None and camel is not None and snake != camel:
-        raise AgentWorkspaceError("research_revision_expectation_mismatch")
-    value = snake if snake is not None else camel
+    if any(re.search(r"[A-Z]", key) for key in request):
+        raise AgentWorkspaceError("schema_field_invalid: request fields use snake_case")
+    value = request.get("expected_revision")
     if value is not None and (type(value) is not int or value < 0):
         raise AgentWorkspaceError("expected_revision must be a non-negative integer")
     if value is not None and value != current:
@@ -818,8 +824,8 @@ def _transition_attempt(
     next_state = _attempt_state(operation.get("state"))
     recoverable = (
         allow_terminal_recovery
-        and previous in {"failed", "timed_out", "cancelled"}
-        and next_state in {"completed", "succeeded"}
+        and previous in ATTEMPT_TERMINAL_STATES
+        and next_state in ATTEMPT_TERMINAL_STATES
     )
     if next_state not in ATTEMPT_TRANSITIONS[previous] and not recoverable:
         raise AgentWorkspaceError(f"invalid_attempt_transition: {previous} -> {next_state}")
@@ -833,7 +839,8 @@ def _transition_attempt(
     attempt["state"] = next_state
     attempt["updated_at"] = updated_at
     if next_state in ATTEMPT_TERMINAL_STATES:
-        attempt["finished_at"] = finished_at or attempt.get("finished_at") or updated_at
+        attempt["finished_at"] = (finished_at if "finished_at" in operation
+                                  else attempt.get("finished_at") or updated_at)
     elif finished_at is not None:
         raise AgentWorkspaceError("operation.finished_at is only valid for a terminal attempt state")
     if "error" in operation:
@@ -907,10 +914,24 @@ def _claim_relation_would_cycle(context: dict[str, Any], source_id: str, target_
     return any(visit(node_id) for node_id in graph)
 
 
-def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str | None:
+def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root: Path) -> str | None:
     operation = _object(operation, "ChangeSet operation")
+    if {"owner_node", "source_intent_id"}.intersection(operation):
+        raise AgentWorkspaceError("schema_field_invalid: retired source fields are not accepted")
+    if any(re.search(r"[A-Z]", key) for key in operation):
+        raise AgentWorkspaceError("schema_field_invalid: operation fields use snake_case")
     kind = operation.get("type")
     created_at = operation.get("created_at") if isinstance(operation.get("created_at"), str) else _now()
+    from .write_origin import is_runtime_write
+    if not is_runtime_write():
+        protected = {"job_id", "execution_observation", "observed_at", "output_validation", "derivation_executed"}
+        if protected.intersection(operation.get("metadata", {})):
+            raise AgentWorkspaceError("runtime_fact_write_forbidden: execution metadata is runtime-owned")
+        refs = [operation.get("attempt_id"), operation.get("producer_attempt_id")]
+        if kind in {"transition_attempt", "reconcile_attempt"}:
+            refs.append(operation.get("id"))
+        if any(a.get("id") in refs and a.get("metadata", {}).get("job_id") for a in context["attempts"]):
+            raise AgentWorkspaceError("runtime_fact_write_forbidden: use job_status/collect/reconcile")
     if kind == "create_phase":
         item_id = _identifier(operation.get("id"), "operation.id")
         phases = _array(context, "phases")
@@ -932,6 +953,7 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             "metadata": dict(operation.get("metadata", {})) if isinstance(operation.get("metadata"), dict) else {},
             "statement": _string(operation, "statement"),
             "status": operation.get("status") if isinstance(operation.get("status"), str) else "proposed",
+            "source_refs": _string_list(operation, "source_refs"), "constraints": _string_list(operation, "constraints"),
             "predictions": list(operation.get("predictions", [])) if isinstance(operation.get("predictions"), list) else [],
             "falsifiers": list(operation.get("falsifiers", [])) if isinstance(operation.get("falsifiers"), list) else [],
             "node_ids": [], "finding_ids": [], "gate_ids": [],
@@ -964,7 +986,7 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
         claim["status"] = verdict
         return assessment_id
     if kind == "revise_claim":
-        source_id = _claim_identifier(operation.get("source_claim_id", operation.get("claim_id")), "operation.source_claim_id")
+        source_id = _claim_identifier(operation.get("source_claim_id"), "operation.source_claim_id")
         source = _lookup(context, "claims", source_id, "claim")
         target_id = _claim_identifier(operation.get("target_claim_id"), "operation.target_claim_id")
         claims = _items(context, "claims")
@@ -987,7 +1009,7 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             "node_ids": [], "finding_ids": [], "gate_ids": [], "assessment_ids": [], "revision_ids": [],
         }
         claims.append(target)
-        revision_id = _identifier(operation.get("revision_id", operation.get("id")), "operation.revision_id")
+        revision_id = _identifier(operation.get("revision_id"), "operation.revision_id")
         revisions = _items(context, "claim_revisions")
         _unique(revisions, revision_id, "claim revision")
         revisions.append({
@@ -1038,6 +1060,9 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             claim.setdefault("node_ids", [])
             if item_id not in claim["node_ids"]:
                 claim["node_ids"].append(item_id)
+        exemption = operation.get("completion_exemption")
+        if exemption is not None and (not isinstance(exemption, str) or not exemption.strip()):
+            raise AgentWorkspaceError("completion_exemption_requires_reason")
         nodes.append({
             "type": "research_node", "id": item_id, "created_at": created_at,
             "metadata": dict(operation.get("metadata", {})) if isinstance(operation.get("metadata"), dict) else {},
@@ -1045,6 +1070,7 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             "phase_id": phase_id, "claim_ids": list(claim_ids), "dependency_ids": list(dependency_ids),
             "finding_ids": [], "gate_ids": [], "attempt_refs": [], "artifact_refs": [],
             "state": "planned", "outcome": None, "outcome_summary": None,
+            "completion_exemption": operation.get("completion_exemption"),
         })
         if phase is not None:
             phase.setdefault("node_ids", [])
@@ -1072,12 +1098,13 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
                 gate for gate in _items(context, "gates")
                 if gate.get("scope") == "node" and gate.get("target_id") == node_id
             ]
-            if node_gates and any(
-                not gate.get("evaluations")
-                or gate["evaluations"][-1].get("verdict") != "pass"
-                for gate in node_gates
-            ):
+            from .invariants import gate_evaluation_current
+            if node_gates and any(not gate_evaluation_current(context, gate) for gate in node_gates):
                 raise AgentWorkspaceError(f"node {node_id} cannot be completed before a NodeGate passes")
+        if state == "closed" and any(a["node_id"] == node_id and (a["state"] not in ATTEMPT_TERMINAL_STATES or a.get("metadata", {}).get("execution_conflict")) for a in context["attempts"]):
+            raise AgentWorkspaceError("node_has_active_attempts")
+        if state == "closed" and outcome == "completed" and not node.get("gate_ids") and not node.get("completion_exemption"):
+            raise AgentWorkspaceError("completion_conditions_required")
         node["state"] = state
         node["outcome"] = outcome if state == "closed" else None
         node["outcome_summary"] = operation.get("summary") if isinstance(operation.get("summary"), str) else None
@@ -1254,7 +1281,13 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
         criteria = operation.get("criteria", [])
         if not isinstance(criteria, list) or any(not isinstance(item, dict) for item in criteria):
             raise AgentWorkspaceError("operation.criteria must be an array of objects")
+        from .invariants import validate_criteria
+        try:
+            validate_criteria(criteria)
+        except ValueError as exc:
+            raise AgentWorkspaceError(str(exc)) from exc
         gates.append({
+            "version": 1,
             "type": "node_gate" if scope == "node" else "claim_gate",
             "id": item_id,
             "created_at": created_at,
@@ -1266,6 +1299,23 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
         })
         _attach_unique(target, "gate_ids", item_id)
         return item_id
+    if kind == "revise_gate":
+        gate = _lookup(context, "gates", _identifier(operation.get("gate_id"), "gate_id"), "gate")
+        reason = _string(operation, "reason")
+        criteria = operation.get("criteria")
+        from .invariants import validate_criteria
+        try:
+            validate_criteria(criteria)
+        except ValueError as exc:
+            raise AgentWorkspaceError(str(exc)) from exc
+        target = _lookup(context, "nodes" if gate["scope"] == "node" else "claims", gate["target_id"], gate["scope"])
+        if target.get("state") == "closed":
+            raise AgentWorkspaceError("gate_target_closed: create a new research scope")
+        gate.setdefault("revisions", []).append({"version": gate["version"], "criteria": copy.deepcopy(gate["criteria"]),
+            "reason": reason, "revised_at": created_at})
+        gate["version"] += 1
+        gate["criteria"] = copy.deepcopy(criteria)
+        return None
     if kind == "evaluate_gate":
         gate_id = _identifier(operation.get("gate_id"), "operation.gate_id")
         gate = _lookup(context, "gates", gate_id, "gate")
@@ -1275,7 +1325,14 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
         evidence_refs = _string_list(operation, "evidence_refs")
         if evidence_refs:
             _refs_exist(context, evidence_refs, label="operation.evidence_refs")
+        from .invariants import evaluate_criteria
+        try:
+            versions = evaluate_criteria(root, context, gate, operation)
+        except (ValueError, OSError) as exc:
+            raise AgentWorkspaceError(str(exc)) from exc
         gate.setdefault("evaluations", []).append({
+            "gate_version": gate["version"], "result_versions": versions,
+            "assessments": copy.deepcopy(operation.get("assessments", [])),
             "verdict": verdict,
             "checked_at": created_at,
             "message": operation.get("message", "") if isinstance(operation.get("message", ""), str) else "",
@@ -1283,17 +1340,17 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             "input_revision": context.get("revision", 0),
         })
         return None
-    if kind in {"create_artifact", "register_artifact"}:
-        item_id = _identifier(operation.get("id", operation.get("artifact_id")), "operation.id")
+    if kind == "register_artifact":
+        item_id = _identifier(operation.get("id"), "operation.id")
         artifacts = _items(context, "artifacts")
         _unique(artifacts, item_id, "artifact")
-        node_id = operation.get("node_id", operation.get("owner_node"))
+        node_id = operation.get("node_id")
         if node_id is not None:
             node_id = _node_identifier(node_id, "operation.node_id")
             node = _lookup(context, "nodes", node_id, "node")
         else:
             node = None
-        producer_attempt_id = operation.get("producer_attempt_id", operation.get("source_intent_id"))
+        producer_attempt_id = operation.get("producer_attempt_id")
         if producer_attempt_id is not None:
             producer_attempt_id = _identifier(producer_attempt_id, "operation.producer_attempt_id")
             producer_attempt = _lookup(context, "attempts", producer_attempt_id, "attempt")
@@ -1308,7 +1365,7 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             missing = sorted(set(input_artifact_ids) - known)
             if missing:
                 raise AgentWorkspaceError(f"operation.input_artifact_ids references unknown artifact: {', '.join(missing)}")
-        location = operation.get("location", operation.get("path", ""))
+        location = operation.get("location", "")
         if not isinstance(location, str) or not location.strip():
             raise AgentWorkspaceError("operation.location must be a non-empty string")
         artifact = {
@@ -1330,7 +1387,7 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             attempt = _lookup(context, "attempts", producer_attempt_id, "attempt")
             _attach_unique(attempt, "output_artifact_ids", item_id)
         return item_id
-    if kind in {"create_attempt", "register_attempt"}:
+    if kind == "register_attempt":
         item_id = _identifier(operation.get("id"), "operation.id")
         attempts = _items(context, "attempts")
         _unique(attempts, item_id, "attempt")
@@ -1344,14 +1401,14 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             raise AgentWorkspaceError(f"operation artifact references unknown artifact: {', '.join(missing)}")
         state = _attempt_state(operation.get("state"))
         updated_at = _attempt_timestamp(operation.get("updated_at"), "operation.updated_at") or created_at
-        started_at = _attempt_timestamp(operation.get("started_at"), "operation.started_at") or created_at
+        started_at = _attempt_timestamp(operation.get("started_at"), "operation.started_at") if "started_at" in operation else created_at
         finished_at = _attempt_timestamp(operation.get("finished_at"), "operation.finished_at")
         if state not in ATTEMPT_TERMINAL_STATES and finished_at is not None:
             raise AgentWorkspaceError("operation.finished_at is only valid for a terminal attempt state")
         attempt = {
             "type": "attempt_record", "id": item_id, "created_at": created_at,
             "updated_at": updated_at, "node_id": node_id,
-            "execution_kind": operation.get("execution_kind", "legacy_capability"),
+            "execution_kind": operation.get("execution_kind", "manual"),
             **({"capability": _string(operation, "capability"), "capability_version": _string(operation, "capability_version")} if "capability" in operation else {}),
             "state": state, "environment": operation.get("environment"), "started_at": started_at,
             "input_artifact_ids": input_artifact_ids, "output_artifact_ids": output_artifact_ids,
@@ -1370,8 +1427,8 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
         attempts.append(attempt)
         _attach_unique(node, "attempt_refs", item_id)
         return item_id
-    if kind in {"transition_attempt", "update_attempt", "reconcile_attempt"}:
-        attempt_id = _identifier(operation.get("attempt_id", operation.get("id")), "operation.attempt_id")
+    if kind in {"transition_attempt", "reconcile_attempt"}:
+        attempt_id = _identifier(operation.get("attempt_id"), "operation.attempt_id")
         attempt = _lookup(context, "attempts", attempt_id, "attempt")
         node_id = operation.get("node_id")
         if node_id is not None and _node_identifier(node_id, "operation.node_id") != attempt.get("node_id"):
@@ -1384,6 +1441,11 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             created_at,
             allow_terminal_recovery=kind == "reconcile_attempt",
         )
+        latest_result = attempt.get("metadata", {}).get("latest_result_receipt_ref")
+        for explanation in context.get("attempt_interpretations", []):
+            if (explanation.get("attempt_ref") == attempt_id and explanation.get("kind") == "result"
+                    and explanation.get("result_receipt_ref") != latest_result and explanation.get("review_state") == "current"):
+                explanation["review_state"] = "needs_review"
         input_ids = None if "input_artifact_ids" not in operation else _string_list(operation, "input_artifact_ids")
         output_ids = None if "output_artifact_ids" not in operation else _string_list(operation, "output_artifact_ids")
         known = {row.get("id") for row in _items(context, "artifacts")}
@@ -1403,13 +1465,13 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
                     raise AgentWorkspaceError(f"artifact {artifact_id} already belongs to attempt {artifact['producer_attempt_id']}")
                 artifact["producer_attempt_id"] = attempt["id"]
         return None
-    if kind in {"create_evidence", "link_evidence", "register_evidence_link"}:
+    if kind == "link_evidence":
         item_id = _identifier(operation.get("id"), "operation.id")
         links = _items(context, "evidence_links")
         _unique(links, item_id, "evidence link")
         artifact_id = _identifier(operation.get("artifact_id"), "operation.artifact_id")
         artifact = _lookup(context, "artifacts", artifact_id, "artifact")
-        attempt_ref = operation.get("attempt_ref", operation.get("attempt_id"))
+        attempt_ref = operation.get("attempt_ref")
         attempt = None
         if attempt_ref is not None:
             attempt_ref = _identifier(attempt_ref, "operation.attempt_ref")
@@ -1439,7 +1501,7 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             _attach_unique(subject, "evidence_link_ids", item_id)
         return item_id
     if kind == "register_evidence":
-        records = operation.get("records", operation)
+        records = operation
         if not isinstance(records, dict):
             raise AgentWorkspaceError("operation.records must be an object")
         attempt_rows = records.get("attempts", [])
@@ -1450,8 +1512,7 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
                 raise AgentWorkspaceError(f"operation.{key} must be an array")
         # Attempts and artifacts refer to one another.  Materialize attempts
         # without deferred artifact arrays, then artifacts, then fill those
-        # arrays after all IDs are known.  This preserves the atomic ChangeSet
-        # while accepting the same batch shape as the legacy evidence API.
+        # arrays after all IDs are known in the same atomic ChangeSet.
         deferred_attempt_refs: list[tuple[str, list[str], list[str]]] = []
         for row in attempt_rows:
             item = dict(row)
@@ -1459,13 +1520,13 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             output_ids = _string_list(item, "output_artifact_ids")
             item["input_artifact_ids"] = []
             item["output_artifact_ids"] = []
-            item["type"] = "create_attempt"
-            attempt_id = _apply_operation(context, item)
+            item["type"] = "register_attempt"
+            attempt_id = _apply_operation(context, item, root=root)
             deferred_attempt_refs.append((attempt_id, input_ids, output_ids))
         for row in artifact_rows:
             item = dict(row)
-            item["type"] = "create_artifact"
-            _apply_operation(context, item)
+            item["type"] = "register_artifact"
+            _apply_operation(context, item, root=root)
         known_artifacts = {row.get("id") for row in _items(context, "artifacts")}
         for attempt_id, input_ids, output_ids in deferred_attempt_refs:
             missing = sorted((set(input_ids) | set(output_ids)) - known_artifacts)
@@ -1476,10 +1537,10 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             attempt["output_artifact_ids"] = output_ids
         for row in link_rows:
             item = dict(row)
-            item["type"] = "create_evidence"
-            _apply_operation(context, item)
+            item["type"] = "link_evidence"
+            _apply_operation(context, item, root=root)
         return None
-    if kind in {"create_strategy", "create_strategy_plan"}:
+    if kind == "create_strategy_plan":
         item_id = _identifier(operation.get("id"), "operation.id")
         plans = _items(context, "strategy_plans")
         _unique(plans, item_id, "strategy plan")
@@ -1501,7 +1562,7 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             "actor": _object_field(operation, "actor"), "metadata": _object_field(operation, "metadata"),
         })
         return item_id
-    if kind in {"create_strategy_review", "strategy_review"}:
+    if kind == "create_strategy_review":
         item_id = _identifier(operation.get("id"), "operation.id")
         reviews = _items(context, "strategy_reviews")
         _unique(reviews, item_id, "strategy review")
@@ -1531,15 +1592,15 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             "actor": _object_field(operation, "actor"), "metadata": _object_field(operation, "metadata"),
         })
         return item_id
-    if kind in {"create_interpretation", "create_attempt_interpretation"}:
+    if kind == "create_interpretation":
         item_id = _identifier(operation.get("id"), "operation.id")
         interpretations = _items(context, "attempt_interpretations")
         _unique(interpretations, item_id, "interpretation")
         claim_id = _claim_identifier(operation.get("claim_id"), "operation.claim_id")
         _lookup(context, "claims", claim_id, "claim")
         attempt_ref = _identifier(operation.get("attempt_ref"), "operation.attempt_ref")
-        _lookup(context, "attempts", attempt_ref, "attempt")
-        node_id = operation.get("node_id")
+        attempt = _lookup(context, "attempts", attempt_ref, "attempt")
+        node_id = operation.get("node_id", attempt["node_id"])
         if node_id is not None:
             node_id = _node_identifier(node_id, "operation.node_id")
             node = _lookup(context, "nodes", node_id, "node")
@@ -1551,14 +1612,60 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             _lookup(context, "findings", finding_id, "finding")
         for gate_id in gate_ids:
             _lookup(context, "gates", gate_id, "gate")
-        artifact_refs = _string_list(operation, "artifact_refs")
-        if artifact_refs:
-            _refs_exist(context, artifact_refs, label="operation.artifact_refs", allow_evidence=False)
+        if "artifact_refs" in operation:
+            raise AgentWorkspaceError("interpretation_schema_invalid: use explicit direct_evidence_refs, comparison_evidence_refs and background_evidence_refs")
+        roles = {key: _string_list(operation, key) for key in
+                 ("direct_evidence_refs", "comparison_evidence_refs", "background_evidence_refs")}
+        for key, refs in roles.items():
+            _refs_exist(context, refs, label="operation." + key, allow_evidence=False)
+        from .invariants import belongs_to_attempt
+        artifacts = {a["id"]: a for a in _items(context, "artifacts")}
+        for ref in roles["direct_evidence_refs"]:
+            if not belongs_to_attempt(artifacts, ref, attempt_ref):
+                raise AgentWorkspaceError(f"evidence_producer_mismatch: {ref} does not belong to {attempt_ref}; query research_read evidence with attempt_id")
+        if attempt.get("node_id") != node_id and node_id is not None:
+            raise AgentWorkspaceError("interpretation_node_mismatch")
+        interpretation_kind = operation.get("kind")
+        if interpretation_kind not in {"result", "observation", "execution_issue"}:
+            raise AgentWorkspaceError("interpretation_kind_required")
+        result_ref = operation.get("result_receipt_ref")
+        observation_ref = operation.get("execution_observation_ref")
+        if attempt.get("metadata", {}).get("execution_conflict"):
+            raise AgentWorkspaceError("job_terminal_conflict: reconcile before interpreting")
+        if attempt.get("metadata", {}).get("job_id"):
+            if interpretation_kind == "result":
+                result = _read_json(root / "operations/results" / (_identifier(result_ref, "result_receipt_ref") + ".json"), "result_receipt")
+                if result.get("attempt_id") != attempt_ref or result.get("job_id") != attempt["metadata"]["job_id"]:
+                    raise AgentWorkspaceError("result_receipt_mismatch")
+                if result.get("execution_state") not in ATTEMPT_TERMINAL_STATES:
+                    raise AgentWorkspaceError("result_receipt_not_terminal")
+                if result_ref != attempt.get("metadata", {}).get("latest_result_receipt_ref"):
+                    raise AgentWorkspaceError("result_receipt_stale: collect current outputs")
+                if result.get("artifact_refs") and not roles["direct_evidence_refs"]:
+                    raise AgentWorkspaceError("interpretation_direct_evidence_required")
+                from .invariants import belongs_to_result
+                if not all(belongs_to_result(artifacts, ref, set(result.get("artifact_refs", []))) for ref in roles["direct_evidence_refs"]):
+                    raise AgentWorkspaceError("result_evidence_version_mismatch")
+            else:
+                observation = attempt.get("metadata", {}).get("execution_observation", {})
+                if not observation_ref or observation_ref != observation.get("observation_id"):
+                    raise AgentWorkspaceError("execution_observation_required")
+                if interpretation_kind == "observation" and attempt["state"] in ATTEMPT_TERMINAL_STATES:
+                    raise AgentWorkspaceError("interpretation_already_terminal: collect a result")
+        supersedes = operation.get("supersedes_id")
+        if supersedes:
+            prior = _lookup(context, "attempt_interpretations", supersedes, "interpretation")
+            if prior["attempt_ref"] != attempt_ref:
+                raise AgentWorkspaceError("interpretation_supersedes_mismatch")
+            prior["review_state"] = "superseded"
+            prior["superseded_by"] = item_id
         interpretations.append({
             "type": "attempt_interpretation", "id": item_id, "created_at": created_at,
             "claim_id": claim_id, "node_id": node_id, "attempt_ref": attempt_ref,
             "summary": _string(operation, "summary"), "outcome": _string(operation, "outcome"),
-            "artifact_refs": artifact_refs, "finding_ids": finding_ids, "gate_ids": gate_ids,
+            **roles, "kind": interpretation_kind, "result_receipt_ref": result_ref,
+            "execution_observation_ref": observation_ref, "supersedes_id": supersedes, "review_state": "current",
+            "finding_ids": finding_ids, "gate_ids": gate_ids,
             "actor": _object_field(operation, "actor"), "metadata": _object_field(operation, "metadata"),
         })
         return item_id
@@ -1711,7 +1818,7 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
         known_attempts = {row["id"] for row in context["attempts"]}
         operational = all(
             isinstance(op, dict) and (
-                op.get("type") in {"transition_attempt", "update_attempt"}
+                op.get("type") == "transition_attempt"
                 and op.get("attempt_id", op.get("id")) in known_attempts
                 or op.get("type") == "register_artifact"
                 and op.get("producer_attempt_id") in known_attempts
@@ -1722,7 +1829,7 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
         updated = copy.deepcopy(context)
         created_ids: list[str] = []
         for operation in operations:
-            created = _apply_operation(updated, operation)
+            created = _apply_operation(updated, operation, root=Path(root))
             if created is not None:
                 created_ids.append(created)
         updated["research_obligations"] = _research_obligations(updated)

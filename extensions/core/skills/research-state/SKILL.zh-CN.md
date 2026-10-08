@@ -9,8 +9,8 @@ description: 读取、校验并原子更新由 Phase、Claim、Node、Finding、
 
 当任务涉及项目研究状态、对象查询、ResearchMap 校验、有界 Research Memory 读取，或通过
 `research_read`、`research_change` 执行原子变更时使用本 Skill。研究 workspace 必须具备
-`workspace_manifest.json`（`research_state_workspace_1`）、`research_map/context.json`
-（`research_map_context_1`）和 `lifecycle/liveness.json`（`research_liveness_1`）。Context
+`workspace_manifest.json`（`research_state_workspace_2`）、`research_map/context.json`
+（`research_map_context_2`）和 `lifecycle/liveness.json`（`research_liveness_2`）。Context
 始终包含数组 collection：`phases`、`claims`、`nodes`、`findings`、`gates`、
 `claim_relations`、`attempts`、`artifacts`、`evidence_links`、`lifecycle_actions`、
 `strategy_plans`、`strategy_reviews`、`attempt_interpretations`；`focus.claim_ids` 和
@@ -26,7 +26,7 @@ Node 的状态与结果独立于 Claim 状态表达研究进展。
 
 读取时选择足以回答问题的最小 `research_read` 模式。写入陌生操作前先查询
 `mode=operations`。所有修改都以显式 ChangeSet 通过 `research_change` 提交；当过期写入不安全时
-使用 `expectedRevision`。Host 会在发往 Research State 的内部请求中附加 `principal=root_agent` 和
+使用 `expected_revision`。Host 会在发往 Research State 的内部请求中附加 `principal=root_agent` 和
 `authority=kernel_write`；这两个 authority 字段不是公共 tool 参数。不要直接编辑 canonical 文档，
 也不要访问旧 JSON/SQLite 存储。
 
@@ -64,18 +64,21 @@ Research State 会在提交一个新 revision 前校验引用、反向索引、�
 ```json
 {
   "interpretation": {
+    "kind": "result",
+    "result_receipt_ref": "result_<exact ID returned by job_collect>",
+    "direct_evidence_refs": ["art_<exact artifact returned by job_collect>"],
     "id": "interpretation_result_1",
-    "claimId": "claim_1",
-    "attemptRef": "attempt_1",
+    "claim_id": "claim_1",
+    "attempt_ref": "attempt_1",
     "summary": "The inspected result supports the claim within the tested conditions.",
     "outcome": "supports"
   }
 }
 ```
 
-`claimId`/`attemptRef` 也接受 `claim_id`/`attempt_ref`，并可放在调用参数顶层。
-`nodeId` 可选，提供时必须指向与该 Claim 关联的既有 Node。
-请求的可选 `eventId` 不能代替解释记录必填的 `id`。引用结果文件时用已登记的
-`artifact_refs`；执行成功本身不足以证明科学结论成立。
+`claim_id` 与 `attempt_ref` 必须放在 `interpretation` 内。公开字段统一使用 snake_case。
+`node_id` 可选，提供时必须指向与该 Claim 关联的既有 Node。
+请求的可选 `event_id` 不能代替解释记录必填的 `id`。引用结果文件时用已登记的
+`direct_evidence_refs`；执行成功本身不足以证明科学结论成立。
 
 问题修复后通过 research_change 使用 {"type":"resolve_issue","id":"<既有issue ID>","resolution":"<修复内容与验证方式>","source_refs":["<已登记证据ID>"]}。source_refs 可省略，提供时必须存在。该操作保留原 issue 和证据，标记 resolved 并记录修复说明；相关 Node 另行恢复。不要发明 update_finding 或直接改状态文件。ResearchMap 变更会取代旧 checkpoint，恢复后的工作结束前需写新 checkpoint。

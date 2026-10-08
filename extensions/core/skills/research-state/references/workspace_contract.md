@@ -12,7 +12,7 @@
 
 Every research workspace is bound by one immutable-identity
 `workspace_manifest.json`. Its contract is
-`schema_version=research_state_workspace_1`, `workspace_mode=research`, an
+`schema_version=research_state_workspace_2`, `workspace_mode=research`, an
 absolute `workspace_root`, a stable `workspace_id`, and `state` equal to
 `admission_pending` or `ready`. The manifest binds admission and routing; the
 ResearchMap revision is stored in the context and liveness projections.
@@ -36,7 +36,7 @@ and directories `inputs`, `artifacts`, `runs`, `logs`, `scratch`, and
 that omits or changes these fields; they do not infer defaults from a path.
 
 The scientific read model is `research_map/context.json` and must use
-`schema_version=research_map_context_1`. It contains the complete collection
+`schema_version=research_map_context_2`. It contains the complete collection
 surface, even when a collection is empty. The required array collections are:
 
 ```text
@@ -49,7 +49,7 @@ strategy_plans, strategy_reviews, attempt_interpretations
 context `workspace_id` and `workspace_mode=research` must match the manifest.
 
 Lifecycle admission is `lifecycle/liveness.json` with
-`schema_version=research_liveness_1`; its `workspace_id`, `state` and
+`schema_version=research_liveness_2`; its `workspace_id`, `state` and
 `revision` must agree with context. The bounded runtime projection is
 `memory/index.json` with `schema_version=research_memory_index_1`. It carries
 `context_revision`, lifecycle and focus metadata plus explicitly registered
@@ -101,7 +101,7 @@ This identity is attached by the Host to the internal Research State request; th
 public `research_change` tool payload does not include these authority fields.
 
 `research_change` loads the current canonical context under the workspace lock,
-checks `expectedRevision`, applies the ordered ChangeSet to a detached copy,
+checks `expected_revision`, applies the ordered ChangeSet to a detached copy,
 validates the complete post-state, and atomically commits context, liveness,
 memory projection, and manifest revision. A rejected request changes nothing.
 Do not edit any canonical document by hand.

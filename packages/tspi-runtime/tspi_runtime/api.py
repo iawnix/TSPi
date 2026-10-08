@@ -40,6 +40,17 @@ class CommandError(ValueError):
     """A canonical command request is invalid or cannot be served."""
 
 
+def _string(value: dict[str, Any], field: str) -> str:
+    item = value.get(field)
+    if not isinstance(item, str) or not item.strip():
+        raise CommandError(f"{field} must be a non-empty string")
+    return item.strip()
+
+
+def _json_text(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
 def execute(command: str, root: str | Path, params: dict[str, Any] | None = None) -> dict[str, Any]:
     """Execute one read/query command or one explicit ResearchMap change."""
 
@@ -48,6 +59,8 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
     value = params if params is not None else {}
     if not isinstance(value, dict):
         raise CommandError("command params must be an object")
+    if any(any(c.isupper() for c in key) for key in value):
+        raise CommandError("schema_field_invalid: command fields use snake_case")
     required = COMMAND_DEFINITIONS[command].get("required", [])
     missing = [key for key in required if value.get(key) is None or value.get(key) == ""]
     if missing:
@@ -63,6 +76,9 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
                 "research commands require an initialized filesystem Research Agent workspace"
             )
         action = command.removeprefix("research.")
+        if action == "context":
+            from research_memory import ResearchContextBuilder
+            return ResearchContextBuilder().build(root, max_bytes=value.get("max_bytes", 16000), event_ids=value.get("event_ids", ())).context
         request = value.get("request") if isinstance(value.get("request"), dict) else value
         method = {
             "context": "read_context",
@@ -93,7 +109,8 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
             if action == "summary":
                 return research_summary_document(result)
             if action == "validate":
-                return {"schema_version": "research-validation/1", "valid": True, "revision": result.get("revision")}
+                from research_state.invariants import validate_context
+                return validate_context(result)
             return result
         if action in {"strategy", "interpretation"}:
             return _filesystem_decision(root, action, request, dispatch_agent_workspace)
@@ -115,7 +132,7 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
             if action == "detail":
                 kind = _string(value, "kind")
                 identifier = _string(value, "id")
-                collection = {"phase": "phases", "claim": "claims", "node": "nodes", "finding": "findings", "gate": "gates"}.get(kind)
+                collection = {"phase": "phases", "claim": "claims", "node": "nodes", "finding": "findings", "gate": "gates", "attempt": "attempts", "artifact": "artifacts", "lifecycle_action": "lifecycle_actions", "interpretation": "attempt_interpretations", "strategy": "strategy_plans"}.get(kind)
                 if collection is None:
                     raise CommandError("research.detail kind must be phase, claim, node, finding, or gate")
                 item = next((row for row in context.get(collection, []) if row.get("id") == identifier), None)
@@ -129,34 +146,48 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
             if action == "locate":
                 query = _string(value, "query").casefold()
                 matches = []
-                for collection in ("phases", "claims", "nodes", "findings", "gates"):
+                for collection in ("phases", "claims", "nodes", "findings", "gates", "attempts", "artifacts"):
                     for item in context.get(collection, []):
                         if query in _json_text(item).casefold():
-                            matches.append({**item, "collection": collection[:-1], "object_type": item.get("type", collection[:-1])})
-                return {"schema_version": "research-locate/1", "map_id": research_map_document(context)["map_id"], "matches": matches}
+                            matches.append({"id": item["id"], "collection": collection[:-1], "state": item.get("state"),
+                                "node_id": item.get("node_id"), "job_id": item.get("metadata", {}).get("job_id"),
+                                "read": {"mode": "detail", "kind": collection[:-1], "id": item["id"]}})
+                offset, limit = value.get("offset", 0), value.get("limit", 30)
+                if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 128:
+                    raise CommandError("research.locate pagination_invalid")
+                return {"schema_version": "research-locate/2", "matches": matches[offset:offset + limit],
+                        "total": len(matches), "next_offset": offset + limit if offset + limit < len(matches) else None}
             if action == "decisions":
-                claim_id = value.get("claim_id") or value.get("claimId")
+                claim_id = value.get("claim_id")
                 records = [
                     *[{**item, "decision_type": "strategy_plan"} for item in context.get("strategy_plans", [])],
                     *[{**item, "decision_type": "strategy_review"} for item in context.get("strategy_reviews", [])],
                     *[{**item, "decision_type": "attempt_interpretation"} for item in context.get("attempt_interpretations", [])],
+                    *[{**item, "decision_type": "lifecycle_action"} for item in context.get("lifecycle_actions", [])],
                 ]
                 if claim_id is not None:
                     records = [item for item in records if item.get("claim_id") == claim_id]
                 limit = value.get("limit", 128)
                 if type(limit) is not int or not 1 <= limit <= 2048:
                     raise CommandError("research.decisions limit must be an integer between 1 and 2048")
-                return {"schema_version": "research-decisions/1", "claim_id": claim_id, "records": records[:limit]}
-            record_type = value.get("record_type") or value.get("recordType")
+                offset = value.get("offset", 0)
+                if type(offset) is not int or offset < 0:
+                    raise CommandError("research.decisions offset must be non-negative")
+                records.sort(key=lambda r: (r.get("created_at", ""), r["id"]), reverse=True)
+                return {"schema_version": "research-decisions/2", "claim_id": claim_id, "records": records[offset:offset + limit],
+                        "total": len(records), "next_offset": offset + limit if offset + limit < len(records) else None}
+            record_type = value.get("record_type")
             groups = {"attempt": "attempts", "artifact": "artifacts", "link": "evidence_links"}
             if record_type is not None and record_type not in groups:
                 raise CommandError("research.evidence record_type must be attempt, artifact, or link")
             names = [groups[record_type]] if record_type in groups else list(groups.values())
             records = [item for name in names for item in context.get(name, [])]
             filters = {
-                "node_id": value.get("node_id") or value.get("nodeId"),
-                "artifact_id": value.get("artifact_id") or value.get("artifactId"),
-                "subject_id": value.get("subject_id") or value.get("subjectId"),
+                "attempt_id": value.get("attempt_id"),
+                "job_id": value.get("job_id"),
+                "node_id": value.get("node_id"),
+                "artifact_id": value.get("artifact_id"),
+                "subject_id": value.get("subject_id"),
             }
             for field, expected in filters.items():
                 if expected is None:
@@ -164,13 +195,21 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
                 records = [
                     item for item in records
                     if item.get(field) == expected
+                    or (field == "attempt_id" and (item.get("producer_attempt_id") == expected or item.get("id") == expected))
+                    or (field == "artifact_id" and item.get("id") == expected)
+                    or item.get("metadata", {}).get(field) == expected
                     or (isinstance(item.get("subject"), dict) and item["subject"].get(field) == expected)
                     or (isinstance(item.get(f"{field}s"), list) and expected in item[f"{field}s"])
                 ]
             limit = value.get("limit", 128)
             if type(limit) is not int or not 1 <= limit <= 2048:
                 raise CommandError("research.evidence limit must be an integer between 1 and 2048")
-            return {"schema_version": "research-evidence/1", "record_type": record_type, "records": records[:limit]}
+            offset = value.get("offset", 0)
+            if type(offset) is not int or offset < 0:
+                raise CommandError("offset must be a non-negative integer")
+            return {"schema_version": "research-evidence/2", "record_type": record_type,
+                    "records": records[offset:offset + limit], "total": len(records),
+                    "next_offset": offset + limit if offset + limit < len(records) else None}
         raise CommandError(
             f"research.{action} is served by the Host Research State filesystem boundary; use the native command boundary"
         )
@@ -188,8 +227,9 @@ def _filesystem_decision(root: str | Path, action: str, request: dict[str, Any],
 
     operation_name = request.get("operation")
     if action == "strategy":
-        source = request.get(operation_name) if isinstance(operation_name, str) else None
-        source = source or request.get("plan") or request.get("review") or request.get("strategy")
+        if operation_name not in {"plan", "review"}:
+            raise CommandError("research.strategy requires operation=plan or review")
+        source = request.get(operation_name)
         operation_type = "create_strategy_review" if operation_name == "review" else "create_strategy_plan"
     else:
         source = request.get("interpretation")

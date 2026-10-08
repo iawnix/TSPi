@@ -69,19 +69,19 @@ password_env = "TSPI_FIXTURE_PASSWORD"
         monkeypatch.setenv("SSL_CERT_FILE", str(cert))
         monkeypatch.setenv("TSPI_FIXTURE_PASSWORD", "fixture-only")
         script = Path(__file__).resolve().parents[2] / "extensions/email/scripts/email_cli.py"
-        calculation = dispatch("start", {"root": str(tmp_path), "nodeId": "node_1", "requestId": "calculation",
+        calculation = dispatch("start", {"root": str(tmp_path), "node_id": "node_1", "request_id": "calculation",
             "command": [sys.executable, "-c", "import json;from pathlib import Path;Path('result.json').write_text(json.dumps({'method':'fixture','validated':True,'steps':[{'task':'sp','energy_hartree':-1}]}))"],
             "outputs": [{"path": "result.json", "required": True}]})
         try:
             for _ in range(200):
-                status = dispatch("status", {"root": str(tmp_path), "jobId": calculation["job_id"]})
+                status = dispatch("status", {"root": str(tmp_path), "job_id": calculation["job_id"]})
                 if status["state"] in {"succeeded", "failed", "timed_out"}: break
                 time.sleep(.02)
             assert status["state"] == "succeeded"
-            collected = dispatch("collect", {"root": str(tmp_path), "jobId": calculation["job_id"]})
+            collected = dispatch("collect", {"root": str(tmp_path), "job_id": calculation["job_id"]})
             assert collected["status"]["state"] in {"succeeded", "collected"}
         finally:
-            dispatch("cancel", {"root": str(tmp_path), "jobId": calculation["job_id"]})
+            dispatch("cancel", {"root": str(tmp_path), "job_id": calculation["job_id"]})
         builder = script.parents[2] / "chemical/skills/report/scripts/build.py"
         output = tmp_path / "reports/comparison"
         subprocess.run(["bash", "-c", 'exec "$@"', "report", sys.executable, str(builder),

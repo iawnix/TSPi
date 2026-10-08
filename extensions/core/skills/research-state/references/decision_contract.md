@@ -1,8 +1,8 @@
 # ChangeSet Contract
 
 `research_change` is the only public mutation boundary for `ResearchMap`. Its
-public payload contains `rationale`, optional `basisRefs`, optional
-`expectedRevision`, and a non-empty `operations` array. The Host attaches
+public payload contains `rationale`, optional `basis_refs`, optional
+`expected_revision`, and a non-empty `operations` array. The Host attaches
 `principal=root_agent` and `authority=kernel_write` to the internal Research State
 request; those authority fields are not public tool parameters. Query
 `research_read mode=operations` for the current catalog before using an unfamiliar
@@ -44,3 +44,22 @@ entry: use `FactFinding` for a value that supports a scientific statement and
 `IssueFinding` for a limitation, anomaly, conflict, or unresolved question.
 `create_gate` and `evaluate_gate` are the Gate lifecycle. Claim status and Gate
 verdict are independent: a Gate evaluation does not silently change a Claim.
+
+
+Before starting a calculation, attach explicit Gate criteria to its Node or give
+`completion_exemption` with a reason when creating that Node. Each criterion has
+an `id` and `source_type`: `runtime_fact`, `validator_result`, or `agent_assessment`.
+An evaluation supplies `assessments` for every criterion. Machine criteria require
+the actual `result_receipt_ref`; an agent assessment needs a reason and remains an
+agent judgment. Use `revise_gate` with `criteria` and `reason` to change conditions;
+old versions remain in the audit and previous evaluations no longer pass.
+
+`context` is a bounded current decision view. Use `detail` for an exact object,
+`evidence` with `attempt_id` or `job_id`, and `offset`/`limit` for pages. Record goal
+`source_refs` and `constraints` on Claims so they survive conversation compaction.
+Never copy producer IDs onto agent-created text. `job_collect` certifies current
+outputs and returns a stable result receipt. Final `kind=result` interpretations
+must cite that receipt and its direct outputs. Use comparison/background roles
+for other runs. `kind=observation` or `execution_issue` requires the runtime's
+`execution_observation_ref`. Use `supersedes_id` to correct earlier explanations.
+Changed outputs invalidate dependent explanations and machine Gate assessments.

@@ -10,9 +10,9 @@ description: Read, validate, and atomically update the canonical TSPi ResearchMa
 Use this Skill for project research state: status queries, object lookup,
 ResearchMap validation, bounded Research Memory reads, and atomic changes through
 `research_read` and `research_change`. A research workspace must have
-`workspace_manifest.json` (`research_state_workspace_1`),
-`research_map/context.json` (`research_map_context_1`), and
-`lifecycle/liveness.json` (`research_liveness_1`). Context always contains the
+`workspace_manifest.json` (`research_state_workspace_2`),
+`research_map/context.json` (`research_map_context_2`), and
+`lifecycle/liveness.json` (`research_liveness_2`). Context always contains the
 array collections `phases`, `claims`, `nodes`, `findings`, `gates`,
 `claim_relations`, `attempts`, `artifacts`, `evidence_links`, `lifecycle_actions`,
 `strategy_plans`, `strategy_reviews`, and `attempt_interpretations`; `focus.claim_ids`
@@ -31,7 +31,7 @@ outcome represent progress independently of Claim status.
 
 Read with the narrowest `research_read` mode that answers the question. Query
 `mode=operations` before an unfamiliar write. Submit every mutation as one
-explicit ChangeSet through `research_change`, using `expectedRevision` when a
+explicit ChangeSet through `research_change`, using `expected_revision` when a
 stale write would be unsafe. The Host attaches `principal=root_agent` and
 `authority=kernel_write` to the internal Research State request; these authority fields
 are not public tool parameters. Never edit canonical workspace documents directly or target a legacy
@@ -76,19 +76,21 @@ IDs and summary with the current workspace's records and your assessment:
 ```json
 {
   "interpretation": {
+    "kind": "result",
+    "result_receipt_ref": "result_<exact ID returned by job_collect>",
+    "direct_evidence_refs": ["art_<exact artifact returned by job_collect>"],
     "id": "interpretation_result_1",
-    "claimId": "claim_1",
-    "attemptRef": "attempt_1",
+    "claim_id": "claim_1",
+    "attempt_ref": "attempt_1",
     "summary": "The inspected result supports the claim within the tested conditions.",
     "outcome": "supports"
   }
 }
 ```
 
-`claimId`/`attemptRef` also accept `claim_id`/`attempt_ref` and may be supplied at
-the top level. `nodeId` is optional; when supplied, it must identify an existing
-Node linked to the Claim. The optional request `eventId` does not replace the
-required interpretation record `id`. Include registered `artifact_refs` when
+`claim_id` and `attempt_ref` must be inside `interpretation`. All public fields use snake_case. `node_id` is optional; when supplied, it must identify an existing
+Node linked to the Claim. The optional request `event_id` does not replace the
+required interpretation record `id`. Include registered `direct_evidence_refs` when
 citing result files; execution success alone does not establish scientific support.
 
 After a demonstrated issue is repaired, use research_change with {"type":"resolve_issue","id":"<existing issue ID>","resolution":"<what changed and how verified>","source_refs":["<registered evidence ID>"]}. source_refs is optional; supplied IDs must exist. This preserves the original issue and evidence, marks it resolved, and records the resolution. Restore affected Nodes separately. Do not invent an update_finding operation or edit State files. A ResearchMap mutation supersedes the prior checkpoint; finish the resumed work with a new checkpoint.

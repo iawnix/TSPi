@@ -31,7 +31,7 @@ test("blocked research liveness stops new mutations but permits a recovery check
     ] }));
     await assert.rejects(
       kernel.apply_change(write({ expected_revision: 1, operations: [{
-        type: "create_attempt", id: "attempt_1", node_id: "node_1",
+        type: "register_attempt", id: "attempt_1", node_id: "node_1",
         capability: "xtb", capability_version: "1", state: "started",
       }] })),
       /research_decision_required/,
@@ -41,7 +41,7 @@ test("blocked research liveness stops new mutations but permits a recovery check
       objective: "Choose a bounded execution", rationale: "The claim needs one declared method", status: "active",
     }] }));
     await kernel.apply_change(write({ expected_revision: 2, operations: [{
-      type: "create_attempt", id: "attempt_1", node_id: "node_1",
+      type: "register_attempt", id: "attempt_1", node_id: "node_1",
       capability: "xtb", capability_version: "1", state: "started",
     }] }));
     await kernel.checkpoint(write({ id: "checkpoint_blocked", disposition: "blocked", reason: "Waiting for user input" }));
@@ -129,7 +129,7 @@ test("Native strategy and checkpoint writes reach the canonical Python State bou
     const toolContext = { cwd: root, principal: "root_agent" };
     const context = { abortSignal: new AbortController().signal };
     await createChangeTool().execute("create-scope", {
-      expectedRevision: 0,
+      expected_revision: 0,
       rationale: "Create lifecycle protocol fixture",
       operations: [
         { type: "create_claim", id: "claim_1", statement: "A bounded claim" },
@@ -140,7 +140,7 @@ test("Native strategy and checkpoint writes reach the canonical Python State bou
     const lifecycle = createResearchLifecycleTool();
     const strategy = await lifecycle.execute("strategy", {
       operation: "strategy",
-      strategyOperation: "plan",
+      strategy_operation: "plan",
       plan: {
         id: "strategy_1",
         claim_id: "claim_1",

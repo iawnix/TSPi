@@ -11,7 +11,7 @@
 ## 规范状态
 
 每个研究 workspace 由保持 identity 不变的 `workspace_manifest.json` 绑定。其合同要求
-`schema_version=research_state_workspace_1`、`workspace_mode=research`、绝对路径
+`schema_version=research_state_workspace_2`、`workspace_mode=research`、绝对路径
 `workspace_root`、稳定的 `workspace_id`，以及 `state` 为 `admission_pending` 或 `ready`。
 Manifest 负责 admission 与路由绑定；ResearchMap revision 保存在 context 与 lifecycle
 投影中。
@@ -32,7 +32,7 @@ revision:<非负整数>}`。必需目录严格为 `inputs`、`artifacts`、`runs
 Monitor 读取方都必须校验这些字段；缺失或改写时直接拒绝，不能根据路径推断默认值。
 
 规范科学状态位于 `research_map/context.json`，且必须使用
-`schema_version=research_map_context_1`。即使为空，也必须存在完整的 collection surface。
+`schema_version=research_map_context_2`。即使为空，也必须存在完整的 collection surface。
 必需的数组 collection 为：
 
 ```text
@@ -45,7 +45,7 @@ strategy_plans、strategy_reviews、attempt_interpretations
 和 `workspace_mode=research` 必须与 Manifest 一致。
 
 生命周期 admission 位于 `lifecycle/liveness.json`，使用
-`schema_version=research_liveness_1`；其 `workspace_id`、`state` 与 `revision` 必须和
+`schema_version=research_liveness_2`；其 `workspace_id`、`state` 与 `revision` 必须和
 Context 一致。有界运行时投影位于 `memory/index.json`，使用
 `schema_version=research_memory_index_1`。它只携带 `context_revision`、生命周期、focus
 metadata 与显式登记的 entries，是 metadata/lifecycle projection，不是第二个 ResearchMap，
@@ -82,7 +82,7 @@ research_read -> Root interpretation -> research_change
 该身份由 Host 附加到内部 Research State request；公共 `research_change` tool payload 不包含这两个
 authority 字段。
 
-`research_change` 在 workspace lock 内加载 canonical context，检查 `expectedRevision`，在
+`research_change` 在 workspace lock 内加载 canonical context，检查 `expected_revision`，在
 独立副本上应用 ChangeSet 并校验完整 post-state，然后原子提交 context、liveness、memory
 projection 和 manifest revision。被拒绝的请求不改变任何内容；不要手动编辑 canonical 文档。
 

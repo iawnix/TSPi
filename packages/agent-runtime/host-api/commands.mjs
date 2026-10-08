@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-const RESEARCH_KINDS = Object.freeze(["phase", "claim", "node", "finding", "gate"]);
+const RESEARCH_KINDS = Object.freeze(["phase", "claim", "node", "finding", "gate", "attempt", "artifact", "lifecycle_action", "interpretation", "strategy"]);
 
 const catalog = JSON.parse(readFileSync(
   new URL("../../tspi-runtime/tspi_runtime/command_catalog.json", import.meta.url),
@@ -67,19 +67,21 @@ export function commandArguments(command, params = {}) {
     id: "--id",
     name: "--name",
     query: "--query",
-    claimId: "--claim-id",
-    recordType: "--record-type",
+    claim_id: "--claim-id",
+    record_type: "--record-type",
     limit: "--limit",
-    nodeId: "--node-id",
-    artifactId: "--artifact-id",
-    subjectId: "--subject-id",
+    node_id: "--node-id", attempt_id: "--attempt-id", job_id: "--job-id",
+    offset: "--offset", max_bytes: "--max-bytes",
+    artifact_id: "--artifact-id",
+    subject_id: "--subject-id",
     scope: "--scope",
-    targetId: "--target-id",
+    target_id: "--target-id",
     operation: "--operation",
   };
   for (const [key, flag] of Object.entries(flags)) {
     if (invocation.params[key] !== undefined) args.push(flag, String(invocation.params[key]));
   }
+  for (const id of invocation.params.event_ids || []) args.push("--event-id", id);
   return args;
 }
 

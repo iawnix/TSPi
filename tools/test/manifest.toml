@@ -20,6 +20,8 @@ paths = [
   "tests/node/native/pi-app-server.test.mjs",
   "tests/node/native/pi-session-worker-startup.test.mjs",
   "tests/node/native/worker-research-flow.test.mjs",
+  "tests/node/native/decision-context.test.mjs",
+  "tests/node/fast/job-query-recovery.test.mjs",
   "tests/node/native/monitor-admission.test.mjs",
   "tests/node/native/pi-harness-policy.test.mjs",
   "tests/node/native/pi-session-control.test.mjs",
@@ -53,4 +55,4 @@ paths = []
 kind = "scenario"
 environment = "managed Python + authorized model provider"
 description = "Opt-in model evaluation; never part of CI or the default suite."
-paths = []
+paths = ["tests/scenarios/t003_live_eval.mjs"]

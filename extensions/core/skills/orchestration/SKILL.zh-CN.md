@@ -72,6 +72,6 @@ Skill，路径读取失败不代表邮件能力或收件人不存在。
 
 - [Public contract / 公开契约](references/public_contract.zh-CN.md): generated tool names and dispositions.
 
-`continue_required` 会由 State 持久化接续请求，Host 在当前轮结束后通过 Pi 提交。检查返回的 continuation 决定：同一研究 revision 只接续一次，连续推进最多自动接续八次。被拒绝时说明原因，不承诺自动续跑。Node 是研究范围；同 Node 的独立任务必须保留 helper 生成的不同 workId，已提交工作先 collect/reconcile。
+`continue_required` 会由 State 持久化接续请求，Host 在当前轮结束后通过 Pi 提交。检查返回的 continuation 决定：同一研究 revision 只接续一次，连续推进最多自动接续八次。被拒绝时说明原因，不承诺自动续跑。Node 是研究范围；同 Node 的独立任务必须保留 helper 生成的不同 work_id，已提交工作先 collect/reconcile。
 
 完成结果核验、报告整理与已授权交付后再写最终 checkpoint。计算失败时先继续独立的已授权工作，再判断是否全局 blocked。“完成后发结果”不自动授权失败通知。已 blocked 的范围须先通过显式恢复 checkpoint 再更新 Node 或调用 bash，不能直接编辑状态文件。

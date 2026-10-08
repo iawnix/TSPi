@@ -26,7 +26,7 @@ INPUT_OPERATION_CONTRACTS: dict[str, OperationContract] = {
     ),
     "create_claim": OperationContract(
         required=frozenset({"type", "id", "statement"}),
-        optional=frozenset({"status", "predictions", "falsifiers", "created_at", "metadata"}),
+        optional=frozenset({"status", "predictions", "falsifiers", "source_refs", "constraints", "created_at", "metadata"}),
     ),
     "assess_claim": OperationContract(
         required=frozenset({"type", "id", "claim_id", "verdict", "reason"}),
@@ -38,7 +38,7 @@ INPUT_OPERATION_CONTRACTS: dict[str, OperationContract] = {
     ),
     "create_node": OperationContract(
         required=frozenset({"type", "id", "title", "objective"}),
-        optional=frozenset({"phase_id", "claim_ids", "dependency_ids", "created_at", "metadata"}),
+        optional=frozenset({"phase_id", "claim_ids", "dependency_ids", "completion_exemption", "created_at", "metadata"}),
     ),
     "create_finding": OperationContract(
         required=frozenset({"type", "id", "node_id", "statement", "kind"}),
@@ -59,9 +59,10 @@ INPUT_OPERATION_CONTRACTS: dict[str, OperationContract] = {
         required=frozenset({"type", "id", "status"}),
         optional=frozenset({"reason", "request_id"}),
     ),
+    "revise_gate": OperationContract(required=frozenset({"type", "gate_id", "criteria", "reason"})),
     "evaluate_gate": OperationContract(
         required=frozenset({"type", "gate_id", "verdict"}),
-        optional=frozenset({"message", "evidence_refs", "created_at"}),
+        optional=frozenset({"message", "evidence_refs", "assessments", "created_at"}),
     ),
     "set_node_state": OperationContract(
         required=frozenset({"type", "node_id", "state"}),

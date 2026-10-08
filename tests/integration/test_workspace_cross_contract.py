@@ -50,7 +50,7 @@ def test_js_created_workspace_is_accepted_by_python_authority(tmp_path: Path) ->
     root = tmp_path / "js-created"
     manifest = _node_create(root, "workspace_js_contract")
     accepted = validate_workspace_manifest(manifest, root)
-    assert accepted["schema_version"] == "research_state_workspace_1"
+    assert accepted["schema_version"] == "research_state_workspace_2"
     assert accepted["workspace_id"] == "workspace_js_contract"
 
 

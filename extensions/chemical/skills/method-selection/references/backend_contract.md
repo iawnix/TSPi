@@ -4,7 +4,7 @@ A Skill owns scientific inputs, argv, parsing and validation. Use its installed 
 
 ## Submission
 
-Use method-selection/scripts/prepare_job.py to read job.toml bindings. It returns command (argv), platform (configured execution target), environment (process variables), inputs (source/destination file or directory mappings), outputs (path, required, minBytes, mediaType) and opaque metadata. Add nodeId, timeoutSeconds and any supported metadata.resources (cpus, memory_mb, walltime) before job_start. cwd is a relative subdirectory of the isolated Job root, not an arbitrary workspace directory.
+Use method-selection/scripts/prepare_job.py to read job.toml bindings. It returns command (argv), platform (configured execution target), environment (process variables), inputs (source/destination file or directory mappings), outputs (path, required, min_bytes, media_type) and opaque metadata. Add node_id, timeout_seconds and any supported metadata.resources (cpus, memory_mb, walltime) before job_start. cwd is a relative subdirectory of the isolated Job root, not an arbitrary workspace directory.
 
 Inputs are snapshotted with paths and digests. Keep script module layout intact. Runtime owns local/remote process control; Skill scripts may synchronously launch the scientific executable inside the Job but must not detach or submit their own scheduler jobs.
 

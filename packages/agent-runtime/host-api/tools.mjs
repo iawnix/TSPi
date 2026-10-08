@@ -233,13 +233,13 @@ export function createPublicToolContracts(Type) {
       created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
     }),
     operation("create_claim", {
-      id: claimReference, statement: text(),
+      id: claimReference, statement: text(), source_refs: Type.Optional(stringArray(256)), constraints: Type.Optional(stringArray(256)),
       status: Type.Optional(literalUnion(["proposed", "supported", "contradicted", "inconclusive", "withdrawn"])),
       predictions: Type.Optional(stringArray()), falsifiers: Type.Optional(stringArray()),
       created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
     }),
     operation("create_node", {
-      id: nodeReference, title: text(2000), objective: text(),
+      id: nodeReference, title: text(2000), objective: text(), completion_exemption: Type.Optional(text()),
       phase_id: Type.Optional(identifier()), claim_ids: Type.Optional(claimReferences()),
       dependency_ids: Type.Optional(nodeReferences()), created_at: Type.Optional(identifier()),
       metadata: Type.Optional(metadata),
@@ -273,8 +273,9 @@ export function createPublicToolContracts(Type) {
       id: identifier(), status: literalUnion(["required", "deferred", "blocked", "completed"]),
       reason: Type.Optional(text()), request_id: Type.Optional(identifier()),
     }),
+    operation("revise_gate", { gate_id: identifier(), criteria: Type.Array(Type.Any(), { minItems: 1, maxItems: 128 }), reason: text() }),
     operation("evaluate_gate", {
-      gate_id: identifier(), verdict: literalUnion(["pass", "fail", "inconclusive", "blocked"]),
+      gate_id: identifier(), assessments: Type.Array(Type.Object({}, { additionalProperties: true }), { minItems: 1 }), verdict: literalUnion(["pass", "fail", "inconclusive", "blocked"]),
       message: Type.Optional(text()), evidence_refs: Type.Optional(stringArray(256)),
       created_at: Type.Optional(identifier()),
     }),
@@ -292,19 +293,24 @@ export function createPublicToolContracts(Type) {
   const stateFields = {
     root: optionalRoot,
     query: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-    claimId: Type.Optional(claimReference),
-    recordType: Type.Optional(enumString(["attempt", "artifact", "link"])),
-    nodeId: Type.Optional(nodeReference),
-    artifactId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-    subjectId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+    claim_id: Type.Optional(claimReference),
+    record_type: Type.Optional(enumString(["attempt", "artifact", "link"])),
+    node_id: Type.Optional(nodeReference),
+    artifact_id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+    attempt_id: Type.Optional(identifier(128)),
+    job_id: Type.Optional(identifier(256)),
+    offset: Type.Optional(Type.Integer({ minimum: 0 })),
+    max_bytes: Type.Optional(Type.Integer({ minimum: 2048, maximum: 32000 })),
+    event_ids: Type.Optional(stringArray(8)),
+    subject_id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
     limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2048 })),
     // Canonical Research State filesystem boundary storage is a read-only projection. The
     // retired SQLite bootstrap operation is intentionally not part of the
     // Agent-facing contract.
-    storageOperation: Type.Optional(Type.Literal("status")),
-    kind: Type.Optional(enumString(["phase", "claim", "node", "finding", "gate"])),
+    storage_operation: Type.Optional(Type.Literal("status")),
+    kind: Type.Optional(enumString(["phase", "claim", "node", "finding", "gate", "attempt", "artifact", "lifecycle_action", "interpretation", "strategy"])),
     id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-    nodeRef: Type.Optional(nodeReference),
+    node_ref: Type.Optional(nodeReference),
   };
   const stateReadSchema = Type.Object({
     ...stateFields,
@@ -313,8 +319,10 @@ export function createPublicToolContracts(Type) {
       "operations", "decisions", "evidence", "storage",
     ])),
   }, { additionalProperties: false });
-  const nodeId = Type.String({ pattern: "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$", maxLength: 128 });
-  const artifactId = Type.String({ pattern: "^art_[0-9a-f]{64}$" });
+  const node_id = Type.String({ pattern: "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$", maxLength: 128 });
+  const artifact_id = Type.String({ pattern: "^art_[0-9a-f]{64}$" });
+  const selectors = { job_id: Type.Optional(identifier(256)), attempt_id: Type.Optional(identifier(128)), event_id: Type.Optional(identifier(256)), root: optionalRoot };
+  const selectorSchema = Type.Object(selectors, { additionalProperties: false, anyOf: [ { required: ["job_id"] }, { required: ["attempt_id"] }, { required: ["event_id"] } ] });
   const contracts = {
     systemPrompt: contract("systemPrompt", "System Prompt", "Read the effective system prompt and its provenance.", Type.Object({}, {
       additionalProperties: false,
@@ -327,8 +335,8 @@ export function createPublicToolContracts(Type) {
     change: contract("change", "TS Change", "Validate and atomically apply one Root-authored ResearchMap ChangeSet.", Type.Object({
       rationale: Type.String({ minLength: 1, maxLength: 12_000 }),
       operations: Type.Array(changeOperation, { minItems: 1, maxItems: 128 }),
-      basisRefs: Type.Optional(Type.Array(Type.String(), { maxItems: 256, uniqueItems: true })),
-      expectedRevision: Type.Optional(Type.Integer({ minimum: 0 })),
+      basis_refs: Type.Optional(Type.Array(Type.String(), { maxItems: 256, uniqueItems: true })),
+      expected_revision: Type.Optional(Type.Integer({ minimum: 0 })),
       root: optionalRoot,
     }, { additionalProperties: false }), {
       executionMode: "sequential",
@@ -336,47 +344,50 @@ export function createPublicToolContracts(Type) {
     }),
     lifecycle: contract("lifecycle", "Research Lifecycle", "Record a strategy, interpretation, or checkpoint.", Type.Object({
       operation: enumString(["strategy", "interpret", "checkpoint"]),
-      strategyOperation: Type.Optional(enumString(["plan", "review"])),
+      strategy_operation: Type.Optional(enumString(["plan", "review"])),
       plan: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 32 })),
       review: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 32 })),
       interpretation: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 32 })),
       checkpoint: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 32 })),
       rationale: Type.Optional(Type.String({ minLength: 1, maxLength: 12_000 })),
-      basisRefs: Type.Optional(Type.Array(Type.String(), { maxItems: 256, uniqueItems: true })),
-      expectedRevision: Type.Optional(Type.Integer({ minimum: 0 })),
-      eventId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+      basis_refs: Type.Optional(Type.Array(Type.String(), { maxItems: 256, uniqueItems: true })),
+      expected_revision: Type.Optional(Type.Integer({ minimum: 0 })),
+      event_id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
       root: optionalRoot,
     }, { additionalProperties: false }), {
       executionMode: "sequential",
       replay: "never",
     }),
-    jobStart: contract("jobStart", "Start Job", "Start a durable scientific computation Job. Prefer requestFile + requestSha256 from a scientific Skill helper. Use native bash for email, report formatting and request preparation; these do not create calculation Attempts.", Type.Object({
-      nodeId: Type.Optional(nodeReference),
-      attemptId: Type.Optional(identifier(128)),
-      requestId: Type.Optional(identifier(128)),
-      workId: Type.Optional(identifier(128)),
-      requestFile: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
-      requestSha256: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })),
+    jobStart: contract("jobStart", "Start Job", "Start a durable scientific computation Job. Prefer request_file + request_sha256 from a scientific Skill helper. Use native bash for email, report formatting and request preparation; these do not create calculation Attempts.", Type.Object({
+      node_id: Type.Optional(nodeReference),
+      attempt_id: Type.Optional(identifier(128)),
+      request_id: Type.Optional(identifier(128)),
+      validator_id: Type.Optional(identifier(128)),
+      input_artifact_ids: Type.Optional(Type.Array(identifier(256), { minItems: 1, maxItems: 256 })),
+      work_id: Type.Optional(identifier(128)),
+      repeat: Type.Optional(Type.Object({ predecessor_job_id: identifier(256), reason: Type.String({ minLength: 1 }), budget: Type.String({ minLength: 1 }) }, { additionalProperties: false })),
+      request_file: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+      request_sha256: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })),
       metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
       command: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 16_384 }), { minItems: 1, maxItems: 256 })),
       cwd: Type.Optional(Type.String({ minLength: 1, maxLength: 4096, description: "Relative subdirectory of the isolated runs/jobs/<job_id> directory; omit for its root. Absolute workspace paths are invalid." })),
       environment: Type.Optional(Type.Record(Type.String({ maxLength: 128 }), Type.String({ maxLength: 16_384 }))),
-      inputs: Type.Optional(Type.Array(Type.Union([Type.String({ minLength: 1, maxLength: 4096 }), Type.Object({ source: Type.String({ minLength: 1 }), destination: Type.String({ minLength: 1, description: "Relative path under Job cwd; source is absolute or workspace-relative and is copied before execution." }) }, { additionalProperties: false })]), { maxItems: 256 })),
-      outputs: Type.Optional(Type.Array(Type.Object({ path: Type.String({ minLength: 1, maxLength: 4096, description: "Relative to Job cwd; declare paths produced by the command, never absolute workspace paths." }), required: Type.Optional(Type.Boolean()), minBytes: Type.Optional(Type.Integer({ minimum: 0 })), mediaType: Type.Optional(Type.String({ maxLength: 256 })) }, { additionalProperties: false }), { maxItems: 256 })),
-      timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 604800 })),
+      inputs: Type.Optional(Type.Array(Type.Union([Type.String({ minLength: 1, maxLength: 4096 }), Type.Object({ source: Type.String({ minLength: 1 }), sha256: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })), destination: Type.String({ minLength: 1, description: "Relative path under Job cwd; source is absolute or workspace-relative and is copied before execution." }) }, { additionalProperties: false })]), { maxItems: 256 })),
+      outputs: Type.Optional(Type.Array(Type.Object({ path: Type.String({ minLength: 1, maxLength: 4096, description: "Relative to Job cwd; declare paths produced by the command, never absolute workspace paths." }), required: Type.Optional(Type.Boolean()), min_bytes: Type.Optional(Type.Integer({ minimum: 0 })), media_type: Type.Optional(Type.String({ maxLength: 256 })) }, { additionalProperties: false }), { maxItems: 256 })),
+      timeout_seconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 604800 })),
       platform: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
       root: optionalRoot,
-    }, { additionalProperties: false, anyOf: [{ required: ["command"] }, { required: ["requestFile", "requestSha256"] }] }), { executionMode: "sequential", replay: "never" }),
-    jobStatus: contract("jobStatus", "Job Status", "Read the status of a durable job.", Type.Object({ jobId: identifier(256), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
-    jobCollect: contract("jobCollect", "Collect Job", "Collect declared job outputs without requiring a domain parser.", Type.Object({ jobId: identifier(256), outputPaths: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 256 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
-    jobCancel: contract("jobCancel", "Cancel Job", "Cancel a durable job.", Type.Object({ jobId: identifier(256), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
+    }, { additionalProperties: false, anyOf: [{ required: ["command"] }, { required: ["request_file", "request_sha256"] }, { required: ["validator_id", "input_artifact_ids"] }] }), { executionMode: "sequential", replay: "never" }),
+    jobStatus: contract("jobStatus", "Job Status", "Read the status of a durable job.", selectorSchema, { executionMode: "sequential" }),
+    jobCollect: contract("jobCollect", "Collect Job", "Collect declared job outputs without requiring a domain parser.", selectorSchema, { executionMode: "sequential" }),
+    jobCancel: contract("jobCancel", "Cancel Job", "Cancel a durable job.", selectorSchema, { executionMode: "sequential" }),
     jobProbe: contract("jobProbe", "Probe Job", "Probe execution platform availability.", Type.Object({ platform: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
-    jobReconcile: contract("jobReconcile", "Reconcile Job", "Reconcile an uncertain job receipt.", Type.Object({ jobId: identifier(256), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
-    artifactRegister: contract("artifactRegister", "Register Artifact", "Register an existing raw file as an evidence artifact.", Type.Object({ path: Type.String({ minLength: 1, maxLength: 4096 }), nodeId: Type.Optional(nodeReference), jobId: Type.Optional(identifier(256)), mediaType: Type.Optional(Type.String({ maxLength: 256 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
-    artifactCreate: contract("artifactCreate", "Create Artifact", "Create a raw or derived artifact from supplied content.", Type.Object({ content: Type.String({ maxLength: 4_000_000 }), name: Type.String({ minLength: 1, maxLength: 512 }), nodeId: Type.Optional(nodeReference), mediaType: Type.Optional(Type.String({ maxLength: 256 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
-    artifactRead: contract("artifactRead", "Read Artifact", "Read bounded content or metadata from an artifact.", Type.Object({ artifactId: identifier(256), offset: Type.Optional(Type.Integer({ minimum: 0 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1_000_000 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
-    artifactDerive: contract("artifactDerive", "Derive Artifact", "Record a derivation descriptor. Execute analysis through a Skill Job and register its actual output separately.", Type.Object({ inputArtifactIds: Type.Array(identifier(256), { minItems: 1, maxItems: 256, uniqueItems: true }), operation: Type.String({ minLength: 1, maxLength: 256 }), parameters: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 64 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
-    artifactLink: contract("artifactLink", "Link Artifact", "Persist an artifact evidence link to a Finding, Claim, or Gate.", Type.Object({ artifactId: identifier(256), subjectId: identifier(256), relation: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
+    jobReconcile: contract("jobReconcile", "Reconcile Job", "Reconcile an uncertain job receipt.", selectorSchema, { executionMode: "sequential" }),
+    artifactRegister: contract("artifactRegister", "Register Artifact", "Register an existing raw file as an evidence artifact.", Type.Object({ path: Type.String({ minLength: 1, maxLength: 4096 }), node_id: Type.Optional(nodeReference), job_id: Type.Optional(identifier(256)), media_type: Type.Optional(Type.String({ maxLength: 256 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
+    artifactCreate: contract("artifactCreate", "Create Artifact", "Create a raw or derived artifact from supplied content.", Type.Object({ content: Type.String({ maxLength: 4_000_000 }), name: Type.String({ minLength: 1, maxLength: 512 }), node_id: Type.Optional(nodeReference), media_type: Type.Optional(Type.String({ maxLength: 256 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
+    artifactRead: contract("artifactRead", "Read Artifact", "Read bounded content or metadata from an artifact.", Type.Object({ artifact_id: identifier(256), offset: Type.Optional(Type.Integer({ minimum: 0 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1_000_000 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
+    artifactDerive: contract("artifactDerive", "Derive Artifact", "Record a derivation descriptor. Execute analysis through a Skill Job and register its actual output separately.", Type.Object({ input_artifact_ids: Type.Array(identifier(256), { minItems: 1, maxItems: 256, uniqueItems: true }), operation: Type.String({ minLength: 1, maxLength: 256 }), parameters: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 64 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
+    artifactLink: contract("artifactLink", "Link Artifact", "Persist an artifact evidence link to a Finding, Claim, or Gate.", Type.Object({ artifact_id: identifier(256), subject_id: identifier(256), relation: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
 
   };
   return Object.freeze(Object.fromEntries(Object.entries(contracts).map(
@@ -430,79 +441,6 @@ export function createPublicToolAlias(tool, canonicalName, { mapParams } = {}) {
   };
 }
 
-function normalizeDecisionRecord(record, aliases) {
-  if (!record || typeof record !== "object" || Array.isArray(record)) return record;
-  const normalized = { ...record };
-  for (const [camel, snake] of aliases) {
-    if (normalized[snake] === undefined && normalized[camel] !== undefined) normalized[snake] = normalized[camel];
-    delete normalized[camel];
-  }
-  return normalized;
-}
-
-function normalizeStrategyParams(params = {}) {
-  const strategyOperation = params.strategyOperation || "plan";
-  const plan = normalizeDecisionRecord(params.plan, [
-    ["claimId", "claim_id"], ["nodeId", "node_id"], ["createdAt", "created_at"],
-    ["stopConditions", "stop_conditions"], ["switchConditions", "switch_conditions"],
-  ]);
-  const review = normalizeDecisionRecord(params.review, [
-    ["claimId", "claim_id"], ["selectedStrategyId", "selected_strategy_id"],
-    ["triggerRefs", "trigger_refs"], ["attemptRefs", "attempt_refs"], ["createdAt", "created_at"],
-  ]);
-  if (plan && typeof plan === "object") {
-    if (plan.claim_id === undefined) plan.claim_id = params.claim_id ?? params.claimId;
-    if (plan.node_id === undefined) plan.node_id = params.node_id ?? params.nodeId;
-    if (plan.rationale === undefined && params.rationale !== undefined) plan.rationale = params.rationale;
-  }
-  if (review && typeof review === "object" && review.claim_id === undefined) {
-    review.claim_id = params.claim_id ?? params.claimId;
-  }
-  if (strategyOperation === "plan") {
-    if (!plan || typeof plan !== "object") {
-      throw new Error("research_strategy plan must be an object");
-    }
-    if (typeof plan.claim_id !== "string" || !plan.claim_id.trim()) {
-      throw new Error("research_strategy plan requires an explicit claimId/claim_id bound to an existing Claim");
-    }
-    if (typeof plan.node_id === "string" && !plan.node_id.trim()) {
-      throw new Error("research_strategy plan nodeId/node_id must be a non-empty string when provided");
-    }
-  } else if (strategyOperation === "review"
-      && (!review || typeof review.claim_id !== "string" || !review.claim_id.trim())) {
-    throw new Error("research_strategy review requires an explicit claimId/claim_id bound to an existing Claim");
-  }
-  return { ...params, plan, review };
-}
-
-function normalizeInterpretationParams(params = {}) {
-  const interpretation = normalizeDecisionRecord(params.interpretation, [
-    ["claimId", "claim_id"], ["nodeId", "node_id"], ["attemptRef", "attempt_ref"], ["createdAt", "created_at"],
-  ]);
-  if (interpretation && typeof interpretation === "object") {
-    if (interpretation.claim_id === undefined) interpretation.claim_id = params.claim_id ?? params.claimId;
-    if (interpretation.node_id === undefined) interpretation.node_id = params.node_id ?? params.nodeId;
-    if (interpretation.attempt_ref === undefined) interpretation.attempt_ref = params.attempt_ref ?? params.attemptRef;
-  }
-  const missing = ["id", "claim_id", "attempt_ref", "summary", "outcome"].filter(
-    (field) => typeof interpretation?.[field] !== "string" || !interpretation[field].trim(),
-  );
-  if (missing.length) {
-    throw new Error(`research_interpretation requires non-empty interpretation fields: ${missing.join(", ")}. Supply claimId and attemptRef in interpretation or at the top level; eventId does not replace interpretation.id.`);
-  }
-  return { ...params, interpretation };
-}
-
-function normalizeCheckpointParams(params = {}) {
-  return {
-    ...params,
-    checkpoint: normalizeDecisionRecord(params.checkpoint, [
-      ["turnId", "turn_id"], ["claimIds", "claim_ids"], ["nodeIds", "node_ids"],
-      ["unresolvedRefs", "unresolved_refs"], ["mapRevision", "map_revision"], ["createdAt", "created_at"],
-    ]),
-  };
-}
-
 const SEMANTIC_ALIAS_SOURCES = Object.freeze({
   "system_prompt": "sys_prompt",
   "research_read": "research_read",
@@ -542,186 +480,43 @@ function textSchema(maxLength = 12_000) {
   return { type: "string", minLength: 1, maxLength };
 }
 
-function decisionRecordSchema(properties) {
-  return {
-    type: "object",
-    properties,
-    additionalProperties: true,
-    maxProperties: 32,
-  };
+function record(properties, required) {
+  return { type: "object", properties, required, additionalProperties: false };
 }
-
-function strategyPlanSchema() {
-  return {
-    ...decisionRecordSchema({
-    id: identifierSchema(),
-    claimId: claimIdentifierSchema(),
-    claim_id: claimIdentifierSchema(),
-    nodeId: nodeIdentifierSchema(),
-    node_id: nodeIdentifierSchema(),
-    objective: textSchema(),
-    rationale: textSchema(),
-    steps: { type: "array", maxItems: 128, items: { type: "object", additionalProperties: true } },
-    alternatives: { type: "array", maxItems: 128, items: { type: "object", additionalProperties: true } },
-    stopConditions: { type: "array", maxItems: 128, items: textSchema() },
-    stop_conditions: { type: "array", maxItems: 128, items: textSchema() },
-    switchConditions: { type: "array", maxItems: 128, items: textSchema() },
-    switch_conditions: { type: "array", maxItems: 128, items: textSchema() },
-    status: { enum: ["proposed", "active", "superseded", "completed", "blocked"] },
-    createdAt: identifierSchema(),
-    created_at: identifierSchema(),
-    }),
-  };
-}
-
-function claimBoundRecordSchema(record) {
-  return {
-    ...record,
-    anyOf: [
-      { required: ["claimId"] },
-      { required: ["claim_id"] },
-    ],
-  };
-}
-
-function strategyReviewSchema() {
-  return claimBoundRecordSchema(decisionRecordSchema({
-    id: identifierSchema(),
-    claimId: claimIdentifierSchema(),
-    claim_id: claimIdentifierSchema(),
-    decision: { enum: ["continue", "switch", "stop", "blocked"] },
-    rationale: textSchema(),
-    selectedStrategyId: identifierSchema(),
-    selected_strategy_id: identifierSchema(),
-    triggerRefs: { type: "array", maxItems: 128, items: identifierSchema() },
-    trigger_refs: { type: "array", maxItems: 128, items: identifierSchema() },
-    attemptRefs: { type: "array", maxItems: 128, items: identifierSchema() },
-    attempt_refs: { type: "array", maxItems: 128, items: identifierSchema() },
-    createdAt: identifierSchema(),
-    created_at: identifierSchema(),
-  }));
-}
-
-function interpretationSchema() {
-  return {
-    ...decisionRecordSchema({
-      id: { ...identifierSchema(), description: "Required interpretation record ID; distinct from the request eventId." },
-      claimId: claimIdentifierSchema(),
-      claim_id: claimIdentifierSchema(),
-      nodeId: nodeIdentifierSchema(),
-      node_id: nodeIdentifierSchema(),
-      attemptRef: identifierSchema(),
-      attempt_ref: identifierSchema(),
-      summary: textSchema(),
-      outcome: { enum: ["supports", "contradicts", "inconclusive", "invalid"] },
-      createdAt: identifierSchema(),
-      created_at: identifierSchema(),
-    }),
-    required: ["id", "summary", "outcome"],
-  };
-}
-
-function checkpointSchema() {
-  return decisionRecordSchema({
-    id: identifierSchema(),
-    turnId: identifierSchema(),
-    turn_id: identifierSchema(),
-    disposition: { enum: dispositions },
-    reason: textSchema(),
-    claimIds: { type: "array", maxItems: 128, items: claimIdentifierSchema() },
-    claim_ids: { type: "array", maxItems: 128, items: claimIdentifierSchema() },
-    nodeIds: { type: "array", maxItems: 128, items: nodeIdentifierSchema() },
-    node_ids: { type: "array", maxItems: 128, items: nodeIdentifierSchema() },
-    unresolvedRefs: { type: "array", maxItems: 128, items: identifierSchema() },
-    unresolved_refs: { type: "array", maxItems: 128, items: identifierSchema() },
-    mapRevision: { type: "integer", minimum: 0 },
-    map_revision: { type: "integer", minimum: 0 },
-    createdAt: identifierSchema(),
-    created_at: identifierSchema(),
-  });
-}
-
+const refs = { type: "array", maxItems: 256, uniqueItems: true, items: identifierSchema() };
+const common = {
+  rationale: textSchema(), basis_refs: refs,
+  expected_revision: { type: "integer", minimum: 0 }, event_id: identifierSchema(), root: { type: "string" },
+};
 const DECISION_ALIAS_SCHEMAS = Object.freeze({
-  "research_strategy": Object.freeze({
-    type: "object",
-    properties: {
-      strategyOperation: { enum: ["plan", "review"] },
-      plan: strategyPlanSchema(),
-      review: strategyReviewSchema(),
-      // Accept these at the alias boundary for compatibility with model
-      // payloads that place the Claim/Node selectors beside `plan`.
-      claimId: claimIdentifierSchema(),
-      claim_id: claimIdentifierSchema(),
-      nodeId: nodeIdentifierSchema(),
-      node_id: nodeIdentifierSchema(),
-      rationale: { type: "string", minLength: 1, maxLength: 12_000 },
-      basisRefs: { type: "array", items: { type: "string" }, maxItems: 256, uniqueItems: true },
-      expectedRevision: { type: "integer", minimum: 0 },
-      eventId: { type: "string", minLength: 1, maxLength: 256 },
-      root: { type: "string" },
-    },
-    // A Claim may be supplied beside the record and is copied into the
-    // canonical snake_case payload before dispatch.  Require it in either
-    // location at the transport boundary so malformed plans fail early.
-    anyOf: [
-      { required: ["claimId"] },
-      { required: ["claim_id"] },
-      {
-        required: ["plan"],
-        properties: { plan: { anyOf: [{ required: ["claimId"] }, { required: ["claim_id"] }] } },
-      },
-      {
-        required: ["review"],
-        properties: { review: { anyOf: [{ required: ["claimId"] }, { required: ["claim_id"] }] } },
-      },
-    ],
-    required: ["strategyOperation"],
-    additionalProperties: false,
-  }),
-  "research_interpretation": Object.freeze({
-    type: "object",
-    properties: {
-      interpretation: interpretationSchema(),
-      claimId: claimIdentifierSchema(),
-      claim_id: claimIdentifierSchema(),
-      nodeId: nodeIdentifierSchema(),
-      node_id: nodeIdentifierSchema(),
-      attemptRef: identifierSchema(),
-      attempt_ref: identifierSchema(),
-      rationale: { type: "string", minLength: 1, maxLength: 12_000 },
-      basisRefs: { type: "array", items: { type: "string" }, maxItems: 256, uniqueItems: true },
-      expectedRevision: { type: "integer", minimum: 0 },
-      eventId: { type: "string", minLength: 1, maxLength: 256 },
-      root: { type: "string" },
-    },
-    allOf: [
-      { anyOf: [
-        { required: ["claimId"] },
-        { required: ["claim_id"] },
-        { properties: { interpretation: { anyOf: [{ required: ["claimId"] }, { required: ["claim_id"] }] } } },
-      ] },
-      { anyOf: [
-        { required: ["attemptRef"] },
-        { required: ["attempt_ref"] },
-        { properties: { interpretation: { anyOf: [{ required: ["attemptRef"] }, { required: ["attempt_ref"] }] } } },
-      ] },
-    ],
-    required: ["interpretation"],
-    additionalProperties: false,
-  }),
-  "research_checkpoint": Object.freeze({
-    type: "object",
-    properties: {
-      checkpoint: checkpointSchema(),
-      rationale: { type: "string", minLength: 1, maxLength: 12_000 },
-      basisRefs: { type: "array", items: { type: "string" }, maxItems: 256, uniqueItems: true },
-      expectedRevision: { type: "integer", minimum: 0 },
-      eventId: { type: "string", minLength: 1, maxLength: 256 },
-      root: { type: "string" },
-    },
-    required: ["checkpoint"],
-    additionalProperties: false,
-  }),
+  research_strategy: record({
+    ...common, strategy_operation: { enum: ["plan", "review"] },
+    plan: record({ id: identifierSchema(), claim_id: claimIdentifierSchema(), node_id: nodeIdentifierSchema(),
+      objective: textSchema(), rationale: textSchema(),
+      steps: { type: "array", items: { type: "object" }, maxItems: 128 },
+      alternatives: { type: "array", items: { type: "object" }, maxItems: 128 },
+      stop_conditions: refs, switch_conditions: refs,
+      status: { enum: ["proposed", "active", "superseded", "completed", "blocked"] },
+    }, ["id", "claim_id", "objective", "rationale"]),
+    review: record({ id: identifierSchema(), claim_id: claimIdentifierSchema(),
+      decision: { enum: ["continue", "switch", "stop", "blocked"] }, rationale: textSchema(),
+      selected_strategy_id: identifierSchema(), trigger_refs: refs, attempt_refs: refs,
+    }, ["id", "claim_id", "decision", "rationale"]),
+  }, ["strategy_operation"]),
+  research_interpretation: record({ ...common, interpretation: record({
+    id: identifierSchema(), claim_id: claimIdentifierSchema(), node_id: nodeIdentifierSchema(),
+    attempt_ref: identifierSchema(), summary: textSchema(),
+    outcome: { enum: ["supports", "contradicts", "inconclusive", "invalid"] },
+    kind: { enum: ["result", "observation", "execution_issue"] },
+    direct_evidence_refs: refs, comparison_evidence_refs: refs, background_evidence_refs: refs,
+    result_receipt_ref: identifierSchema(), execution_observation_ref: identifierSchema(),
+    supersedes_id: identifierSchema(), finding_ids: refs, gate_ids: refs,
+  }, ["id", "claim_id", "attempt_ref", "summary", "outcome", "kind"]) }, ["interpretation"]),
+  research_checkpoint: record({ ...common, checkpoint: record({
+    id: identifierSchema(), turn_id: identifierSchema(), disposition: { enum: dispositions },
+    reason: textSchema(), claim_ids: refs, node_ids: refs, unresolved_refs: refs,
+    map_revision: { type: "integer", minimum: 0 },
+  }, ["disposition", "reason"]) }, ["checkpoint"]),
 });
 
 /** Create all semantic aliases available in a transport's tool list. */
@@ -738,14 +533,14 @@ export function createPublicToolAliases(tools, { includeDecisionAliases = true }
     if (!source) return [];
     const mapParams = canonicalName === "research_strategy"
       ? (params) => ({
-        ...normalizeStrategyParams(params),
+        ...params,
         operation: "strategy",
-        strategyOperation: params?.strategyOperation || "plan",
+        strategy_operation: params?.strategy_operation || "plan",
       })
       : canonicalName === "research_interpretation"
-        ? (params) => ({ ...normalizeInterpretationParams(params), operation: "interpret" })
+        ? (params) => ({ ...params, operation: "interpret" })
         : canonicalName === "research_checkpoint"
-          ? (params) => ({ ...normalizeCheckpointParams(params), operation: "checkpoint" })
+          ? (params) => ({ ...params, operation: "checkpoint" })
           : undefined;
     return [createPublicToolAlias(source, canonicalName, { mapParams })];
   });

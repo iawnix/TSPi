@@ -5,7 +5,7 @@ const { createHash } = require("node:crypto");
 function analysisProperties(Type) {
   return {
     operation: Type.Literal("run"),
-    nodeId: Type.String({ pattern: "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" }),
+    node_id: Type.String({ pattern: "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" }),
     capability: Type.String({ minLength: 1, maxLength: 128 }),
     capabilityVersion: Type.String({ minLength: 1, maxLength: 32 }),
     inputArtifacts: Type.Object({}, {
@@ -19,7 +19,7 @@ function analysisProperties(Type) {
 function analysisRequest(params) {
   return {
     schema_version: "ts-analysis-request/1",
-    node_id: params.nodeId,
+    node_id: params.node_id,
     capability: params.capability,
     capability_version: params.capabilityVersion,
     input_artifacts: params.inputArtifacts,
@@ -45,7 +45,7 @@ function validateAnalysisResult(raw, params) {
   }
   if (!raw || raw.schema_version !== "ts-analysis-result/1" || raw.operation !== "run"
       || raw.capability !== params.capability || raw.capability_version !== params.capabilityVersion
-      || raw.node_id !== params.nodeId || raw.analysis_artifact?.owner_node !== params.nodeId) {
+      || raw.node_id !== params.node_id || raw.analysis_artifact?.owner_node !== params.node_id) {
     throw new Error("scientific analysis returned an invalid result binding");
   }
 }

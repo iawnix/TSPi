@@ -21,7 +21,8 @@ insufficient.
 Record each verified property as a narrow FactFinding and each ambiguity,
 missing check, competing mode, contamination, or structural mismatch as an
 IssueFinding. Findings do not set Node or Claim status automatically. Use a
-Gate only when explicit acceptance criteria need a recorded evaluation.
+Gate with explicit acceptance criteria before starting its validation Jobs;
+any completion exemption must be declared when the Node is created.
 
 Read [transition_state_validation.md](references/transition_state_validation.md)
 for saddle and mode evidence,
@@ -29,3 +30,6 @@ for saddle and mode evidence,
 identity criteria used after path calculations, and
 [structure_validation.md](references/structure_validation.md) for mapping,
 alignment, and stereochemical comparisons.
+
+
+Registered validator: `job_start` with `validator_id="chemical.gaussian_frequency"`, `node_id`, a new `request_id`, and `input_artifact_ids=[<collected parsed.json artifact>]`. Its version is `1`. The runtime records actual execution and input digests. This checks normal termination and exactly one negative frequency only; mode character, geometry and IRC connectivity still require separate criteria.

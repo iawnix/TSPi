@@ -65,7 +65,7 @@ test("composition exposes only the Native capability host boundary", async () =>
     await composition.app_server.initialize_workspace({ workspace_root: workspace, workspace_id: "native_composition", workspace_mode: "research" });
     await composition.app_server.admit_workspace({ workspace_root: workspace, workspace_id: "native_composition", workspace_mode: "research" });
     assert.deepEqual(
-      await composition.app_server.run_compute({ workspace_root: workspace, operation: "inspect", nodeId: "node_1", intentId: "calc_1" }),
+      await composition.app_server.run_compute({ workspace_root: workspace, operation: "inspect", node_id: "node_1", intentId: "calc_1" }),
       { ok: true },
     );
   } finally {

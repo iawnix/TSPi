@@ -134,8 +134,8 @@ function validateComputeInputs(value) {
   if (JSON.stringify(outputRoles) !== JSON.stringify(descriptor.output_roles)) {
     throw new Error("inputs.expected_output_roles does not match the capability descriptor");
   }
-  const nodeId = requireString(value.node_id, "inputs.node_id", 128);
-  if (!/^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(nodeId)) throw new Error("inputs.node_id must be a ResearchNode ID");
+  const node_id = requireString(value.node_id, "inputs.node_id", 128);
+  if (!/^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(node_id)) throw new Error("inputs.node_id must be a ResearchNode ID");
   const intentId = requireString(value.intent_id, "inputs.intent_id", 128);
   if (!/^calc_[1-9][0-9]*$/.test(intentId)) {
     throw new Error("inputs.intent_id must be a calculation Attempt ID");
@@ -150,7 +150,7 @@ function validateComputeInputs(value) {
     capability_descriptor_digest: descriptorDigest,
     capability_descriptor: descriptor,
     expected_output_roles: outputRoles,
-    node_id: nodeId,
+    node_id: node_id,
     intent_id: intentId,
     intent_digest: value.intent_digest,
     execution_kind: requireEnum(value.execution_kind, "inputs.execution_kind", ["local", "remote"]),

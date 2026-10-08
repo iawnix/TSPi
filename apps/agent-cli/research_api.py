@@ -35,6 +35,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--claim-id")
     parser.add_argument("--record-type")
     parser.add_argument("--limit", type=int)
+    parser.add_argument("--offset", type=int)
+    parser.add_argument("--max-bytes", type=int)
+    parser.add_argument("--event-id", action="append", dest="event_ids")
+    parser.add_argument("--attempt-id")
+    parser.add_argument("--job-id")
     parser.add_argument("--node-id")
     parser.add_argument("--artifact-id")
     parser.add_argument("--subject-id")
@@ -57,6 +62,9 @@ def main(argv: list[str] | None = None) -> int:
                 "claim_id": args.claim_id,
                 "record_type": args.record_type,
                 "limit": args.limit,
+                "offset": args.offset, "max_bytes": args.max_bytes,
+                "event_ids": args.event_ids,
+                "attempt_id": args.attempt_id, "job_id": args.job_id,
                 "node_id": args.node_id,
                 "artifact_id": args.artifact_id,
                 "subject_id": args.subject_id,
@@ -74,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
         result = execute(args.command, args.root, params)
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
-    except (CommandError, OSError, ValueError, json.JSONDecodeError) as exc:
+    except (CommandError, OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 2
 

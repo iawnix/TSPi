@@ -26,6 +26,10 @@ def inspect_input(path, method, basis, charge, spin, threads, memory_mb):
         if not route_match:
             raise ValueError('Gaussian input needs a route section followed by a blank line')
         route = route_match.group(1).strip(); routes.append(route)
+        coordinate = r'(?im)^\s*(?:[A-Z][a-z]?|\d+)\s+(?:[-+]?\d+(?:\.\d*)?(?:[EeDd][-+]?\d+)?\s+){2}[-+]?\d+(?:\.\d*)?(?:[EeDd][-+]?\d+)?\s*$'
+        title = section[route_match.end():].split('\n\n', 1)[0]
+        if re.search(coordinate, route) or re.search(coordinate, title):
+            raise ValueError('Gaussian coordinate record in route/title section; restore blank section boundaries')
         if f'{method}/{basis}'.lower() not in re.sub(r'\s+', '', route).lower():
             raise ValueError('every Gaussian link must explicitly match the requested method/basis')
         cpus = re.findall(r'(?im)^\s*%nproc(?:shared)?\s*=\s*(\d+)\s*$', section)

@@ -119,7 +119,11 @@ def _run_scenario(selected: dict[str, object], extra: list[str]) -> int:
         node = shutil.which("node")
         if not node:
             raise SystemExit("Node.js is required for this scenario")
-        command = [node, str(scenario), *extra]
+        pi_root = os.environ.get("TSPI_TEST_PI_RUNTIME_ROOT")
+        if not pi_root:
+            raise SystemExit("TSPI_TEST_PI_RUNTIME_ROOT must identify the pinned Pi checkout")
+        resolver = Path(pi_root) / "packages/coding-agent/src/experimental/source-resolver.ts"
+        command = [node, "--import", str(resolver), str(scenario), *extra]
     else:
         raise SystemExit(f"unsupported scenario file type: {scenario}")
     return _run(command)

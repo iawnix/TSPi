@@ -2,12 +2,12 @@
 
 `ResearchMap` is the canonical, typed scientific state of one research project.
 The Research State filesystem boundary persists it in `research_map/context.json` with
-`schema_version=research_map_context_1`. A valid context always has array
+`schema_version=research_map_context_2`. A valid context always has array
 collections `phases`, `claims`, `nodes`, `findings`, `gates`, `claim_relations`,
 `attempts`, `artifacts`, `evidence_links`, `lifecycle_actions`, `strategy_plans`,
 `strategy_reviews`, and `attempt_interpretations`; its `focus.claim_ids` and
 `focus.node_ids` are arrays. Lifecycle is projected to
-`lifecycle/liveness.json` (`research_liveness_1`); `workspace_manifest.json`
+`lifecycle/liveness.json` (`research_liveness_2`); `workspace_manifest.json`
 binds identity, mode, root, and admission. Retired SQLite and
 `research_map.json` files are rejected and are not runtime authorities.
 
@@ -72,9 +72,9 @@ exposes compute modes
 Strategy, interpretation, checkpoint, Evidence Registry, and map mutations use
 their typed Research State commands; do not create a generic memory write.
 
-For `research_read mode=evidence`, optional selectors are `recordType` (`attempt`,
-`artifact`, or `link`), `nodeId`, `artifactId`, `subjectId`, and `limit` (1--2048).
-`recordType=link` selects `evidence_links`; it is not a second write protocol.
+For `research_read mode=evidence`, optional selectors are `record_type` (`attempt`,
+`artifact`, or `link`), `node_id`, `artifact_id`, `subject_id`, and `limit` (1--2048).
+`record_type=link` selects `evidence_links`; it is not a second write protocol.
 
 Lifecycle actions are State records managed through `research.change`; the
 `research_checkpoint` command is the turn checkpoint. Use the canonical

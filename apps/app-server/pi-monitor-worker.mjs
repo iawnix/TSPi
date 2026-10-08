@@ -50,8 +50,7 @@ export async function deliverMonitorEvent({ workspace, delivery, deliveries = [d
       // assesses them again inside the idle admission transaction.
       const response = await sendWake({ workspace_id: hostWorkspaceId, session_id: first.session_id,
         request_id: first.request_id, client_message_id: first.request_id, source: "monitor", mode: "next_run",
-        text: first.legacy_payload ? wakeMessage(await runJson("event", workspace, ["--event-id", first.event_id]))
-          : ["A compute monitor event requires attention.", ...ids.map(id => `event_id=${id}`)].join("\n") });
+        text: ["A compute monitor event requires attention.", ...ids.map(id => `event_id=${id}`)].join("\n") });
       if (["busy", "monitor_deferred"].includes(response?.error?.code)) return errors;
       if (response?.accepted !== true || response?.state === "uncertain") {
         throw new Error(response?.error?.message || "Host returned an uncertain monitor wake");
@@ -172,11 +171,11 @@ export async function recordMonitorTurn({ workspace, workspace_id, event, delive
   };
   const directory = await mkdtemp(join(tmpdir(), "tspi-monitor-turn-"));
   try {
-    const requestFile = join(directory, "request.json");
-    await writeFile(requestFile, `${JSON.stringify(request)}\n`, { encoding: "utf8", mode: 0o600 });
+    const request_file = join(directory, "request.json");
+    await writeFile(request_file, `${JSON.stringify(request)}\n`, { encoding: "utf8", mode: 0o600 });
     let completed;
     try {
-      completed = await execute(python, [join(packageRoot, "apps", "agent-cli", "research_api.py"), "research.turn", "--root", workspace, "--request-file", requestFile], {
+      completed = await execute(python, [join(packageRoot, "apps", "agent-cli", "research_api.py"), "research.turn", "--root", workspace, "--request-file", request_file], {
         cwd: workspace,
         env: { ...process.env, PYTHONNOUSERSITE: "1" },
         maxBuffer: 8 * 1024 * 1024,
@@ -214,7 +213,7 @@ function isWorkspace(path) {
     const manifestPath = join(path, "workspace_manifest.json");
     if (!existsSync(manifestPath)) return false;
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-    return manifest?.schema_version === "research_state_workspace_1" && manifest.workspace_mode === "research";
+    return manifest?.schema_version === "research_state_workspace_2" && manifest.workspace_mode === "research";
   }
   catch { return false; }
 }

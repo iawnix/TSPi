@@ -1,6 +1,6 @@
 import type { WorkspaceMode } from "./session_mode.mjs";
 
-export const WORKSPACE_MANIFEST_SCHEMA: "research_state_workspace_1";
+export const WORKSPACE_MANIFEST_SCHEMA: "research_state_workspace_2";
 export const WORKSPACE_STATES: readonly ["initializing", "ready", "admission_pending", "failed"];
 export const RESEARCH_CONTEXT_COLLECTIONS: readonly string[];
 
@@ -16,7 +16,7 @@ export function validate_workspace_files(
 ): Promise<WorkspaceManifest>;
 
 export interface WorkspaceManifest {
-  readonly schema_version: "research_state_workspace_1";
+  readonly schema_version: "research_state_workspace_2";
   readonly workspace_id: string;
   readonly workspace_mode: WorkspaceMode;
   readonly profile_id: string;

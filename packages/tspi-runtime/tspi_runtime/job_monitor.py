@@ -7,15 +7,14 @@ from types import SimpleNamespace
 from job_runtime import JobState
 from datetime import datetime, timezone
 from pathlib import Path
-from research_state.transactions import TransactionCoordinator
+from research_state.transactions import TransactionCoordinator, state_transaction, write_json, read_json
 from .execution import _runtime, _receipt
 
 
 def now():return datetime.now(timezone.utc).isoformat()
-def read(path):return json.loads(path.read_text())
+def read(path):return read_json(path)
 def write(path,value):
-    path.parent.mkdir(parents=True,exist_ok=True)
-    temp=path.with_suffix('.tmp');temp.write_text(json.dumps(value,indent=2)+'\n');temp.replace(path)
+    write_json(path, value)
 def digest(value):return 'sha256:'+hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
 
 
@@ -33,6 +32,8 @@ def bind(root, intent, session_id):
 
 def command(root, action, args):
     root=Path(root).resolve();base=root/'operations/monitors'
+    if action == 'tick':
+        return _tick(root, base, args)
     with TransactionCoordinator(root).locked():
         return _command(root,base,action,args)
 
@@ -57,41 +58,76 @@ def _command(root,base,action,args):
     if action=='health':
         write(base/'health.json',{'checked_at':now(),'error':args.get('error')});return {'ok':True}
     if action=='tick':
-        errors=[];observed=[]
-        for p in bindings:
-            row=read(p)
-            if row.get('schema_version')!='ts-job-monitor/1' or not row.get('enabled'):continue
+        raise ValueError('tick must observe outside the workspace transaction')
+    return _delivery_command(root,base,action,args)
+
+
+def _tick(root, base, args):
+    bindings=sorted(base.glob('*/binding.json'))
+    if args.get('monitor_id'):bindings=[p for p in bindings if p.parent.name==args['monitor_id']]
+    errors=[];observed=[]
+    for p in bindings:
+        row=read(p)
+        if row.get('schema_version')!='ts-job-monitor/1' or not row.get('enabled'):continue
+        try:
+            receipt = None
             try:
-                receipt = None
-                try:
-                    receipt=_receipt(root,{'jobId':row['job_id']})
-                    status=_runtime(root).job_status(receipt)
-                except FileNotFoundError:
-                    status=SimpleNamespace(state=JobState.UNKNOWN,exit_code=None,error='dispatch intent has no receipt; reconcile required')
-                state=status.state.value
-                observed.append({'monitor_id':row['monitor_id'],'state':state})
-                diagnostics = getattr(status, 'diagnostics', {})
-                threshold = receipt.metadata.get('queue_wait_seconds') if receipt is not None else None
-                queue_wait = (state in {'queued','held'} and threshold and
-                              (diagnostics.get('wait_seconds') or 0) >= threshold and not row.get('queue_wait_reported'))
-                if state==row.get('last_state') and not queue_wait:continue
-                if queue_wait: row['queue_wait_reported'] = True
-                previous=row.get('last_state');row['last_state']=state
-                # Queue/running transitions are retained without waking the Agent.
-                if state not in {'succeeded','failed','timed_out','cancelled','unknown'} and not queue_wait:
-                    write(p,row);continue
-                row['sequence']+=1
-                eid='event_'+hashlib.sha256(f"{row['monitor_id']}:{row['sequence']}:{state}".encode()).hexdigest()[:32]
-                event={**row,'schema_version':'ts-job-monitor-event/1','event_id':eid,'state':state,
-                    'previous_state':previous,'status_digest':digest({'state':state,'exit_code':status.exit_code}),
-                    'program_status':None,'exit_status':status.exit_code,'error_class':None,
-                    'error':status.error,'observed_at':now(),'status':{'state':state,'exit_code':status.exit_code,'diagnostics':diagnostics, 'reason':'queue_wait_exceeded' if queue_wait else 'state_changed'}}
-                write(p.parent/'events'/f'{eid}.json',event)
-                write(p.parent/'deliveries'/f'{eid}.json',{'event_id':eid,'session_id':row['session_id'],
-                    'request_id':'job-wake:'+eid,'delivered':False})
-                write(p,row)
-            except Exception as exc:errors.append(str(exc))
-        return {'monitors':observed,'registration_errors':errors}
+                receipt=_receipt(root,{'job_id':row['job_id']})
+                status=_runtime(root).job_status(receipt)
+            except FileNotFoundError:
+                status=SimpleNamespace(state=JobState.UNKNOWN,exit_code=None,error='dispatch intent has no receipt; reconcile required')
+            status_value={key:getattr(status,key,None) for key in ('exit_code','started_at','finished_at','error','diagnostics')}
+            status_value['state']=status.state.value
+            observed.append(_commit_observation(root, {'monitor_id':row['monitor_id'],
+                'status':status_value,'receipt':receipt.__dict__ if receipt else None}))
+        except Exception as exc:errors.append(str(exc))
+    return {'monitors':observed,'registration_errors':errors}
+
+
+
+@state_transaction('job.monitor_observation')
+def _commit_observation(root, request):
+    p=root/'operations/monitors'/request['monitor_id']/'binding.json'
+    row=read(p)
+    if not row.get('enabled'):return {'monitor_id':row['monitor_id'],'state':'disabled'}
+    status=SimpleNamespace(**request['status'])
+    receipt=SimpleNamespace(**request['receipt']) if request['receipt'] else SimpleNamespace(
+        job_id=row['job_id'], attempt_id=row['attempt_id'], node_id=row['node_id'], workspace_id=row['workspace_id'], metadata={})
+    if receipt:
+        if receipt.job_id!=row['job_id'] or receipt.attempt_id!=row['attempt_id']:
+            raise ValueError('monitor_binding_mismatch')
+        from .job_state import observe_attempt
+        conflict = observe_attempt(root,receipt,request['status'])
+        if conflict:
+            status.state = "unknown"
+            status.error = "job_terminal_conflict: explicit reconciliation required"
+    state=status.state
+    result={'monitor_id':row['monitor_id'],'state':state}
+    diagnostics = getattr(status, 'diagnostics', {}) or {}
+    threshold = receipt.metadata.get('queue_wait_seconds') if receipt is not None else None
+    queue_wait = (state in {'queued','held'} and threshold and
+                  (diagnostics.get('wait_seconds') or 0) >= threshold and not row.get('queue_wait_reported'))
+    if state==row.get('last_state') and not queue_wait:return result
+    if queue_wait: row['queue_wait_reported'] = True
+    previous=row.get('last_state');row['last_state']=state
+    # Queue/running transitions are retained without waking the Agent.
+    if state not in {'succeeded','failed','timed_out','cancelled','unknown'} and not queue_wait:
+        write(p,row);return result
+    row['sequence']+=1
+    eid='event_'+hashlib.sha256(f"{row['monitor_id']}:{row['sequence']}:{state}".encode()).hexdigest()[:32]
+    event={**row,'schema_version':'ts-job-monitor-event/1','event_id':eid,'state':state,
+        'previous_state':previous,'status_digest':digest({'state':state,'exit_code':status.exit_code}),
+        'program_status':None,'exit_status':status.exit_code,'error_class':None,
+        'error':status.error,'observed_at':now(),'status':{'state':state,'exit_code':status.exit_code,'diagnostics':diagnostics, 'reason':'queue_wait_exceeded' if queue_wait else 'state_changed'}}
+    write(p.parent/'events'/f'{eid}.json',event)
+    write(p.parent/'deliveries'/f'{eid}.json',{'event_id':eid,'session_id':row['session_id'],
+        'request_id':'job-wake:'+eid,'delivered':False})
+    write(p,row)
+    return result
+
+
+
+def _delivery_command(root,base,action,args):
     deliveries=sorted(base.glob('*/deliveries/*.json'))
     if action=='pending':
         from research_state.agent_workspace import read_liveness
@@ -103,10 +139,6 @@ def _command(root,base,action,args):
         # uncertain RPC outcomes must reuse both identity and message payload.
         sessions = {}
         for path, row in pending:
-            if not row.get('batch_event_ids') and any(row.get(key) for key in ('claim_token', 'error', 'deferred_state')):
-                row['batch_event_ids'] = [row['event_id']]
-                row['legacy_payload'] = True
-                write(path, row)
             if not row.get('batch_event_ids'):
                 sessions.setdefault(row.get('session_id'), []).append((path, row))
         for rows in sessions.values():

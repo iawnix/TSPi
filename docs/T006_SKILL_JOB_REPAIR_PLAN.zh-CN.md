@@ -220,16 +220,16 @@ Agent 可以为新任务编写组合脚本或扩展已有实现，但标准流�
 
 ### 4.1 统一公开工具与内部合同
 
-当前公开 `job_start` 已支持任意 command，但未暴露内部已有的部分关联与 metadata 字段，outputs 也只有 path/mediaType。需要贯通工具 schema、Host 转发、Python 适配层、JobSpec、存储和返回值，不能只改最底层。
+当前公开 `job_start` 已支持任意 command，但未暴露内部已有的部分关联与 metadata 字段，outputs 也只有 path/media_type。需要贯通工具 schema、Host 转发、Python 适配层、JobSpec、存储和返回值，不能只改最底层。
 
 拟补齐的通用字段如下，名称在实现时统一并保留明确的兼容规则：
 
 | 字段/行为 | 设计 |
 | --- | --- |
-| Node / Attempt | 有效研究 Node 的启动自动登记/绑定 Attempt，返回独立 jobId 和 attemptId；显式绑定已有 Attempt 时验证归属与可启动状态 |
+| Node / Attempt | 有效研究 Node 的启动自动登记/绑定 Attempt，返回独立 jobId 和 attempt_id；显式绑定已有 Attempt 时验证归属与可启动状态 |
 | 输入映射 | 支持 source → destination 的明确映射及 digest；兼容旧字符串输入，不以 basename 偷偷覆盖同名文件 |
 | cwd | 以隔离的 Job root 为默认，公开 cwd 表示其中的相对子目录，返回实际路径；废除“接受参数却忽略”的行为，旧用法给出明确迁移诊断 |
-| outputs | 增加 required、可选 minBytes；必要时声明媒体类型。只对指定结果文件要求非空，空 stderr 合法 |
+| outputs | 增加 required、可选 min_bytes；必要时声明媒体类型。只对指定结果文件要求非空，空 stderr 合法 |
 | metadata | 只保存不透明、可审计的普通元数据，如脚本版本/摘要；Runtime 不根据其中方法名路由 |
 | resources | 通用 CPU、内存、walltime 请求贯通平台适配；实际值回执可查。不支持的参数明确报错 |
 | 启动请求身份 | 持久请求 ID 支持查询和重复请求去重；遇到不确定提交状态先 reconcile，不自动重发 |
@@ -261,7 +261,7 @@ Runtime 不通过 stderr 中是否出现 `Traceback` 判断科学有效性。Ski
 - 正确区分 Q/R/H 等调度状态，保留调度器原始状态和更新时间。未知格式/查询失败返回 unknown。
 - 优先检查持久终态回执，再结合调度器信息；调度器列表中消失本身不证明成功。
 - 提交脚本保证正常失败路径也写退出回执；不能简单加 `set -e` 使回执写入被跳过。强制终止或节点失联等无法写回执的情况由调度器/accounting 与 reconcile 补充。
-- timeout 与队列 walltime 语义清楚，等待时间和运行时间分别记录；不把已有 timeoutSeconds 当作已经作用于调度器。
+- timeout 与队列 walltime 语义清楚，等待时间和运行时间分别记录；不把已有 timeout_seconds 当作已经作用于调度器。
 - 明确暂存输入集合、目录布局和输出收集清单，避免整体工作区同步夹带无关文件、凭据或产生 basename 冲突。
 - 收集可重试，digest 稳定；中断不登记半个 Artifact。失败 Job 的日志仍可收集。
 - SSH 断连后的恢复必须查询既有 scheduler ID/提交标识；提交响应丢失时不能直接创建第二个任务。无法证明是否提交成功时保持待核查。
@@ -272,7 +272,7 @@ Runtime 不通过 stderr 中是否出现 `Traceback` 判断科学有效性。Ski
 
 采用统一状态事务入口登记 Attempt。推荐顺序：验证 Node/决策 → 写入持久启动 intent 与 Attempt → 执行提交 → 持久回执绑定 Job/scheduler ID → 更新 Attempt。跨进程/远程提交不可能靠单次数据库事务实现原子性，应通过持久 intent、幂等查询和 reconcile 收敛。
 
-启动失败也保留失败 Attempt；改变输入或科学参数重算时建立新 Attempt 并链接前次原因。通用维护 Job 可无研究 Node，但此类 Job 不得冒充研究 Attempt。`jobId` 与 `attemptId` 始终是不同身份，不再互相充当。
+启动失败也保留失败 Attempt；改变输入或科学参数重算时建立新 Attempt 并链接前次原因。通用维护 Job 可无研究 Node，但此类 Job 不得冒充研究 Attempt。`jobId` 与 `attempt_id` 始终是不同身份，不再互相充当。
 
 `waiting_external` 使用工具返回的真实 Attempt 引用，并持久保存相关 Job、等待原因和恢复条件；未知提交可指向已创建、处于待核查状态的 Attempt。禁止伪造 Attempt、为绕过校验而省略引用，或把正常等待改写成 blocked。
 

@@ -92,9 +92,9 @@ test("waiting allows scoped evidence and an independently planned node", () => {
   lifecycle.completeTool({ runId, toolName: "job_start" });
   lifecycle.setDurableLiveness({ lifecycle: "waiting_external", ready_node_ids: ["node_2"] });
   lifecycle.setDurableLiveness({ lifecycle: "waiting_external", tool_admission: { accepted: false, code: "research_node_not_ready" } });
-  assert.equal(lifecycle.admitTool({ runId, toolName: "job_start", args: { nodeId: "node_1" } }).accepted, false);
+  assert.equal(lifecycle.admitTool({ runId, toolName: "job_start", args: { node_id: "node_1" } }).accepted, false);
   lifecycle.setDurableLiveness({ lifecycle: "waiting_external", tool_admission: { accepted: true } });
-  assert.equal(lifecycle.admitTool({ runId, toolName: "job_start", args: { nodeId: "node_2" } }).accepted, true);
+  assert.equal(lifecycle.admitTool({ runId, toolName: "job_start", args: { node_id: "node_2" } }).accepted, true);
   lifecycle.completeTool({ runId, toolName: "job_start" });
   assert.equal(lifecycle.admitTool({ runId, toolName: "research_change", args: { operations: [{ type: "create_claim" }] } }).accepted, true);
   lifecycle.completeTool({ runId, toolName: "research_change" });

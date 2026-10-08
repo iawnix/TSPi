@@ -12,7 +12,7 @@ from typing import Any
 
 
 def research_map_document(context: dict[str, Any]) -> dict[str, Any]:
-    """Project a canonical ``research_map_context_1`` document to ResearchMap."""
+    """Project a canonical ``research_map_context_2`` document to ResearchMap."""
 
     focus = context.get("focus") if isinstance(context.get("focus"), dict) else {}
     map_id = context.get("map_id") or f"map_{context.get('workspace_id', '')}"

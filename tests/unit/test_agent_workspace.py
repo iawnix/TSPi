@@ -153,7 +153,7 @@ def test_started_attempt_projects_waiting_external_liveness(tmp_path: Path) -> N
         {"type": "set_node_state", "node_id": "node_1", "state": "active"},
     ]})
     apply_change(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "expected_revision": 1, "operations": [
-        {"type": "create_attempt", "id": "attempt_1", "node_id": "node_1", "capability": "xtb", "capability_version": "1", "state": "running"},
+        {"type": "register_attempt", "id": "attempt_1", "node_id": "node_1", "capability": "xtb", "capability_version": "1", "state": "running"},
     ]})
     waiting = read_liveness(tmp_path)
     assert waiting["lifecycle"] == "waiting_external"
@@ -223,7 +223,7 @@ def test_new_workspace_requires_a_bound_canonical_manifest(tmp_path: Path) -> No
     manifest_path.write_text(
         json.dumps(
             {
-                "schema_version": "research_state_workspace_1",
+                "schema_version": "research_state_workspace_2",
                 "workspace_id": "workspace_python_unit",
                 "workspace_mode": "research",
                 "state": "admission_pending",
@@ -252,14 +252,14 @@ def test_scientific_records_and_traceability_are_indexed_atomically(tmp_path: Pa
     apply_change(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "expected_revision": 0, "operations": [
         {"type": "create_claim", "id": "claim_1", "statement": "Hypothesis"},
         {"type": "create_node", "id": "node_1", "title": "Execution", "objective": "Run", "claim_ids": ["claim_1"]},
-        {"type": "create_artifact", "id": "artifact_1", "node_id": "node_1", "location": "runs/input.xyz", "sha256": "abc", "size_bytes": 4},
-        {"type": "create_attempt", "id": "attempt_1", "node_id": "node_1", "capability": "xtb", "capability_version": "1", "state": "completed", "output_artifact_ids": ["artifact_1"]},
+        {"type": "register_artifact", "id": "artifact_1", "node_id": "node_1", "location": "runs/input.xyz", "sha256": "abc", "size_bytes": 4},
+        {"type": "register_attempt", "id": "attempt_1", "node_id": "node_1", "capability": "xtb", "capability_version": "1", "state": "succeeded", "output_artifact_ids": ["artifact_1"]},
         {"type": "create_finding", "id": "finding_1", "node_id": "node_1", "claim_ids": ["claim_1"], "statement": "Energy was finite", "kind": "fact", "value": True, "source_refs": ["artifact_1"], "provenance": {"interpretation_mode": "root_agent_reading", "validation": "unavailable"}},
-        {"type": "create_gate", "id": "gate_1", "scope": "node", "target_id": "node_1", "criteria": [{"kind": "validated"}]},
-        {"type": "create_evidence", "id": "evidence_1", "artifact_id": "artifact_1", "subject_type": "finding", "subject_id": "finding_1", "relation": "supports"},
-        {"type": "evaluate_gate", "gate_id": "gate_1", "verdict": "pass", "evidence_refs": ["artifact_1"]},
+        {"type": "create_gate", "id": "gate_1", "scope": "node", "target_id": "node_1", "criteria": [{"id": "criterion_1", "source_type": "agent_assessment", "description": "Evidence reviewed"}]},
+        {"type": "link_evidence", "id": "evidence_1", "artifact_id": "artifact_1", "subject_type": "finding", "subject_id": "finding_1", "relation": "supports"},
+        {"type": "evaluate_gate", "gate_id": "gate_1", "verdict": "pass", "assessments": [{"criterion_id": "criterion_1", "verdict": "pass", "reason": "Reviewed evidence"}], "evidence_refs": ["artifact_1"]},
         {"type": "create_strategy_plan", "id": "strategy_1", "claim_id": "claim_1", "node_id": "node_1", "objective": "Validate", "rationale": "Need evidence"},
-        {"type": "create_interpretation", "id": "interpretation_1", "claim_id": "claim_1", "node_id": "node_1", "attempt_ref": "attempt_1", "summary": "Supports claim", "outcome": "supports", "artifact_refs": ["artifact_1"], "finding_ids": ["finding_1"], "gate_ids": ["gate_1"]},
+        {"type": "create_interpretation", "kind": "result", "id": "interpretation_1", "claim_id": "claim_1", "node_id": "node_1", "attempt_ref": "attempt_1", "summary": "Supports claim", "outcome": "supports", "background_evidence_refs": ["artifact_1"], "finding_ids": ["finding_1"], "gate_ids": ["gate_1"]},
     ]})
     context = read_context(tmp_path)
     assert context["nodes"][0]["finding_ids"] == ["finding_1"]
@@ -287,7 +287,7 @@ def test_bulk_evidence_registration_allows_cross_references(tmp_path: Path) -> N
     apply_change(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "expected_revision": 0, "operations": [
         {"type": "create_claim", "id": "claim_1", "statement": "Hypothesis"},
         {"type": "create_node", "id": "node_1", "title": "Execution", "objective": "Run", "claim_ids": ["claim_1"]},
-        {"type": "register_evidence", "attempts": [{"id": "attempt_1", "node_id": "node_1", "capability": "xtb", "capability_version": "1", "state": "completed", "output_artifact_ids": ["artifact_1"]}], "artifacts": [{"id": "artifact_1", "node_id": "node_1", "location": "runs/out.xyz", "producer_attempt_id": "attempt_1"}]},
+        {"type": "register_evidence", "attempts": [{"id": "attempt_1", "node_id": "node_1", "capability": "xtb", "capability_version": "1", "state": "succeeded", "output_artifact_ids": ["artifact_1"]}], "artifacts": [{"id": "artifact_1", "node_id": "node_1", "location": "runs/out.xyz", "producer_attempt_id": "attempt_1"}]},
     ]})
     context = read_context(tmp_path)
     assert context["attempts"][0]["output_artifact_ids"] == ["artifact_1"]
@@ -300,16 +300,16 @@ def test_attempt_lifecycle_transitions_and_evidence_links_are_bounded(tmp_path: 
     apply_change(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "expected_revision": 0, "operations": [
         {"type": "create_claim", "id": "claim_1", "statement": "Hypothesis"},
         {"type": "create_node", "id": "node_1", "title": "Execution", "objective": "Run", "claim_ids": ["claim_1"]},
-        {"type": "create_attempt", "id": "attempt_1", "node_id": "node_1", "capability": "xtb", "capability_version": "1", "state": "started"},
-        {"type": "create_artifact", "id": "artifact_1", "node_id": "node_1", "location": "runs/out.xyz", "producer_attempt_id": "attempt_1"},
+        {"type": "register_attempt", "id": "attempt_1", "node_id": "node_1", "capability": "xtb", "capability_version": "1", "state": "started"},
+        {"type": "register_artifact", "id": "artifact_1", "node_id": "node_1", "location": "runs/out.xyz", "producer_attempt_id": "attempt_1"},
         {"type": "create_finding", "id": "finding_1", "node_id": "node_1", "claim_ids": ["claim_1"], "statement": "Observed", "kind": "fact", "source_refs": ["artifact_1"], "provenance": {"interpretation_mode": "root_agent_reading", "validation": "unavailable"}},
     ]})
     apply_change(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "expected_revision": 1, "operations": [
         {"type": "transition_attempt", "attempt_id": "attempt_1", "state": "running", "started_at": "2026-09-26T01:00:00Z"},
-        {"type": "create_evidence", "id": "evidence_1", "artifact_id": "artifact_1", "attempt_ref": "attempt_1", "subject_type": "finding", "subject_id": "finding_1", "relation": "supports"},
+        {"type": "link_evidence", "id": "evidence_1", "artifact_id": "artifact_1", "attempt_ref": "attempt_1", "subject_type": "finding", "subject_id": "finding_1", "relation": "supports"},
     ]})
     apply_change(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "expected_revision": 2, "operations": [
-        {"type": "update_attempt", "attempt_id": "attempt_1", "state": "failed", "error_class": "process_exit", "error": {"message": "nonzero"}, "finished_at": "2026-09-26T01:01:00Z"},
+        {"type": "transition_attempt", "attempt_id": "attempt_1", "state": "failed", "error_class": "process_exit", "error": {"message": "nonzero"}, "finished_at": "2026-09-26T01:01:00Z"},
     ]})
     context = read_context(tmp_path)
     attempt = context["attempts"][0]

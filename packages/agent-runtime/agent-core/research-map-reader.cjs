@@ -3,7 +3,7 @@
 const { existsSync, lstatSync, readFileSync } = require("node:fs");
 const { resolve } = require("node:path");
 
-const MANIFEST_SCHEMA = "research_state_workspace_1";
+const MANIFEST_SCHEMA = "research_state_workspace_2";
 const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
 const COLLECTIONS = [
   "phases", "claims", "nodes", "findings", "gates", "claim_relations",
@@ -49,10 +49,10 @@ function readResearchMap(rootValue) {
   const liveness = JSON.parse(readFileSync(livenessPath, "utf8"));
   const memory = JSON.parse(readFileSync(memoryPath, "utf8"));
   const checkpoint = JSON.parse(readFileSync(checkpointPath, "utf8"));
-  if (!isPlainObject(context) || context.schema_version !== "research_map_context_1") {
+  if (!isPlainObject(context) || context.schema_version !== "research_map_context_2") {
     throw new Error("ResearchMap context schema is invalid");
   }
-  if (!isPlainObject(liveness) || liveness.schema_version !== "research_liveness_1") {
+  if (!isPlainObject(liveness) || liveness.schema_version !== "research_liveness_2") {
     throw new Error("ResearchMap liveness schema is invalid");
   }
   if (!isPlainObject(memory) || memory.schema_version !== "research_memory_index_1"
@@ -64,7 +64,7 @@ function readResearchMap(rootValue) {
       || !Array.isArray(memory.entries)) {
     throw new Error("ResearchMap memory schema is invalid");
   }
-  if (!isPlainObject(checkpoint) || checkpoint.schema_version !== "research_checkpoint_1"
+  if (!isPlainObject(checkpoint) || checkpoint.schema_version !== "research_checkpoint_2"
       || checkpoint.workspace_id !== manifest.workspace_id) {
     throw new Error("ResearchMap checkpoint schema is invalid");
   }

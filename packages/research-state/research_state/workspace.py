@@ -18,7 +18,7 @@ from typing import Any
 from tspi_foundation.path_safety import lexical_path, path_has_symlink
 
 
-MANIFEST_SCHEMA = "research_state_workspace_1"
+MANIFEST_SCHEMA = "research_state_workspace_2"
 WORKSPACE_MODE = "research"
 WORKSPACE_STATES = frozenset({"initializing", "ready", "admission_pending", "failed"})
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
@@ -73,7 +73,8 @@ def _read_json(path: Path) -> dict[str, Any]:
     if path.is_symlink():
         raise WorkspaceModeError(f"workspace_manifest_symlink: {path}")
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        from .transactions import read_json
+        value = read_json(path)
     except FileNotFoundError as exc:
         raise WorkspaceModeError(f"workspace_manifest_missing: {path}") from exc
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -188,7 +189,7 @@ def _validate_layout(
         checkpoint = _read_json(root / "checkpoints/checkpoint_0.json")
     except WorkspaceModeError as exc:
         raise WorkspaceModeError("research_workspace_documents_invalid") from exc
-    if context.get("schema_version") != "research_map_context_1":
+    if context.get("schema_version") != "research_map_context_2":
         raise WorkspaceModeError("unsupported_research_context_schema")
     if context.get("workspace_id") != manifest["workspace_id"]:
         raise WorkspaceModeError("research_workspace_id_mismatch")
@@ -208,7 +209,7 @@ def _validate_layout(
             or not isinstance(context["focus"].get("claim_ids"), list)
             or not isinstance(context["focus"].get("node_ids"), list)):
         raise WorkspaceModeError("research_context_invalid")
-    if (liveness.get("schema_version") != "research_liveness_1"
+    if (liveness.get("schema_version") != "research_liveness_2"
             or liveness.get("workspace_id") != manifest["workspace_id"]
             or liveness.get("state") not in {"admission_pending", "admitted"}
             or type(liveness.get("revision")) is not int
@@ -240,7 +241,7 @@ def _validate_layout(
             or type(revision) is not int or revision < 0
             or liveness["revision"] != revision):
         raise WorkspaceModeError("research_revision_mismatch")
-    if (checkpoint.get("schema_version") != "research_checkpoint_1"
+    if (checkpoint.get("schema_version") != "research_checkpoint_2"
             or checkpoint.get("workspace_id") != manifest["workspace_id"]):
         raise WorkspaceModeError("research_checkpoint_invalid")
     admitted = context.get("lifecycle_state") == "admitted" and liveness.get("state") == "admitted"
@@ -278,7 +279,7 @@ def _research_seed(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
     collections = {name: [] for name in RESEARCH_CONTEXT_COLLECTIONS}
     return {
         "context": {
-            "schema_version": "research_map_context_1",
+            "schema_version": "research_map_context_2",
             "workspace_id": workspace_id,
             "map_id": f"map_{workspace_id}",
             "title": workspace_id,
@@ -296,7 +297,7 @@ def _research_seed(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "focus": {"claim_ids": [], "node_ids": []},
         },
         "liveness": {
-            "schema_version": "research_liveness_1",
+            "schema_version": "research_liveness_2",
             "workspace_id": workspace_id,
             "memory_scope": manifest["memory_scope"],
             "research_state_scope": manifest["research_state_scope"],
@@ -321,7 +322,7 @@ def _research_seed(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "entries": [],
         },
         "checkpoint": {
-            "schema_version": "research_checkpoint_1",
+            "schema_version": "research_checkpoint_2",
             "checkpoint_id": "checkpoint_0",
             "workspace_id": workspace_id,
             "kind": "workspace_genesis",
@@ -447,9 +448,9 @@ def admit_research_workspace(root: str | Path) -> dict[str, Any]:
     liveness_path = path / "lifecycle/liveness.json"
     context = _read_json(context_path)
     liveness = _read_json(liveness_path)
-    if context.get("schema_version") != "research_map_context_1" or context.get("workspace_mode") != "research":
+    if context.get("schema_version") != "research_map_context_2" or context.get("workspace_mode") != "research":
         raise WorkspaceModeError("unsupported_research_context_schema")
-    if liveness.get("schema_version") != "research_liveness_1":
+    if liveness.get("schema_version") != "research_liveness_2":
         raise WorkspaceModeError("unsupported_research_liveness_schema")
     if context.get("workspace_id") != manifest["workspace_id"] or liveness.get("workspace_id") != manifest["workspace_id"]:
         raise WorkspaceModeError("research_workspace_identity_mismatch")

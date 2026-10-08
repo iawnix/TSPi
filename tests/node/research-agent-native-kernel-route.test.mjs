@@ -54,7 +54,7 @@ test("native research commands expose the Research State runtime operation and l
       },
     });
     const located = await executeFilesystemResearchCommand("research.locate", root, { query: "route claim" });
-    assert.equal(located.schema_version, "research-locate/1");
+    assert.equal(located.schema_version, "research-locate/2");
     assert.deepEqual(located.matches.map((item) => item.id), ["claim_route.v1"]);
     const summary = await executeFilesystemResearchCommand("research.summary", root);
     assert.equal(summary.schema_version, "research-summary/1");
@@ -109,7 +109,8 @@ test("native research route permits Root Agent node state and lifecycle action m
     assert.deepEqual(resolved.created_ids, []);
     const context = await executeFilesystemResearchCommand("research.context", root);
     assert.equal(context.nodes[0].state, "active");
-    assert.equal(context.lifecycle_actions[0].status, "completed");
+    const action = await executeFilesystemResearchCommand("research.detail", root, {kind: "lifecycle_action", id: "action_mutation"});
+    assert.equal(action.item.status, "completed");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

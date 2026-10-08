@@ -13,7 +13,7 @@ export function createTspiToolRenderers({ Text, wrapTextWithAnsi }, names) {
   const shorten = value => String(value).replace(/(?:\/[^\s/]+){3,}\//g, "…/");
   return Object.fromEntries(names.map(name => [name, {
     renderCall(args, theme, context) {
-      const fields = ["mode", "nodeId", "jobId", "artifactId", "requestFile"].filter(key => args[key] !== undefined);
+      const fields = ["mode", "node_id", "job_id", "artifact_id", "request_file"].filter(key => args[key] !== undefined);
       const suffix = fields.map(key => `${key}=${shorten(args[key])}`).join(" · ");
       const title = theme.fg("toolTitle", theme.bold(name));
       return bounded(context.expanded ? `${title}\n${JSON.stringify(args, null, 2)}` : `${title}${suffix ? ` · ${suffix}` : ""}`, theme, context.expanded);

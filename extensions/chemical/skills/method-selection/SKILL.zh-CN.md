@@ -42,9 +42,9 @@ Gaussian 方法和基组写入 `.gjf` 的 Route Section，例如
 
 ## 可执行请求准备
 
-使用 [scripts/prepare_job.py](scripts/prepare_job.py) 从 job.toml 生成通用 Job 请求。传入 --config "$TS_JOB_CONFIG"、--environment、--backend、--skill、--xyz，-- 后是 runner 参数。用安装版 TSPI_PYTHON 执行 helper；解释器来自 job.toml 的 Conda 绑定。核对参数，补充 nodeId/timeoutSeconds 后 job_start。辅助脚本会暂存完整 scripts 目录和 `_shared` 依赖。
+使用 [scripts/prepare_job.py](scripts/prepare_job.py) 从 job.toml 生成通用 Job 请求。传入 --config "$TS_JOB_CONFIG"、--environment、--backend、--skill、--xyz，-- 后是 runner 参数。用安装版 TSPI_PYTHON 执行 helper；解释器来自 job.toml 的 Conda 绑定。核对参数，补充 node_id/timeout_seconds 后 job_start。辅助脚本会暂存完整 scripts 目录和 `_shared` 依赖。
 
-保留准备请求中的 requestId；同一次提交恢复时复用它，不因工具响应丢失而生成新 ID。明确重算时生成新请求。
+保留准备请求中的 request_id；同一次提交恢复时复用它，不因工具响应丢失而生成新 ID。明确重算时生成新请求。
 
 执行显式 Gaussian 输入时，用 `--input-gjf <file>` 替代 `--xyz`。
 通过 `--dependency /absolute/source.chk=previous.chk` 暂存检查点或包含文件，
@@ -59,8 +59,8 @@ Python 依赖由安装阶段创建的 Conda 环境隔离，并通过 job.toml �
 
 
 在 `--` 前传 `--output <workspace>/prepared/<cell>.json` 保存完整请求。脚本输出
-requestFile/requestSha256，直接交给 job_start，只补 nodeId 和可选 timeoutSeconds；
-不要手抄 command/inputs。相同输入与配置保留 workId/requestId，主动重新计算才用
+request_file/request_sha256，直接交给 job_start，只补 node_id 和可选 timeout_seconds；
+不要手抄 command/inputs。相同输入与配置保留 work_id/request_id，主动重新计算才用
 --work-id 指定新身份。修改请求文件后必须重新核对并计算摘要。
 
 远程 job.toml 的 environment 或 backend 必须明确配置 submission.queue；
