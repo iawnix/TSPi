@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Harness, MemoryStorage, createRegistry, defineExtension, hook, GenerationTask, CompactionTask, LiveDoc } from '@earendil-works/pi-durable';
-import { createModels, fauxProvider, fauxAssistantMessage } from '@earendil-works/pi-ai';
+import { Harness, MemoryStorage, createRegistry, defineExtension, defineTool, hook, GenerationTask, CompactionTask, LiveDoc } from '@earendil-works/pi-durable';
+import { createModels, fauxProvider, fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai';
+import Type from 'typebox';
 import { TODO_CONTEXT as context } from '@earendil-works/chord/context';
 import { estimateContextTokens } from '@earendil-works/pi-ai/utils/estimate';
 import { createDecisionContextInjector } from '../../../apps/app-server/decision-context.mjs';
+import { inspectResearchControlLoop } from '../../../apps/app-server/research-control-loop.mjs';
+import { createStateContinuationDriver } from '../../../apps/app-server/state-continuation.mjs';
 
 test('actual generation requests rebuild facts after compaction and never persist snapshots', async t => {
   const faux = fauxProvider();
@@ -46,10 +49,85 @@ test('actual generation requests rebuild facts after compaction and never persis
   assert.match(latest, /optimization_limit/);
   assert.match(latest, /claim_goal/);
   assert.equal(requests[1].messages.filter(m => JSON.stringify(m).includes('<research_state_snapshot>')).length, 1);
+  const snapshot = requests[1].messages.find(m => JSON.stringify(m).includes('<research_state_snapshot>'));
+  assert.equal(snapshot.role, 'system');
+  assert.match(snapshot.sections.tspi_research_context, /not a user message or a new turn/);
+  assert.equal(requests[1].messages.filter(m => m.role === 'user').at(-1).content, 'Inspect the latest result.');
   assert.equal(telemetry.at(-1).payload.revision, 2);
   const entries = await conversation.entries({}, 100, undefined, context);
   assert.ok(entries.items.some(e => e.kind === 'pi.compaction'));
   assert.equal(JSON.stringify(entries).includes('<research_state_snapshot>'), false);
+});
+
+function controlRound(index, revision = 1, name = 'research_read', mode = 'context') {
+  const id = `control_${index}`;
+  return [fauxAssistantMessage([fauxToolCall(name, {mode, limit: index + 1}, {id})], {stopReason:'toolUse'}),
+    {role:'toolResult',toolCallId:id,toolName:name,content:[{type:'text',text:JSON.stringify({workspace_id:'ws_loop',revision,
+      checkpoint_id:`checkpoint_${index}`,lifecycle:index % 2 ? 'blocked' : 'continue_required'})}],timestamp:index}];
+}
+
+test('control-loop budget uses completed calls and resets on work, changed state or actual input', () => {
+  const state = {workspace_id:'ws_loop',revision:1};
+  const history = Array.from({length:12}, (_, i) => controlRound(i, 1, i % 2 ? 'research_checkpoint' : 'research_read')).flat();
+  assert.match(inspectResearchControlLoop(history,state).block, /research_control_loop/);
+  // Rebuilding the inspector (as on worker recovery) or retrying a request
+  // cannot consume extra budget or replenish it.
+  assert.equal(inspectResearchControlLoop(history,state).count,12);
+  assert.equal(inspectResearchControlLoop(history,{...state,revision:2}).count,0);
+  assert.equal(inspectResearchControlLoop([...history,{role:'user',content:'Resume with a corrected plan.'}],state).count,0);
+  for (const [name, mode] of [['bash',undefined],['artifact_read',undefined],['research_read','evidence']]) {
+    assert.equal(inspectResearchControlLoop([...history,...controlRound(13,1,name,mode)],state).count,0);
+  }
+  assert.ok(inspectResearchControlLoop(history.slice(0,12),state).warning);
+  assert.equal(inspectResearchControlLoop(history.slice(0,12),state).block,undefined);
+});
+
+test('one native run stops repeated reads/recoveries without synthetic user turns or auto compaction', {timeout:10000}, async t => {
+  const faux = fauxProvider();
+  const models = createModels(); models.setProvider(faux.provider);
+  const registry = createRegistry();
+  const state = {context_id:'ctx_loop',workspace_id:'ws_loop',revision:1,events:[]};
+  const tools = ['research_read','research_checkpoint'].map(name => defineTool({name,description:name,
+    parameters:Type.Object({mode:Type.Optional(Type.String()),limit:Type.Optional(Type.Number()),checkpoint:Type.Optional(Type.Object({id:Type.String()}))}),
+    execute: async args => ({content:[{type:'text',text:JSON.stringify({...state,checkpoint_id:args.checkpoint?.id})}]}),
+  }));
+  registry.install(defineExtension({name:'loop',tools,hooks:[hook(GenerationTask,{
+    // Use a fresh injector every time to exercise recovery without in-memory counters.
+    beforeRequest:(request,api)=>fixtureInjector({bridge:{async execute_command(){return state;}}})(request,String(api.taskId)),
+  })]}));
+  const harness = await Harness.open(new MemoryStorage(),{models,registry,settings:{compaction:{enabled:false}}},context);
+  t.after(()=>harness.close(context));
+  const conversation = await harness.root(context,{agent:{model:{provider:'faux',modelId:'faux-1'},tools}});
+  const requests=[];
+  faux.setResponses(Array.from({length:14},(_,i)=>request=>{
+    requests.push(request);
+    assert.equal(request.messages.filter(m=>m.role==='user').length,1);
+    const name=i % 2 ? 'research_checkpoint' : 'research_read';
+    return fauxAssistantMessage([fauxToolCall(name,name==='research_read'?{mode:'context',limit:i+1}:{checkpoint:{id:`recover_${i}`}})],{stopReason:'toolUse'});
+  }));
+  const outcome=await (await conversation.submit({type:'input',content:'Run the research task.'},context)).wait(context);
+  await conversation.waitForIdle(context);
+  assert.equal(outcome.reason,'request_blocked');
+  assert.match(outcome.detail,/research_control_loop/);
+  assert.equal(requests.length,12);
+  assert.match(JSON.stringify(requests[6].messages),/6 consecutive state reads/);
+  const live=await harness.snapshot(LiveDoc,conversation.id,context);
+  assert.equal(live.run,undefined);
+  const entries=await conversation.entries({},100,undefined,context);
+  assert.equal(entries.items.filter(e=>e.kind==='pi.user').length,1);
+  assert.doesNotMatch(JSON.stringify(entries),/research_state_snapshot/);
+  const binding={key:'ws_loop/s',root:'/unused',workspaceId:'ws_loop',summary:{sessionId:'s'},
+    snapshot:{operation:null,queues:[],lastResult:null,transcript:[...entries.items].reverse().flatMap(e=>e.model||[])}};
+  let continuations=0;
+  const drive=createStateContinuationDriver({readState:async()=>({...state,continuation:{admitted:true,session_id:'s',request_id:'continue:1'}}),
+    sendInput:async()=>{continuations++;}});
+  await drive(binding);
+  assert.equal(continuations,0);
+  assert.match(binding.continuationError,/research_control_loop/);
+  // Explicit user input can resume the task; this is not a permanent block.
+  faux.setResponses([fauxAssistantMessage('A corrected plan is ready.')]);
+  const resumed=await (await conversation.submit({type:'input',content:'Use the corrected plan.'},context)).wait(context);
+  assert.equal(resumed.status,'done');
 });
 
 function fixtureInjector(overrides = {}) {
@@ -144,7 +222,7 @@ for (const scenario of ['recovered','still-full','declined','compaction-failed',
     if (scenario !== 'recovered') assert.equal(result.reason, 'request_blocked');
     assert.equal(compactions,['state-failed','hook-threw'].includes(scenario) ? 0 : 1);
     assert.equal(requests,['recovered','compaction-failed'].includes(scenario) ? 2 : 1);
-    if (scenario === 'recovered') assert.equal(reads,2);
+    if (scenario === 'recovered') assert.equal(reads,3);
     const entries = await conversation.entries({},100,undefined,context);
     assert.doesNotMatch(JSON.stringify(entries),/Use research_read to diagnose|<research_state_snapshot>/);
     const live = await harness.snapshot(LiveDoc, conversation.id, context);

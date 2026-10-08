@@ -171,15 +171,18 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     for (const request of requests) {
       const snapshots = request.messages.filter(m => JSON.stringify(m.content).includes("<research_state_snapshot>"));
       assert.equal(snapshots.length, 1, "each real provider request has exactly one current projection");
+      assert.ok(["system", "developer"].includes(snapshots[0].role), "runtime facts must not impersonate user input on the provider wire");
+      assert.match(JSON.stringify(snapshots[0].content), /not a user message or a new turn/);
     }
-    const lastSnapshot = JSON.stringify(requests.at(-1).messages.at(-1));
+    const snapshotOf = request => JSON.stringify(request.messages.find(m => JSON.stringify(m.content).includes("<research_state_snapshot>")));
+    const lastSnapshot = snapshotOf(requests.at(-1));
     const truncated = toolResults.find(result => String(result.content).includes("Historical artifact metadata"));
     assert.ok(truncated, "actual Native read result must reach the provider");
     assert.match(String(truncated.content), /Showing lines|truncated/);
     assert.doesNotMatch(String(truncated.content), /TAIL_MUST_BE_TRUNCATED/);
     const afterTruncation = requests[steps.findIndex(step => step?.name === "read" && step.arguments.path.endsWith("large-history.txt")) + 1];
-    assert.match(JSON.stringify(afterTruncation.messages.at(-1)), /claim_flow/);
-    assert.match(JSON.stringify(afterTruncation.messages.at(-1)), /node_flow/);
+    assert.match(snapshotOf(afterTruncation), /claim_flow/);
+    assert.match(snapshotOf(afterTruncation), /node_flow/);
     assert.match(lastSnapshot, /claim_flow/);
     assert.match(lastSnapshot, /succeeded/);
     assert.equal(read.snapshot.messages.some(m => JSON.stringify(m).includes("<research_state_snapshot>")), false, "projection must not enter durable transcript");

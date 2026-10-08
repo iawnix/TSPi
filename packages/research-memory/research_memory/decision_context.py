@@ -51,6 +51,7 @@ def build_decision_context(root, *, max_bytes=16000, event_ids=()):
         if node["id"] in focus_nodes:
             focus_claims.update(node.get("claim_ids", []))
     focus = {"claim_ids": sorted(focus_claims), "node_ids": sorted(focus_nodes)}
+    nodes_by_id = {node["id"]: node for node in state.get("nodes", [])}
     attempts = sorted(state.get("attempts", []), key=lambda a: (
         a["id"] in event_attempts, a.get("state") in {"started", "running", "unknown"},
         a.get("node_id") in focus_nodes, a.get("updated_at", a.get("created_at", ""))), reverse=True)
@@ -58,14 +59,20 @@ def build_decision_context(root, *, max_bytes=16000, event_ids=()):
         "schema_version": "research-decision-context/2",
         "workspace_id": state["workspace_id"], "revision": state["revision"],
         "authority": "research_state", "focus": focus,
-        "lifecycle": {k: live.get(k) for k in ("lifecycle", "disposition", "checkpoint_id", "running_attempt_ids")},
+        "lifecycle": {
+            **{k: live.get(k) for k in ("lifecycle", "disposition", "checkpoint_id", "running_attempt_ids", "execution_ready")},
+            "recovery_required": live.get("lifecycle") in {"blocked", "user_input_required", "deferred", "terminal"},
+        },
+        "scope": {"kind": "focused", "unlisted_objects": "not_necessarily_missing", "total_nodes": len(nodes_by_id)},
         "goals": [{k: c.get(k) for k in ("id", "statement", "status", "predictions", "falsifiers", "source_refs", "constraints")}
                   for c in state.get("claims", []) if c["id"] in focus.get("claim_ids", [])],
-        "nodes": [{k: n.get(k) for k in ("id", "objective", "state", "outcome", "gate_ids", "completion_exemption")}
+        "nodes": [{k: n.get(k) for k in ("id", "objective", "state", "outcome", "gate_ids", "completion_exemption", "dependency_ids")}
                   for n in state.get("nodes", []) if n["id"] in focus_nodes],
+        "related_nodes": [],
         "issues": validate_context(state)["issues"],
         "events": [], "attempts": [], "gates": [], "strategies": [], "interpretations": [],
-        "read": {"evidence": {"mode": "evidence", "limit": 20},
+        "read": {"node": {"mode": "detail", "kind": "node", "id": "<node_id>"},
+                 "evidence": {"mode": "evidence", "limit": 20},
                  "decisions": {"mode": "decisions", "limit": 10}},
         "bounds": {"max_bytes": max_bytes, "estimated_tokens": True, "omitted": {}},
     }
@@ -74,14 +81,35 @@ def build_decision_context(root, *, max_bytes=16000, event_ids=()):
         # Reserve space for digest, accounting and query cursors.
         return len(_encode(view).encode()) <= max_bytes - 768
 
+    def include_nodes(ids):
+        """Keep references resolvable without changing focus or copying full nodes."""
+        included = focus_nodes | {n["id"] for n in view["related_nodes"]}
+        pending = list(ids)
+        visited = set()
+        while pending:
+            node_id = pending.pop()
+            if node_id in visited or node_id not in nodes_by_id:
+                continue
+            visited.add(node_id)
+            node = nodes_by_id[node_id]
+            if node_id not in included:
+                view["related_nodes"].append({k: node.get(k) for k in ("id", "state", "outcome", "dependency_ids")})
+                included.add(node_id)
+            pending.extend(node.get("dependency_ids", []))
+
+    include_nodes(sorted(focus_nodes))
     if not fits():
         raise ValueError("context_budget_exceeded: narrow focus; required goals and constraints cannot be omitted")
 
     def add(name, values):
         for index, value in enumerate(values):
+            related_count = len(view["related_nodes"])
+            if value.get("node_id"):
+                include_nodes([value["node_id"]])
             view[name].append(value)
             if not fits():
                 view[name].pop()
+                del view["related_nodes"][related_count:]
                 view["bounds"]["omitted"][name] = len(values) - index
                 return
 
@@ -124,6 +152,7 @@ def build_decision_context(root, *, max_bytes=16000, event_ids=()):
         raise ValueError("context_budget_exceeded: wake event Attempts cannot be omitted; request a smaller event batch")
     add("interpretations", [{k: i.get(k) for k in ("id", "attempt_ref", "outcome", "summary", "supersedes_id", "superseded_by", "review_state")}
                            for i in reversed(state.get("attempt_interpretations", []))][:8])
+    view["scope"]["omitted_nodes"] = len(nodes_by_id) - len(view["nodes"]) - len(view["related_nodes"])
     view["context_id"] = "ctx_" + hashlib.sha256(_encode(view).encode()).hexdigest()
     view["bounds"]["used_bytes"] = 0
     while view["bounds"]["used_bytes"] != len(_encode(view).encode()):

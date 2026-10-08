@@ -98,6 +98,44 @@ def test_context_prioritizes_current_attempt_over_large_artifact_catalog(tmp_pat
     assert build_decision_context(tmp_path)['goals'][0]['id'] == 'claim_1'
 
 
+def test_context_resolves_nonfocused_strategy_nodes_and_dependencies(tmp_path):
+    workspace(tmp_path)
+    change(tmp_path, [
+        {"type": "create_node", "id": "node_dependency", "title": "Dependency", "objective": "Prepare input", "claim_ids": ["claim_1"]},
+        {"type": "create_node", "id": "node_hidden", "title": "Other scope", "objective": "Calculate", "claim_ids": ["claim_1"], "dependency_ids": ["node_dependency"]},
+        {"type": "create_node", "id": "node_unrelated", "title": "Unrelated", "objective": "Another question"},
+        {"type": "create_strategy_plan", "id": "strategy_hidden", "claim_id": "claim_1", "node_id": "node_hidden", "objective": "Run", "rationale": "Need evidence"},
+        {"type": "set_focus", "claim_ids": ["claim_1"], "node_ids": ["node_1"]},
+    ])
+    view = build_decision_context(tmp_path)
+    assert [node["id"] for node in view["nodes"]] == ["node_1"]
+    related = {node["id"]: node for node in view["related_nodes"]}
+    assert related["node_hidden"]["state"] == "planned"
+    assert related["node_hidden"]["dependency_ids"] == ["node_dependency"]
+    assert "node_dependency" in related
+    assert view["scope"]["omitted_nodes"] == 1
+    assert view["scope"]["unlisted_objects"] == "not_necessarily_missing"
+    visible = {node["id"] for node in view["nodes"] + view["related_nodes"]}
+    assert all(plan["node_id"] in visible for plan in view["strategies"])
+    assert view["read"]["node"]["kind"] == "node"
+    assert view["bounds"]["used_bytes"] <= view["bounds"]["max_bytes"]
+
+
+def test_context_distinguishes_ready_work_from_recovery_and_preserves_focus_dependencies(tmp_path):
+    workspace(tmp_path)
+    change(tmp_path, [
+        {"type": "create_node", "id": "node_dependent", "title": "Dependent", "objective": "Use calculation", "dependency_ids": ["node_1"], "claim_ids": ["claim_1"]},
+        {"type": "set_focus", "claim_ids": ["claim_1"], "node_ids": ["node_dependent"]},
+    ])
+    view = build_decision_context(tmp_path)
+    assert view["nodes"][0]["dependency_ids"] == ["node_1"]
+    assert any(node["id"] == "node_1" for node in view["related_nodes"])
+    assert view["lifecycle"]["recovery_required"] is False
+    checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "id": "checkpoint_wait",
+                         "disposition": "blocked", "reason": "External input is unavailable", "node_ids": ["node_dependent"]})
+    assert build_decision_context(tmp_path)["lifecycle"]["recovery_required"] is True
+
+
 def completed_job(root, job_id='job_source', text='evidence'):
     job = dispatch('start', {'root': str(root), 'job_id': job_id, 'node_id': 'node_1',
         'command': [sys.executable, '-c', f'from pathlib import Path;Path("result.json").write_text({text!r})'],

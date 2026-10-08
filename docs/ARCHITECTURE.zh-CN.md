@@ -130,6 +130,16 @@ ChangeSet、Attempt、Artifact、事件和审计记录；每个 turn 由 Harness
 SessionWorker 创建时加载并缓存正文，但默认 prompt 放 name、description、location，以及两个核心系统 Skill 的 `system` scope 标记；
 只有显式调用 Skill 时才把正文注入当前 turn。Compute Environment 在方法选择或 launch 前按需查询。
 
+每次模型请求携带最新状态，放入仅供本次请求使用的 `tspi_research_context` 系统区段，
+不追加用户消息、不写入会话历史，也不启动新轮次。`continue_required` 不要求再次恢复。
+焦点视图补充策略和 Attempt 引用节点及其依赖的简要记录，并明确“未展示不等于不存在”。
+
+Worker 从持久会话记录识别同一研究 revision 下连续读取 context/liveness、提交 checkpoint
+的控制循环：连续 6 次提醒，12 次则在继续生成或压缩前停止请求。更换 checkpoint 名称和
+查询 limit 不会清零计数；其他工作或证据调用、revision 变化、真实用户输入会打断计数。
+该保护只检测这类控制循环，不判断科学进展、不取消 Job、不改写 Research State。
+自动续跑入口检查同一记录，避免立即重启已停止的循环。
+
 通用 Job Runtime 是执行边界。Skill 构造程序 argv、输入文件、预期输出、解析说明和方法
 metadata；`job_start` 接受该有边界 argv，并统一支持本地与远端执行。Skill 与 Job Runtime
 之间没有科学 provider registry 或 capability descriptor 门禁。Preflight 检查选定的命名环境，

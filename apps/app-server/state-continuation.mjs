@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { inspectResearchControlLoop } from "./research-control-loop.mjs";
 
 /** Consume the State outbox through the same durable Host receipts as Monitor.
  * No scientific planning, lifecycle inference, or alternate workflow database.
@@ -16,6 +17,10 @@ export function createStateContinuationDriver({ readState, sendInput }) {
       const state = await readState(binding.root);
       const next = state?.continuation;
       if (busy() || next?.admitted !== true || next.session_id !== binding.summary.sessionId) return;
+      // A request-admission failure need not append an assistant message. Do
+      // not infer success from an idle lane and restart the unchanged loop.
+      const stalled = inspectResearchControlLoop(live().transcript || [], state);
+      if (stalled.block) { binding.continuationError = stalled.block; return; }
       return await sendInput({ workspace_id: binding.workspaceId, session_id: next.session_id,
         request_id: next.request_id, client_message_id: next.request_id,
         source: "state_continuation", mode: "next_run",

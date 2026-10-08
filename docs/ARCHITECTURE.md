@@ -164,7 +164,22 @@ the two Core System Skills are placed in the model's default prompt. Compute
 Environments are queried when selecting or launching a method.
 
 Before each model request, the worker injects a fresh authoritative projection
-without adding it to conversation history. Admission uses Pi's token estimate
+as the request-only `tspi_research_context` system section, without adding a user
+message or changing conversation history. A state refresh does not start a turn
+or require recovery from `continue_required`. The focused view includes compact
+records for referenced strategy/Attempt nodes and their dependencies, and
+explicitly distinguishes unlisted objects from missing objects.
+
+The worker also detects consecutive context/liveness reads and checkpoints at
+the same research revision in the durable transcript. Six such calls produce a
+runtime reminder; twelve stop request admission before further generation or
+compaction. Checkpoint IDs and changing query limits do not reset this count.
+An intervening work/evidence call, changed revision, or actual user input resets
+it. This is a narrow control-loop guard, not a scientific progress evaluator;
+it does not cancel Jobs or change Research State. State continuation checks the
+same history so it cannot immediately restart the stopped loop.
+
+Admission uses Pi's token estimate
 (including applicable provider usage), the request's output allowance, and a
 4,096-token safety margin. System prompt and tool definitions already present in
 the request are not counted again. The projection's 16,000-byte storage limit is
