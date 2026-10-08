@@ -69,7 +69,7 @@ FORBIDDEN_RUNTIME_FILES = {
     "scripts/check_package.py",
     "scripts/test_source.py",
 }
-REQUIRED_EXECUTABLE_FILES = {"ResearchAgent", "apps/agent-cli/provider_runner.py"}
+REQUIRED_EXECUTABLE_FILES = {"ResearchAgent", "apps/agent-cli/research_web_bridge.py"}
 
 
 class PackageCheckError(RuntimeError):

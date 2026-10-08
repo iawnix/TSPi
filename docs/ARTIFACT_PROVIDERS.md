@@ -15,7 +15,7 @@ not select methods or implement a second workflow engine.
 
 Extension `providers` metadata remains readable for third-party inventory; it
 does not grant a general provider execution API. The TS Web provider is a separate
-read-only ResearchMap JSONL adapter at `apps/agent-cli/provider_runner.py`, using
+read-only ResearchMap JSONL adapter at `apps/agent-cli/research_web_bridge.py`, using
 `research-map-provider/1`; it does not load arbitrary Python entry points.
 
 See [execution boundaries](ARCHITECTURE_BOUNDARIES.md),

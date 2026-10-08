@@ -26,7 +26,7 @@ Preserve production consumers:
 - The HTTP adapter that connects to an existing Native Host.
 - Operational ID allocation, now owned by `research_state.operational_ids` with
   the same durable counters and CLI operation.
-- The TS Web `research-map-provider/1` JSONL adapter in `provider_runner.py`.
+- The TS Web `research-map-provider/1` JSONL adapter in `research_web_bridge.py`.
 - Third-party extension provider inventory metadata; this is not a general
   execution dispatcher.
 

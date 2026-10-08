@@ -2563,7 +2563,7 @@ def web_unit(args: argparse.Namespace) -> str:
     command_values: list[object] = [
         root / "TSWeb",
         "--provider",
-        root / "current/agent/apps/agent-cli/provider_runner.py",
+        root / "current/agent/apps/agent-cli/research_web_bridge.py",
         "serve",
         "--state-dir",
         root / "var/state/web",

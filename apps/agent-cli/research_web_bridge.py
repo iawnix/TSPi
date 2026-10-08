@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve the TSPi-owned JSON-lines ResearchMap provider for TS Web."""
+"""Bridge TS Web requests to Research State over the JSON-lines protocol."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from research_state.registry import list_workspaces  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="provider_runner")
+    parser = argparse.ArgumentParser(prog="research_web_bridge")
     parser.add_argument("--state-dir", required=True)
     parser.add_argument("--workspace-root", action="append", default=None)
     parser.add_argument("--register", action="store_true")
@@ -43,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(register_sources(args.state_dir, args.source_root, args.label), ensure_ascii=False, sort_keys=True))
             return 0
         except (OSError, ValueError) as error:
-            print(f"provider registration failed: {_sanitize(str(error), args.state_dir)}", file=sys.stderr)
+            print(f"workspace registration failed: {_sanitize(str(error), args.state_dir)}", file=sys.stderr)
             return 2
     if args.source_root or args.label:
         parser.error("--source-root and --label require --register")

@@ -93,7 +93,7 @@ def test_web_component_protocol_schemas_validate_envelopes() -> None:
 
 def test_provider_json_lines_does_not_reuse_a_previous_request_id(tmp_path: Path) -> None:
     state_dir = tmp_path / "state"
-    provider = ROOT / "apps" / "agent-cli" / "provider_runner.py"
+    provider = ROOT / "apps" / "agent-cli" / "research_web_bridge.py"
     first = {
         "schema_version": "research-map-provider/1",
         "request_id": "first",

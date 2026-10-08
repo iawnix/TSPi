@@ -127,7 +127,7 @@
     "scripts/prepare_pi_source.py",
     "apps/agent-cli/backend.py",
     "apps/agent-cli/runtime.py",
-    "apps/agent-cli/provider_runner.py",
+    "apps/agent-cli/research_web_bridge.py",
     "apps/agent-cli/research_api.py",
     "apps/agent-cli/monitor.py",
     "apps/agent-cli/workspace.py",

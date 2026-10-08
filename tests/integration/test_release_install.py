@@ -157,7 +157,7 @@ def _synthetic_release(
         for name, content in sorted(files.items()):
             info = tarfile.TarInfo(name if name.startswith("package/") else f"package/{name}")
             info.size = len(content)
-            info.mode = 0o755 if name in {"ResearchAgent", "apps/agent-cli/provider_runner.py"} else 0o644
+            info.mode = 0o755 if name in {"ResearchAgent", "apps/agent-cli/research_web_bridge.py"} else 0o644
             archive.addfile(info, io.BytesIO(content))
     digest = hashlib.sha256(temporary_archive.read_bytes()).hexdigest()
     release_id = f"{version}-sha256-{digest[:16]}"
