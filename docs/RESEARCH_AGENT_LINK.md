@@ -17,11 +17,11 @@ workspaces, research map, or compute state.
 ## Install ResearchAgent Link Relay
 
 ResearchAgent Link Relay is a standalone service for a public or privately reachable
-machine. It is not installed by the local ResearchAgent Host installer. From a ResearchAgent
-checkout on the Relay machine:
+machine. It can be installed separately, or together with a Host using `--with-link-relay`.
+From a ResearchAgent checkout on the Relay machine:
 
 ```bash
-./install-link-relay.sh \
+./install.sh relay --source local \
   --public-url https://link.example.com \
   --listen 127.0.0.1 --port 8788 \
   --service-scope system --enable-services --start-services
@@ -42,7 +42,7 @@ To remove the standalone service, stop and unregister its unit while keeping
 enrolled Host and device credentials by default:
 
 ```bash
-./uninstall-link-relay.sh --service-scope system --non-interactive --yes
+./uninstall.sh relay --service-scope system --non-interactive --yes
 ```
 
 Add `--purge-state` only when the Relay database and all enrolled credentials
@@ -54,7 +54,7 @@ The standalone installer prints a ten-minute, single-use enrollment code. To
 create another code later, run the installed CLI:
 
 ```bash
-node /opt/research-agent-relay/current/service/cli.mjs enrollment create \
+node /opt/research-agent-relay/current/services/relay/cli.mjs enrollment create \
   --state /var/lib/research-agent-relay/relay.db
 ```
 

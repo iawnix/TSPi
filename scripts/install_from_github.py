@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -71,11 +70,13 @@ def validate_repo(repo: str) -> None:
 
 
 def tree_digest(root: Path) -> str:
-    entries: list[str] = []
-    for path in sorted(p for p in root.rglob("*") if p.is_file() and ".git" not in p.parts):
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        entries.append(f"{path.relative_to(root).as_posix()}\0{digest}")
-    return "sha256:" + hashlib.sha256("\n".join(entries).encode()).hexdigest()
+    # Match release capture: private config, caches and local_debug never
+    # contribute bytes to source provenance, even for a local installation.
+    try:
+        from ._source_capture import inspect_source
+    except ImportError:
+        from _source_capture import inspect_source
+    return "sha256:" + inspect_source(root)[3]
 
 
 def checkout_github(repo: str, ref: str, destination: Path) -> str:
@@ -133,6 +134,7 @@ def install_uninstaller(install_root: Path, source_root: Path) -> Path:
     for source, target, mode in (
         (source_root / "uninstall.sh", uninstaller, 0o755),
         (source_root / "scripts" / "uninstall.py", private / "uninstall.py", 0o700),
+        (source_root / "scripts" / "installer.py", private / "installer.py", 0o700),
         (source_root / "scripts" / "uninstall_link_relay.py", private / "uninstall_link_relay.py", 0o700),
         (source_root / "scripts" / "_terminal_ui.py", private / "_terminal_ui.py", 0o600),
         (source_root / "scripts" / "_installation_metadata.py", private / "_installation_metadata.py", 0o600),

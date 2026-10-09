@@ -1259,14 +1259,94 @@ def test_legacy_scientific_config_is_rejected_before_install_copy(tmp_path):
 
 
 def test_configured_install_checks_science_before_relay_or_secret_copy(tmp_path, monkeypatch):
-    from scripts import install_configured
+    from scripts import _install_inputs, _install_relay
     source = tmp_path / "config"; source.mkdir()
     (source / "job.toml").write_text('default_environment="local"\n[environments.local]\nkind="local"\n[environments.local.backends.xtb]\ncommand="xtb"\n')
     def unexpected(*args):
         pytest.fail("invalid scientific config must fail before installation side effects")
-    monkeypatch.setattr(install_configured, "_relay_install", unexpected)
-    monkeypatch.setattr(install_configured, "build_command", unexpected)
-    assert install_configured.main(["--config-dir", str(source), "--install-root", str(tmp_path / "install")]) == 1
+    monkeypatch.setattr(_install_relay, "install", unexpected)
+    monkeypatch.setattr(wizard, "run_install", unexpected)
+    assert wizard.main(["--non-interactive", "--yes", "--config-dir", str(source), "--install-root", str(tmp_path / "install")]) == 1
+
+
+def _configured_email_fixture(tmp_path):
+    from scripts import _install_inputs, _install_relay
+    config = tmp_path / "config"
+    config.mkdir()
+    for name in ("models.json", "auth.json"):
+        (config / name).write_text("{}\n")
+    (config / "job.toml").write_text('default_environment="local"\n[environments.local]\nkind="local"\n')
+    root = tmp_path / "install"
+    args = wizard.parse_args([
+        "--config-dir", str(config), "--install-root", str(root),
+        "--phone-access", "disabled", "--without-web", "--service-scope", "none",
+        "--non-interactive", "--yes",
+    ])
+    return config, root, args
+
+
+def test_configured_email_uses_explicit_file_and_private_password_copy(tmp_path):
+    from scripts import _install_inputs, _install_relay
+    config, root, args = _configured_email_fixture(tmp_path)
+    (config / "email.toml").write_text((ROOT / "config/email.example.toml").read_text())
+    (config / "smtp-password").write_text("synthetic-smtp-authorization-code\n")
+    (config / "smtp-password").chmod(0o600)
+    _install_inputs.apply_config_directory(args)
+    options = args
+    wizard.validate_email_options(options)
+    assert options.email_recipient == "recipient@example.invalid"
+    assert options.email_username == "sender@example.invalid"
+    assert options.email_host == "smtp.example.invalid"
+    password = root / "etc/secrets/smtp-password"
+    assert not root.exists()
+    wizard.configure_notification_config(options)
+    assert options.email_password_file == str(password)
+    assert password.read_text() == "synthetic-smtp-authorization-code\n"
+    assert stat.S_IMODE(password.stat().st_mode) == 0o600
+    installed = (root / "etc/email.toml").read_text()
+    assert "recipient@example.invalid" in installed
+    assert "synthetic-smtp-authorization-code" not in installed
+
+
+@pytest.mark.parametrize("disabled", [False, True])
+def test_configured_install_without_email_does_not_require_smtp_password(tmp_path, disabled):
+    from scripts import _install_inputs, _install_relay
+    config, root, args = _configured_email_fixture(tmp_path)
+    if disabled:
+        (config / "email.toml").write_text('[notifications.email]\nenabled=false\n')
+    _install_inputs.apply_config_directory(args)
+    assert args.email_binding is None
+    assert not root.exists()
+
+
+def test_configured_email_can_reference_service_environment(tmp_path):
+    from scripts import _install_inputs, _install_relay
+    config, root, args = _configured_email_fixture(tmp_path)
+    text = (ROOT / "config/email.example.toml").read_text()
+    text = text.replace('password_file = "smtp-password"', 'password_env = "EXAMPLE_SMTP_PASSWORD"')
+    (config / "email.toml").write_text(text)
+    _install_inputs.apply_config_directory(args)
+    options = args
+    assert options.email_password_env == "EXAMPLE_SMTP_PASSWORD"
+    assert options.email_password_file is None
+    assert not root.exists()
+
+
+@pytest.mark.parametrize("email", [
+    '[notifications.email]\nprovider="smtp"\npassword="synthetic-secret"\n',
+    '[notifications.email]\nenabled="true"\n',
+    '[notifications.email]\nprovider="smtp"\nport="465"\n',
+])
+def test_configured_invalid_email_fails_before_relay_or_secret_copy(tmp_path, monkeypatch, email):
+    from scripts import _install_inputs, _install_relay
+    config, root, _ = _configured_email_fixture(tmp_path)
+    (config / "email.toml").write_text(email)
+    monkeypatch.setattr(wizard, "_validate_job_config", lambda value: value)
+    def unexpected(*args):
+        pytest.fail("invalid email must fail before installation side effects")
+    monkeypatch.setattr(_install_relay, "install", unexpected)
+    assert wizard.main(["--non-interactive", "--yes", "--config-dir", str(config), "--install-root", str(root)]) == 1
+    assert not root.exists()
 
 
 def test_installed_execution_readiness_probes_unregistered_native_binding(tmp_path, monkeypatch):
@@ -1355,8 +1435,7 @@ def test_install_uninstaller_copies_recovery_files_and_marks_ownership(tmp_path:
 
 
 def test_configured_update_preserves_existing_relay_host_enrollment(tmp_path, monkeypatch):
-    from scripts import install_configured, install_wizard
-    from types import SimpleNamespace
+    from scripts import _install_relay
     root = tmp_path / 'install'
     state = root / 'var/state/host'
     state.mkdir(parents=True)
@@ -1365,22 +1444,18 @@ def test_configured_update_preserves_existing_relay_host_enrollment(tmp_path, mo
     (state / 'server-id').write_text(host_id)
     (state / 'host.token').write_text('existing-token')
     (state / 'link.json').write_text(json.dumps({'schema_version':'research-agent-link/1','relay_url':relay_url,'host_id':host_id}))
-    config = tmp_path / 'config'; config.mkdir(); (config / 'job.toml').write_text('')
-    monkeypatch.setattr(install_wizard, '_validate_job_config', lambda value: value)
-    monkeypatch.setattr(install_configured, 'discover_link_relay', lambda path: {
+    monkeypatch.setattr(_install_relay, 'discover_link_relay', lambda path: {
         'service_root': str(root / 'runtimes/link-relay/current/services/relay'), 'relay_url':relay_url,
         'state': str(root / 'var/state/link-relay/relay.db')})
-    def build(args, config, target):
-        assert args.link_enrollment_code is None
-        assert args.link_url == relay_url
-        return ['verified-wizard-command']
-    calls = []
-    def run(command, **kwargs):
-        calls.append(command)
-        assert command == ['verified-wizard-command'], 'must not create another enrollment for an enrolled Host'
-        return SimpleNamespace(returncode=0)
-    monkeypatch.setattr(install_configured, 'build_command', build)
-    monkeypatch.setattr(install_configured.subprocess, 'run', run)
-    assert install_configured.main(['--install-root',str(root),'--config-dir',str(config)]) == 0
-    assert len(calls) == 1
+    def unexpected(*args, **kwargs):
+        pytest.fail('must not create another enrollment for an enrolled Host')
+    monkeypatch.setattr(_install_relay.subprocess, 'run', unexpected)
+    args = wizard.parse_args(['--install-root', str(root), '--with-link-relay', '--link-url', relay_url])
+    _install_relay.prepare(args)
+    result, owned = _install_relay.install(args, root)
+    _install_relay.enroll_options(args, result)
+    assert owned is False
+    assert args.link_enrollment_code is None
+    assert args.link_url == relay_url
+    assert not args._defer_link_enrollment
     assert (state / 'host.token').read_text() == 'existing-token'

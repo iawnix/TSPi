@@ -34,19 +34,33 @@ workspace root, Conda root, optional TS Web component, and service policy. Core
 Agent and its control runtime are always installed. Scientific computation,
 validation, and rendering depend on separately configured execution environments.
 
-`install-configured.sh` provisions the local Relay by default during the same
-non-interactive installation, creates a one-time enrollment code, and enrolls
-the Host automatically. The default Relay origin is
-`https://tsphone.iawnix.xyz`. To reuse a Relay owned elsewhere, set
-`RESEARCH_AGENT_WITH_LINK_RELAY=false` and provide `RESEARCH_AGENT_LINK_ENROLLMENT_CODE`. The
-Relay-specific settings include `RESEARCH_AGENT_LINK_RELAY_ROOT`,
-`RESEARCH_AGENT_LINK_RELAY_STATE_DIR`, `RESEARCH_AGENT_LINK_RELAY_LISTEN`,
-`RESEARCH_AGENT_LINK_RELAY_PORT`, `RESEARCH_AGENT_LINK_RELAY_SERVICE_SCOPE`, and
-`RESEARCH_AGENT_LINK_RELAY_SERVICE_USER`.
-The local Relay is used through `127.0.0.1:8788` while redeeming the
-enrollment code; the Host manifest still stores the public origin, so the
-public reverse proxy need not be ready during installation. Override this with
-`RESEARCH_AGENT_LINK_ENROLLMENT_URL` when needed.
+The repository has two public entrypoints: `install.sh` and `uninstall.sh`.
+Installation defaults to GitHub; use `--source local` for the current checkout or
+`--source-root /absolute/path` for another local checkout. GitHub branches, tags,
+and commits are selected with `--research-agent-ref`. Local installs use HEAD and
+reject uncommitted changes unless `--allow-dirty` is explicitly supplied for local validation.
+
+```bash
+./install.sh --source local --config-dir "$PWD/config" \
+  --install-root "$HOME/ResearchAgent" --non-interactive --yes
+```
+
+The private configuration directory can contain `job.toml`, `models.json`,
+`auth.json`, `email.toml`, and `name-resolver.toml`. Missing files preserve installer
+defaults or existing installation state. CLI options override `RESEARCH_AGENT_*`
+environment defaults and directory inputs. Add `--dry-run` for a redacted preview
+without downloads, credential copies, or service changes. GitHub installs also
+read credentials from the caller's local directory; that directory is never uploaded.
+
+Phone/Relay access is opt-in. Use `--with-link-relay --link-url https://your-domain`
+to provision or reuse a local Relay after Core installation and enroll the Host.
+Relay code defaults to `<install>/runtimes/link-relay`, and state to
+`<install>/var/state/link-relay`. Options include `--link-relay-root`, `--relay-state-dir`,
+`--relay-listen`, `--relay-port`, and `--relay-service-scope`. New loopback Relays
+redeem enrollment locally; override with `--link-enrollment-url` when needed.
+To use an external Relay, supply `--phone-access link --link-url https://your-domain
+--link-enrollment-code <code>`. Standalone management uses `./install.sh relay` and
+`./uninstall.sh relay`; see their `--help` output.
 
 For non-interactive installation, `--workspace-root /absolute/path` selects the
 directory containing named projects. The default is `<install>/workspaces`.
@@ -119,7 +133,7 @@ stage inputs and return declared outputs. All targets use
 `job_start/job_status/job_collect`; select a configured environment with the
 Job's `platform` field. No implicit local fallback or remote alias is added.
 
-Copy `config/compute.example.toml`, edit target paths and bindings, and pass it
+Copy `config/job.example.toml`, edit target paths and bindings, and pass it
 with `--job-config /absolute/path/job.toml`. The installation keeps its private
 copy at `<install>/etc/job.toml`. SSH credentials remain in SSH configuration.
 ResearchAgent does not install site-managed Gaussian or xTB binaries.
@@ -158,6 +172,13 @@ Failed package steps also retain a separate
 Optional email notifications are configured in `<install>/etc/email.toml`
 with mode 0600. The launcher validates the recipient and selected transport
 before the App Server starts. Disable notifications by omitting the file.
+
+With `./install.sh --config-dir /absolute/path/config`, optional email settings
+come from `email.toml` in that directory; see `config/email.example.toml`.
+The installer has no built-in sender or recipient. Authorization codes are
+referenced through `password_file` (relative to the config directory) or
+`password_env`. An absent file or `enabled = false` supplies no email settings:
+fresh installs leave email disabled, while updates preserve existing settings.
 
 Existing ClawEmail installations remain supported. For direct SMTP delivery,
 use an SMTP authorization code from a 163 or QQ mailbox (not the normal
@@ -296,7 +317,7 @@ reads its `research-agent-relay.service` to prefill the Relay origin. Use
 Relay remains a separate service; when provisioned by the unified installer its
 lifecycle is tracked by an ownership marker.
 
-The marker is stored at `<install>/.pi/link-relay.json`. Uninstall removes the
+The marker is stored at `<install>/etc/link-relay.json`. Uninstall removes the
 owned Relay service and code while preserving its database by default. Use
 `--purge-relay-state` or `--purge-all` to remove enrollment and device state;
 an unmarked shared Relay is never removed by a Host uninstall.

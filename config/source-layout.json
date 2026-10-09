@@ -22,8 +22,6 @@
   "files": [
     "research-agent",
     "install.sh",
-    "install-link-relay.sh",
-    "uninstall-link-relay.sh",
     "libexec/research-agent-host",
     "LICENSE",
     "README.md",
@@ -31,10 +29,16 @@
     "backend/pyproject.toml",
     "environment.yml",
     "environment.lock.txt",
-    "uninstall.sh",
-    "install-configured.sh"
+    "uninstall.sh"
   ],
   "exclude": [
+    "config/models.json",
+    "config/auth.json",
+    "config/job.toml",
+    "config/name-resolver.toml",
+    "config/email.toml",
+    "config/smtp-password",
+    "config/secrets/**",
     "scripts/_source_capture.py",
     "scripts/build_release.py",
     "scripts/build_package.py",
@@ -68,7 +72,10 @@
     "scripts/_runtime_install.py",
     "scripts/_wheel.py",
     "apps/agent-cli/launcher.py",
-    "prompts/research-agent.md"
+    "prompts/research-agent.md",
+    "scripts/installer.py",
+    "scripts/_install_inputs.py",
+    "scripts/_install_relay.py"
   ],
   "generated": [
     "python-dist/*.whl"

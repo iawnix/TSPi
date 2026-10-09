@@ -1,4 +1,4 @@
-# Execution bindings; edit these example target paths before installation.
+# Job execution bindings; edit these example target paths before installation.
 # Provision the shipped domains/chemical/environments locks first.
 # Copy to the installation-owned etc/job.toml and edit the backend bindings
 # available in each compute environment. The kind selects the execution platform.

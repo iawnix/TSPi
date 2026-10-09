@@ -199,9 +199,11 @@ def inspect_installation(root: Path) -> dict[str, str | None]:
     return {"operation": "update", "release_id": release_id}
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None, *, use_environment: bool = True) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--install-root")
+    parser.add_argument("--config-dir", help="Private directory containing optional job.toml, models.json, auth.json and email.toml.")
+    parser.add_argument("--dry-run", action="store_true", help="Print a redacted plan without downloading, installing or starting services.")
     parser.add_argument("--workspace-root", help="Absolute directory containing named research workspaces.")
     parser.add_argument("--research-agent-repo", default=DEFAULT_REPO)
     parser.add_argument("--research-agent-ref", default=os.environ.get("RESEARCH_AGENT_INSTALL_REF", "main"))
@@ -258,17 +260,31 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     remote.add_argument("--ssh-option", action="append", default=None, help="Additional OpenSSH option; repeatable.")
     parser.add_argument("--phone-access", choices=("disabled", "link"), help="TS Phone access mode.")
     parser.add_argument(
-        "--link-relay-root",
+        "--link-relay-root", "--relay-install-root",
         default=os.environ.get("RESEARCH_AGENT_LINK_RELAY_ROOT"),
         help="Existing local ResearchAgent Link Relay installation root (auto-detected when omitted).",
     )
-    parser.add_argument("--link-url", default=os.environ.get("RESEARCH_AGENT_LINK_URL"), help="ResearchAgent Link Relay HTTPS origin.")
+    parser.add_argument("--link-url", "--relay-public-url", default=os.environ.get("RESEARCH_AGENT_LINK_URL") if use_environment else None, help="ResearchAgent Link Relay HTTPS origin.")
     parser.add_argument(
         "--link-enrollment-url",
         default=os.environ.get("RESEARCH_AGENT_LINK_ENROLLMENT_URL"),
         help="Optional local Relay origin used only while redeeming the Host enrollment code.",
     )
     parser.add_argument("--link-enrollment-code", help="Single-use Host enrollment code issued by ResearchAgent Link Relay.")
+    relay = parser.add_mutually_exclusive_group()
+    relay.add_argument("--with-link-relay", dest="with_link_relay", action="store_true")
+    relay.add_argument("--without-link-relay", dest="with_link_relay", action="store_false")
+    parser.set_defaults(with_link_relay=False)
+    parser.add_argument("--relay-state-dir")
+    parser.add_argument("--relay-listen", default="127.0.0.1")
+    parser.add_argument("--relay-port", type=int, default=8788)
+    parser.add_argument("--relay-service-scope", choices=("user", "system", "none"), default="user")
+    parser.add_argument("--relay-service-user", default="research-agent-relay")
+    parser.add_argument("--relay-enable-services", dest="relay_enable_services", action="store_true")
+    parser.add_argument("--relay-no-enable-services", dest="relay_enable_services", action="store_false")
+    parser.add_argument("--relay-start-services", dest="relay_start_services", action="store_true")
+    parser.add_argument("--relay-no-start-services", dest="relay_start_services", action="store_false")
+    parser.set_defaults(relay_enable_services=True, relay_start_services=True)
     parser.add_argument("--enable-services", action="store_true")
     parser.add_argument("--start-services", action="store_true")
     email = parser.add_argument_group("email notifications")
@@ -290,6 +306,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--non-interactive", action="store_true")
     parser.add_argument("--yes", action="store_true")
     parser.add_argument("--json", action="store_true")
+    try:
+        from ._install_inputs import environment_defaults
+    except ImportError:
+        from _install_inputs import environment_defaults
+    if use_environment:
+        environment_defaults(parser)
     return parser.parse_args(argv)
 
 
@@ -437,6 +459,8 @@ def _load_existing_remote_host_defaults(args: argparse.Namespace, root: Path) ->
 
 
 def _load_existing_email_defaults(args: argparse.Namespace, root: Path) -> None:
+    if args.email_binding is not None or getattr(args, "_clear_email", False):
+        return
     config = root / "etc/email.toml"
     try:
         document = tomllib.loads(config.read_text(encoding="utf-8"))
@@ -1222,6 +1246,12 @@ def configure_notification_config(args: argparse.Namespace) -> dict[str, str]:
             "status": "preserved" if config_path.is_file() else "not_configured",
             "path": str(config_path),
         }
+
+    try:
+        from ._install_inputs import provision_config_credentials
+    except ImportError:
+        from _install_inputs import provision_config_credentials
+    provision_config_credentials(args)
 
     if args.email_binding == "clawemail":
         content = "\n".join(
@@ -3114,7 +3144,13 @@ def _prepare_installation(args: argparse.Namespace, checks: list[dict[str, objec
     side effects are deferred until the user confirms the displayed plan.
     """
 
+    try:
+        from . import _install_relay
+    except ImportError:
+        import _install_relay
+    _install_relay.prepare(args)
     validate_options(args)
+    _install_relay.validate(args)
     if not args.conda_root:
         require_preflight(checks)
     installation = inspect_installation(Path(args.install_root))
@@ -3152,14 +3188,45 @@ def _interactive_prepare_installation(
         note("No changes applied. Returning to installer menu.", tone="warning")
 
 
+def show_dry_run(args: argparse.Namespace) -> None:
+    """Expose only configuration references, never credential contents."""
+    if args.job_config:
+        _validate_job_config(tomllib.loads(Path(args.job_config).expanduser().read_text()))
+    validate_email_options(args)
+    plan = {key: getattr(args, key) for key in (
+        "install_root", "config_dir", "workspace_root", "source_root", "research_agent_repo",
+        "research_agent_ref", "research_agent_commit", "job_config", "agent_config_dir",
+        "with_web", "with_link_relay", "service_scope", "phone_access",
+    )}
+    plan["email"] = "configured" if args.email_binding else "preserve existing or disabled"
+    plan["source"] = "local" if args.source_root else "github"
+    plan["with_web"] = True if args.with_web is None else args.with_web
+    plan["service_scope"] = args.service_scope or DEFAULT_SERVICE_SCOPE
+    plan["phone_access"] = args.phone_access or "preserve existing or disabled"
+    plan["web_auth_token"] = "[REDACTED]" if args.web_auth_token else None
+    plan["link_enrollment_code"] = "[REDACTED]" if args.link_enrollment_code else None
+    print(json.dumps({"dry_run": True, "plan": plan}, indent=2, sort_keys=True))
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    try:
+        from . import _install_inputs, _install_relay
+    except ImportError:
+        import _install_inputs, _install_relay
+    relay_result = None
+    relay_owned = False
     previous_release: dict[str, object] | None = None
     previous_configuration: dict[str, object] | None = None
     installation_root: Path | None = None
     maintenance = None
     writer_guard = ExitStack()
     try:
+        _install_inputs.apply_config_directory(args)
+        _install_relay.prepare(args)
+        if args.dry_run:
+            show_dry_run(args)
+            return 0
         interactive = not args.non_interactive
         if interactive:
             if not sys.stdin.isatty() or not sys.stdout.isatty():
@@ -3193,6 +3260,9 @@ def main(argv: list[str] | None = None) -> int:
         maintenance.transition("preparing", release_id=installed.get("release_id"))
         from research_agent.bootstrap.session_guard import guard_installation_upgrade
         writer_guard.enter_context(guard_installation_upgrade(installation_root))
+        if args.with_link_relay:
+            relay_result, relay_owned = _install_relay.install(args, installation_root)
+            _install_relay.enroll_options(args, relay_result)
         collect_deferred_link_enrollment(args)
         with Spinner("Finalizing installation", stream=sys.stderr, enabled=not args.json) as activity:
             activity.update("Importing Pi model configuration")
@@ -3307,6 +3377,11 @@ def main(argv: list[str] | None = None) -> int:
             show_installed_summary(args, installed, components, credentials)
         return 0
     except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
+        if relay_owned and relay_result is not None:
+            try:
+                _install_relay.rollback(args, relay_result)
+            except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as relay_error:
+                error = RuntimeError(f"{error}; Relay cleanup failed: {relay_error}")
         if maintenance is not None:
             try:
                 stop_installation_services(args)

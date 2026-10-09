@@ -1,1 +1,8 @@
 /local_debug/
+/config/models.json
+/config/auth.json
+/config/job.toml
+/config/name-resolver.toml
+/config/email.toml
+/config/smtp-password
+/config/secrets/

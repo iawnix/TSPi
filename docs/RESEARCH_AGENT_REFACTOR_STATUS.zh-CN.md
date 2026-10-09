@@ -17,7 +17,7 @@
 
 绑定链为 Skill 指导 → executor id/version → backend 软件能力 → 所选 environment 的 `job.toml` binding → 固定准备请求 → Job platform。Skill 不绑定特定机器；执行资源校验不依赖 Pi Skill 注册表。具体约束与最低验收见[重构方案第 8.7 节](RESEARCH_AGENT_REFACTOR_PLAN.zh-CN.md#87-skill科学执行入口与计算平台的绑定)。
 
-以 xTB 为例：`domains/chemical/skills/xtb/SKILL.md` 提供使用方法；`domains/chemical/execution.json` 的 `chemical.xtb@1` 指定脚本、输入输出、资源摘要和 `backend=xtb`；安装级 `etc/job.toml` 的 `environments.local.backends.xtb` 或 `environments.remote.backends.xtb` 指定实际程序、解释器、激活脚本及提交资源。选中的目标 `kind` 决定本地进程或 SSH/调度器实现。配置示例见 `config/compute.example.toml`。
+以 xTB 为例：`domains/chemical/skills/xtb/SKILL.md` 提供使用方法；`domains/chemical/execution.json` 的 `chemical.xtb@1` 指定脚本、输入输出、资源摘要和 `backend=xtb`；安装级 `etc/job.toml` 的 `environments.local.backends.xtb` 或 `environments.remote.backends.xtb` 指定实际程序、解释器、激活脚本及提交资源。选中的目标 `kind` 决定本地进程或 SSH/调度器实现。配置示例见 `config/job.example.toml`。
 
 `application/execution_catalog.py` 负责声明和资源身份，`application/execution_environment.py` 负责解释器与环境验证，Job 层负责执行生命周期。当前目录含 12 个 executor 和 4 个 validator。存在某个 Skill 不等于安装了求解器；平台可达也不等于科学软件及其依赖已就绪。准备后的平台、命令和环境不能在提交时任意替换。不新增 Skill×机器映射表。
 

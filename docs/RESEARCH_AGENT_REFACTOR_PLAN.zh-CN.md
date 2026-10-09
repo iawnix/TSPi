@@ -605,7 +605,7 @@ Skill 与 executor 是一对零或多的说明关系，多项 executor 也可以
 
 P0 列出实际 executor→backend→目标配置关系与现有校验；P4 将执行声明/资源校验独立于 Pi Skill loader，并迁移绑定准备链。最低验收包括：同一 executor 在本地/远程目标正确解析、多 executor 共用 backend、缺少绑定、Python 选择优先级、声明/输入/环境漂移、资源覆盖被拒、目标可达但依赖缺失、队列配置及既有 Job 恢复。不同目标的 unit/contract 场景用隔离合成数据和模拟传输，真实远端验收单列且遵守外发授权。
 
-现有依据：`config/compute.example.toml`、`job_runtime/config_contract.py`、`job_runtime/config.py`、`tspi_runtime/executors.py`、`tspi_runtime/execution_environment.py`、`tspi_foundation/extension_catalog.py` 与相关执行环境、声明式 executor、远程 Job 测试。文档补充不代表绑定代码已迁移或新环境已验证。
+现有依据：`config/job.example.toml`、`job_runtime/config_contract.py`、`job_runtime/config.py`、`tspi_runtime/executors.py`、`tspi_runtime/execution_environment.py`、`tspi_foundation/extension_catalog.py` 与相关执行环境、声明式 executor、远程 Job 测试。文档补充不代表绑定代码已迁移或新环境已验证。
 
 ## 9. 统一命名与切换策略
 

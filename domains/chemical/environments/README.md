@@ -22,7 +22,7 @@ are confined to the rendering target. No environment includes the ResearchAgent 
 Copy the required lock files to a persistent directory on the target, keeping
 `render.requirements.txt` beside `render.lock`. Configure absolute target paths
 in installation-owned `job.toml`: `conda_executable`, a new versioned `prefix`
-and `lock_ref`. The example at `config/compute.example.toml` uses editable
+and `lock_ref`. The example at `config/job.example.toml` uses editable
 `/opt` paths. Local software can live under the operator's `~/soft` directory.
 
 Run the installer on the target host (also for SSH targets):

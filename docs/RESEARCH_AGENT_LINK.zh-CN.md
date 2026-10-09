@@ -15,11 +15,11 @@ research map 或计算状态。
 
 ## 安装 ResearchAgent Link Relay
 
-ResearchAgent Link Relay 是部署在公网或私有网络节点上的独立服务，不由本地 ResearchAgent Host 安装器
-安装。在 Relay 机器上的 ResearchAgent checkout 中运行：
+ResearchAgent Link Relay 是部署在公网或私有网络节点上的独立服务，可单独安装，也可通过
+Host 安装器的 `--with-link-relay` 一起部署。在 Relay 机器上的 ResearchAgent checkout 中运行：
 
 ```bash
-./install-link-relay.sh \
+./install.sh relay --source local \
   --public-url https://link.example.com \
   --listen 127.0.0.1 --port 8788 \
   --service-scope system --enable-services --start-services
@@ -36,7 +36,7 @@ ResearchAgent Link Relay 是部署在公网或私有网络节点上的独立服�
 和设备凭据：
 
 ```bash
-./uninstall-link-relay.sh --service-scope system --non-interactive --yes
+./uninstall.sh relay --service-scope system --non-interactive --yes
 ```
 
 只有明确加入 `--purge-state` 时，才会删除 Relay 数据库以及全部注册凭据。
@@ -47,7 +47,7 @@ ResearchAgent Link Relay 是部署在公网或私有网络节点上的独立服�
 生成新的 code：
 
 ```bash
-node /opt/research-agent-relay/current/service/cli.mjs enrollment create \
+node /opt/research-agent-relay/current/services/relay/cli.mjs enrollment create \
   --state /var/lib/research-agent-relay/relay.db
 ```
 

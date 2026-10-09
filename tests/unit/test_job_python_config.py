@@ -80,7 +80,7 @@ def test_example_and_python_binding_share_public_schema():
     from research_agent.jobs.config_contract import job_config_schema
     assert schema == job_config_schema()
     validator = Draft202012Validator(schema)
-    example = tomllib.loads((root / 'config/compute.example.toml').read_text())
+    example = tomllib.loads((root / 'config/job.example.toml').read_text())
     validator.validate(example)
     validate_job_config(example)
     inherited = copy.deepcopy(example)

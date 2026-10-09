@@ -19,7 +19,7 @@ xyzrender 上游要求，只安装在渲染目标中。这些环境均不安装 
 
 将所需锁复制到目标的持久目录，保持 `render.requirements.txt` 与 `render.lock`
 相邻。在安装管理的 `job.toml` 中配置目标绝对路径：`conda_executable`、新的版本化
-`prefix` 和 `lock_ref`。`config/compute.example.toml` 中的 `/opt` 路径是可编辑的
+`prefix` 和 `lock_ref`。`config/job.example.toml` 中的 `/opt` 路径是可编辑的
 示例；本机软件可放在维护者的 `~/soft` 下。
 
 在目标主机运行安装器，SSH 目标也一样：

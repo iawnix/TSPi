@@ -28,10 +28,11 @@ cd TSPi
 ./install.sh
 ```
 
-For non-interactive installation, edit the configuration in `install-configured.sh` and run:
+For non-interactive installation, prepare private files using the templates in `config/`, then run:
 
 ```bash
-./install-configured.sh
+./install.sh --source local --config-dir "$PWD/config" \
+  --install-root "$HOME/ResearchAgent" --non-interactive --yes
 ```
 
 See [Installation and Operations](docs/INSTALLATION.md) for model configuration,
@@ -61,7 +62,7 @@ for session controls and [ResearchAgent Link](docs/RESEARCH_AGENT_LINK.md) for p
 - [Skill catalog and loading language](skills/README.md)
 - [Scientific and remote execution](docs/SCIENTIFIC_CAPABILITIES_OPERATIONS.md)
 - [Model compatibility](docs/MODEL_COMPATIBILITY.md)
-- [Architecture](docs/ARCHITECTURE.md) and [Maintainer guide](docs/MAINTAINER_GUIDE.md)
+- [Architecture](docs/ARCHITECTURE.md) ([简体中文](docs/ARCHITECTURE.zh-CN.md)) and [Maintainer guide](docs/MAINTAINER_GUIDE.md)
 
 ## Development
 

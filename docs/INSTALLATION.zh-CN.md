@@ -27,14 +27,32 @@ TS Phone 是独立的 Flutter 应用。Relay 仍然是独立服务和独立安�
 可选 TS Web 组件和服务策略。Core Agent 和控制运行时始终安装；科学计算、验证和渲染
 依赖单独配置的执行环境。
 
-`install-configured.sh` 默认在同一次非交互安装中部署本机 Relay、生成一次性 enrollment
-code 并完成 Host 注册。默认 Relay URL 是 `https://tsphone.iawnix.xyz`；如果 Relay 已经
-由其他安装提供，可以设置 `RESEARCH_AGENT_WITH_LINK_RELAY=false` 并传入已有的
-`RESEARCH_AGENT_LINK_ENROLLMENT_CODE`。Relay 相关配置还包括 `RESEARCH_AGENT_LINK_RELAY_ROOT`、
-`RESEARCH_AGENT_LINK_RELAY_STATE_DIR`、`RESEARCH_AGENT_LINK_RELAY_LISTEN`、`RESEARCH_AGENT_LINK_RELAY_PORT`、
-`RESEARCH_AGENT_LINK_RELAY_SERVICE_SCOPE` 和 `RESEARCH_AGENT_LINK_RELAY_SERVICE_USER`。
-本机 Relay 会通过 `127.0.0.1:8788` 兑换 enrollment code，Host manifest 仍保存公网 URL，
-因此安装时不要求公网反向代理已经完成；可以用 `RESEARCH_AGENT_LINK_ENROLLMENT_URL` 覆盖本地兑换地址。
+根目录只提供 `install.sh` 和 `uninstall.sh` 两个入口。`install.sh` 默认从 GitHub
+选择版本；`--source local` 使用当前 checkout，`--source-root /绝对路径` 可选择另一个
+本地 checkout。GitHub 分支、标签或提交由 `--research-agent-ref` 选择。本地安装使用 HEAD，
+未提交修改默认拒绝；本机验证可显式使用 `--allow-dirty`。
+
+统一的配置目录入口为：
+
+```bash
+./install.sh --source local --config-dir "$PWD/config" \
+  --install-root "$HOME/ResearchAgent" --non-interactive --yes
+```
+
+配置目录可提供 `job.toml`、`models.json`、`auth.json`、`email.toml` 和
+`name-resolver.toml`；没有的配置沿用安装器默认值或已有安装状态。命令行参数优先于
+`RESEARCH_AGENT_*` 环境默认值和配置目录。添加 `--dry-run` 可查看脱敏计划，不下载、
+复制凭据或启动服务。GitHub 安装也从调用者指定的本机目录读取凭据，不会把该目录上传。
+
+Phone/Relay 不会自动启用。需要本机 Relay 时，显式传入 `--with-link-relay --link-url https://你的域名`。
+安装器在 Core 安装后部署或复用 Relay，获取一次性 enrollment code 并完成 Host 注册。
+默认 Relay 代码位于 `<install>/runtimes/link-relay`，状态位于 `<install>/var/state/link-relay`。
+可用 `--link-relay-root`、`--relay-state-dir`、`--relay-listen`、`--relay-port` 和
+`--relay-service-scope` 配置。新建的 loopback Relay 使用本地地址兑换 enrollment code；
+可用 `--link-enrollment-url` 覆盖。已有外部 Relay 时，使用
+`--phone-access link --link-url https://你的域名 --link-enrollment-code <code>`。
+单独安装和卸载使用 `./install.sh relay`、`./uninstall.sh relay`，选项见各自的 `--help`。
+
 非交互安装可使用 `--workspace-root /absolute/path`；默认值为
 `<install>/workspaces`。Host、终端、TS Web 和卸载器共享
 `etc/installation.json` 中记录的值。
@@ -97,7 +115,7 @@ scripts/prepare_pi_source.py --install <root>
 输出。所有目标使用 `job_start/job_status/job_collect`，由 Job 的 `platform` 字段选择
 已配置环境，不隐式添加本地回退或 remote 别名。
 
-复制 `config/compute.example.toml` 并修改目标路径与绑定，再通过
+复制 `config/job.example.toml` 并修改目标路径与绑定，再通过
 `--job-config /absolute/path/job.toml` 交给安装器。安装管理的私有副本位于
 `<install>/etc/job.toml`。SSH 凭据仍保留在 SSH 配置中。ResearchAgent 不安装站点管理的
 Gaussian 或 xTB 原生程序。
@@ -128,6 +146,12 @@ package 步骤还会在同一目录保留独立的 `install-failure-<timestamp>.
 
 可选邮件通知配置在 `<install>/etc/email.toml`，权限为 `0600`。启动 App Server
 前，启动器会验证收件人和传输方式；不创建该文件即可禁用通知。
+
+使用 `./install.sh --config-dir /绝对路径/config` 时，邮件设置来自该目录的
+`email.toml`，格式见 `config/email.example.toml`；不再内置发件人或收件人。授权码由
+`password_file` 或 `password_env` 引用，文件相对路径以配置目录为基准。缺少该文件或
+`enabled = false` 时不传入邮件设置，新安装不启用邮件，更新保留已有设置。
+模型凭据示例及私有配置保护说明见 [config/README.md](../config/README.md)。
 
 已有 ClawEmail 安装仍受支持。直接 SMTP 投递时必须使用 163 或 QQ 邮箱的 SMTP 授权码，
 不能使用网页登录密码；授权码应保存在配置文件之外。
@@ -250,7 +274,7 @@ origin 和 Relay 管理员创建的一次性 Host enrollment code。交互式安
 指定 `--link-relay-root /path/to/research-agent-link`。Relay 仍然是独立服务；统一安装器在明确启用
 Relay 时负责其生命周期，Host 安装器只负责兑换 enrollment code。
 
-统一安装器会在 `<install>/.pi/link-relay.json` 写入所有权标记。卸载时默认停止并移除该
+统一安装器会在 `<install>/etc/link-relay.json` 写入所有权标记。卸载时默认停止并移除该
 安装创建的 Relay 服务和代码，但保留 Relay 数据库；使用 `--purge-relay-state` 或
 `--purge-all` 才会删除 enrollment 和设备状态。没有该标记的共享 Relay 不会被主安装卸载。
 

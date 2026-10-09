@@ -1,147 +1,28 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly REPO_URL="${RESEARCH_AGENT_INSTALL_REPO:-https://github.com/iawnix/TSPi.git}"
-readonly REPO_REF="${RESEARCH_AGENT_INSTALL_REF:-main}"
-SCRIPT_DIR=""
+command -v python3 >/dev/null 2>&1 || { printf 'Python 3.11+ is required.\n' >&2; exit 127; }
+python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 11))'
+SCRIPT_ROOT=""
 if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
-  SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+  SCRIPT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 fi
-readonly SCRIPT_DIR
-
-if [[ -t 2 && ! -v NO_COLOR && "${TERM:-}" != "dumb" ]]; then
-  readonly BOOTSTRAP_ACCENT=$'\033[1;33m' BOOTSTRAP_SUCCESS=$'\033[1;32m'
-  readonly BOOTSTRAP_DANGER=$'\033[1;31m' BOOTSTRAP_RESET=$'\033[0m'
-else
-  readonly BOOTSTRAP_ACCENT="" BOOTSTRAP_SUCCESS="" BOOTSTRAP_DANGER="" BOOTSTRAP_RESET=""
-fi
-
-fail() {
-  printf '%bResearchAgent uninstaller failed:%b %s\n' "${BOOTSTRAP_DANGER}" "${BOOTSTRAP_RESET}" "$1" >&2
-  exit "${2:-1}"
-}
-
-command -v python3 >/dev/null 2>&1 || fail "Python 3.11 or newer is required." 127
-python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 11))' || fail "Python 3.11 or newer is required."
-if [[ -f "${SCRIPT_DIR}/scripts/uninstall.py" && -f "${SCRIPT_DIR}/package.json" ]]; then
-  exec python3 "${SCRIPT_DIR}/scripts/uninstall.py" "$@"
-fi
-if [[ -f "${SCRIPT_DIR}/runtimes/maintenance/uninstall.py" ]]; then
-  exec python3 "${SCRIPT_DIR}/runtimes/maintenance/uninstall.py" "$@"
-fi
-command -v git >/dev/null 2>&1 || fail "Git is required for recovery mode." 127
-
-printf '\n%bResearchAgent Uninstaller%b\n' "${BOOTSTRAP_ACCENT}" "${BOOTSTRAP_RESET}" >&2
-printf 'Preparing source %s (%s)...\n' "${REPO_URL}" "${REPO_REF}" >&2
-
-readonly TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/research-agent-uninstaller.XXXXXX")"
-readonly BOOTSTRAP_LOG="${TEMP_ROOT}/bootstrap.log"
-BOOTSTRAP_SPINNER_PID=""
-BOOTSTRAP_ANIMATIONS=true
-for argument in "$@"; do
-  [[ "${argument}" == "--json" ]] && BOOTSTRAP_ANIMATIONS=false
+for candidate in "${SCRIPT_ROOT}/scripts/installer.py" "${SCRIPT_ROOT}/runtimes/maintenance/installer.py"; do
+  if [[ -f "${candidate}" ]]; then
+    if [[ ! -t 0 ]] && { true </dev/tty; } 2>/dev/null; then
+      exec python3 -B "${candidate}" uninstall "$@" </dev/tty
+    fi
+    exec python3 -B "${candidate}" uninstall "$@"
+  fi
 done
 
-stop_bootstrap_spinner() {
-  if [[ -n "${BOOTSTRAP_SPINNER_PID}" ]]; then
-    kill "${BOOTSTRAP_SPINNER_PID}" 2>/dev/null || true
-    wait "${BOOTSTRAP_SPINNER_PID}" 2>/dev/null || true
-    BOOTSTRAP_SPINNER_PID=""
-    printf '\r\033[2K' >&2
-  fi
-}
-
-bootstrap_spinner() {
-  local label="$1" frame index=0
-  local -a frames=('|' '/' '-' $'\\')
-  while true; do
-    frame="${frames[index % ${#frames[@]}]}"
-    printf '\r\033[2K  %b%s%b %s' "${BOOTSTRAP_ACCENT}" "${frame}" "${BOOTSTRAP_RESET}" "${label}" >&2
-    index=$((index + 1))
-    sleep 0.12
-  done
-}
-
-cleanup() {
-  stop_bootstrap_spinner
-  rm -rf -- "${TEMP_ROOT}"
-}
-interrupted() { exit "$1"; }
-trap cleanup EXIT
-trap 'interrupted 130' INT
-trap 'interrupted 143' TERM
-
-run_bootstrap_step() {
-  local label="$1"
-  local status=0
-  shift
-  : >"${BOOTSTRAP_LOG}"
-  if [[ "${BOOTSTRAP_ANIMATIONS}" == true && -t 2 && "${TERM:-}" != "dumb" ]]; then
-    bootstrap_spinner "${label}" &
-    BOOTSTRAP_SPINNER_PID=$!
-  fi
-  "$@" >"${BOOTSTRAP_LOG}" 2>&1 || status=$?
-  stop_bootstrap_spinner
-  if (( status != 0 )); then
-    printf '%bFailed:%b %s\n' "${BOOTSTRAP_DANGER}" "${BOOTSTRAP_RESET}" "${label}" >&2
-    sed -n '1,120p' "${BOOTSTRAP_LOG}" >&2
-    exit "${status}"
-  fi
-  printf '  %bOK%b %s\n' "${BOOTSTRAP_SUCCESS}" "${BOOTSTRAP_RESET}" "${label}" >&2
-}
-
-git_clone_source() {
-  local destination="$1" attempt
-  for ((attempt = 1; attempt <= 3; attempt++)); do
-    if git clone --quiet --filter=blob:none --no-checkout -- "${REPO_URL}" "${destination}"; then
-      return 0
-    fi
-    rm -rf -- "${destination}"
-    if (( attempt < 3 )); then
-      sleep "${attempt}"
-    fi
-  done
-  return 1
-}
-
-git_fetch_revision() {
-  local checkout="$1" attempt fallback
-  for ((attempt = 1; attempt <= 3; attempt++)); do
-    if git -C "${checkout}" fetch --quiet --depth 1 origin "${REPO_REF}"; then
-      return 0
-    fi
-    if (( attempt < 3 )); then
-      sleep "${attempt}"
-    fi
-  done
-
-  # Retry without partial-clone filter negotiation for unreliable proxies.
-  fallback="${checkout}.fallback"
-  for ((attempt = 1; attempt <= 3; attempt++)); do
-    rm -rf -- "${fallback}"
-    if git clone --quiet --depth 1 --no-checkout -- "${REPO_URL}" "${fallback}" \
-      && git -C "${fallback}" fetch --quiet --depth 1 origin "${REPO_REF}"; then
-      rm -rf -- "${checkout}"
-      mv -- "${fallback}" "${checkout}"
-      return 0
-    fi
-    if (( attempt < 3 )); then
-      sleep "${attempt}"
-    fi
-  done
-  rm -rf -- "${fallback}"
-  return 1
-}
-
-run_bootstrap_step "repository access" git_clone_source "${TEMP_ROOT}/ResearchAgent"
-run_bootstrap_step "revision ${REPO_REF}" git_fetch_revision "${TEMP_ROOT}/ResearchAgent"
-run_bootstrap_step "source checkout" git -C "${TEMP_ROOT}/ResearchAgent" checkout --quiet --detach FETCH_HEAD
-
-uninstaller=(python3 "${TEMP_ROOT}/ResearchAgent/scripts/uninstall.py" "$@")
-if [[ -t 0 ]]; then
-  "${uninstaller[@]}"
-elif { true </dev/tty; } 2>/dev/null; then
-  "${uninstaller[@]}" </dev/tty
-else
-  "${uninstaller[@]}"
-fi
+# Standalone recovery: obtain the dispatcher when the local installation is missing.
+command -v git >/dev/null 2>&1 || { printf 'Git is required for recovery.\n' >&2; exit 127; }
+bootstrap_root="$(mktemp -d "${TMPDIR:-/tmp}/research-agent-bootstrap.XXXXXX")"
+trap 'rm -rf -- "${bootstrap_root}"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+git clone --quiet --depth 1 --no-checkout -- "${RESEARCH_AGENT_INSTALL_REPO:-https://github.com/iawnix/TSPi.git}" "${bootstrap_root}/source"
+git -C "${bootstrap_root}/source" fetch --quiet --depth 1 origin "${RESEARCH_AGENT_INSTALL_REF:-main}"
+git -C "${bootstrap_root}/source" checkout --quiet --detach FETCH_HEAD
+python3 -B "${bootstrap_root}/source/scripts/installer.py" uninstall "$@"

@@ -1,5 +1,13 @@
 __pycache__/
 /local_debug/
+# Private installation inputs; only *.example.* templates belong in Git.
+/config/models.json
+/config/auth.json
+/config/job.toml
+/config/name-resolver.toml
+/config/email.toml
+/config/smtp-password
+/config/secrets/
 *.egg-info/
 build/
 /python-dist/

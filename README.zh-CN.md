@@ -25,13 +25,14 @@ cd TSPi
 ./install.sh
 ```
 
-需要非交互安装时，编辑 `install-configured.sh` 中的配置并执行：
+需要非交互安装时，参考 `config/` 中的示例准备本机私有配置，然后执行：
 
 ```bash
-./install-configured.sh
+./install.sh --source local --config-dir "$PWD/config" \
+  --install-root "$HOME/ResearchAgent" --non-interactive --yes
 ```
 
-安装、模型配置、远程计算、手机连接和服务管理见[安装与运维](docs/INSTALLATION.zh-CN.md)。
+安装、模型配置、远程计算、手机连接和服务管理见[安装与运维](docs/INSTALLATION.zh-CN.md)（[English](docs/INSTALLATION.md)）。
 
 ## 开始研究
 
@@ -56,7 +57,7 @@ cd TSPi
 - [Skill 目录与加载语言](skills/README.zh-CN.md)
 - [科学计算与远程执行](docs/SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)
 - [模型兼容性](docs/MODEL_COMPATIBILITY.zh-CN.md)
-- [架构](docs/ARCHITECTURE.zh-CN.md)与[维护者指南](docs/MAINTAINER_GUIDE.zh-CN.md)
+- [架构](docs/ARCHITECTURE.zh-CN.md)（[English](docs/ARCHITECTURE.md)）与[维护者指南](docs/MAINTAINER_GUIDE.zh-CN.md)（[English](docs/MAINTAINER_GUIDE.md)）
 
 ## 开发
 
