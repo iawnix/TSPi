@@ -317,3 +317,69 @@ def test_readiness_distinguishes_shared_backend_configuration_from_verification(
     assert all(row['status'] == 'configuration_validated' for row in result['local'].values())
     assert all(row['environment_evidence'] is None for row in result['local'].values())
     assert all(row['status'] == 'not_configured' for row in result['empty'].values())
+
+
+def test_installed_resolver_is_used_by_an_isolated_name_resolution_job(tmp_path, monkeypatch):
+    import os
+    import threading
+    import tomllib
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from types import SimpleNamespace
+    from scripts import install_wizard as wizard
+
+    requests = []
+    class Resolver(BaseHTTPRequestHandler):
+        def do_GET(self):
+            requests.append(self.path)
+            body = json.dumps({'status': 'SUCCESS', 'smiles': 'CCO'}).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, *_args):
+            pass
+
+    with ThreadingHTTPServer(('127.0.0.1', 0), Resolver) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            root = tmp_path / 'install'
+            job = root / 'etc/job.toml'
+            job.parent.mkdir(parents=True)
+            settings = tomllib.loads(Path(os.environ['RESEARCH_AGENT_JOB_CONFIG']).read_text())
+            local = settings['environments']['local']
+            local['backends'] = {'structure': local['backends']['structure']}
+            job.write_bytes(wizard._job_config_bytes(settings))
+            resolver = root / 'etc/name-resolver.toml'
+            resolver.write_text('default_resolver="opsin"\n[backends.opsin]\ncache=false\nendpoint=' +
+                                json.dumps(f'http://127.0.0.1:{server.server_port}/opsin') + '\n')
+            wizard.configure_backend_configs(SimpleNamespace(install_root=str(root)))
+            monkeypatch.setenv('RESEARCH_AGENT_JOB_CONFIG', str(job))
+            # Ambient Host configuration must not substitute for the installed binding.
+            monkeypatch.setenv('RESEARCH_AGENT_NAME_RESOLVER_CONFIG', str(tmp_path/'absent.toml'))
+            request = prepare(job, 'local', 'chemical.resolve', '1', {}, ['--name', 'ethanol'])
+            assert request['environment']['RESEARCH_AGENT_NAME_RESOLVER_CONFIG'] == str(resolver)
+            work = tmp_path / 'workspace'
+            workspace(work)
+            path = work / 'request.json'
+            path.write_text(json.dumps(request))
+            receipt = execute('job.start', work, {'request_file': str(path),
+                'request_sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+            try:
+                for _ in range(250):
+                    status = execute('job.status', work, {'job_id': receipt['job_id']})
+                    if status['state'] in {'succeeded', 'failed'}:
+                        break
+                    time.sleep(.02)
+                assert status['state'] == 'succeeded'
+                assert execute('job.collect', work, {'job_id': receipt['job_id']})['output_validation']['complete']
+                result = json.loads((Path(receipt['cwd'])/'results/resolve.json').read_text())
+                assert result['data']['status'] == 'resolved'
+                assert result['data']['candidates'][0]['formula'] == 'C2H6O'
+                assert requests == ['/opsin/ethanol.json']
+            finally:
+                execute('job.cancel', work, {'job_id': receipt['job_id']})
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)

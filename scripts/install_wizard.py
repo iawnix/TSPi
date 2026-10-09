@@ -1536,6 +1536,56 @@ def _write_private_config_bytes(raw: bytes, destination: Path) -> None:
     return None
 
 
+def _job_config_bytes(config: dict) -> bytes:
+    """Serialize validated Job tables, including quoted target names and env keys."""
+    lines = []
+
+    def table(path, values):
+        if path:
+            lines.append("[" + ".".join(_toml_string(key) for key in path) + "]")
+        for key, value in values.items():
+            if not isinstance(value, dict):
+                lines.append(_toml_string(key) + " = " + json.dumps(value, ensure_ascii=False))
+        lines.append("")
+        for key, value in values.items():
+            if isinstance(value, dict):
+                table((*path, key), value)
+
+    table((), config)
+    return ("\n".join(lines) + "\n").encode()
+
+
+def _bind_local_name_resolver(job: dict, resolver: Path) -> None:
+    """Jobs receive explicit target bindings, never the Host's ambient config."""
+    destination = Path(job["path"])
+    if not destination.is_file() or not resolver.is_file():
+        return
+    raw = destination.read_bytes()
+    config = tomllib.loads(raw.decode())
+    changed = []
+    for name, target in config["environments"].items():
+        structure = target.get("backends", {}).get("structure")
+        if target["kind"] != "local" or structure is None:
+            continue
+        variables = structure.setdefault("environment", {})
+        # Explicit paths (including a target-specific installation root) win.
+        if {"RESEARCH_AGENT_NAME_RESOLVER_CONFIG", "RESEARCH_AGENT_INSTALL_ROOT"} & variables.keys():
+            continue
+        variables["RESEARCH_AGENT_NAME_RESOLVER_CONFIG"] = str(resolver)
+        changed.append(name)
+    if not changed:
+        return
+    installed = _job_config_bytes(config)
+    readiness = _validate_job_config(tomllib.loads(installed.decode()))
+    previous = job.get("previous_sha256", hashlib.sha256(raw).hexdigest())
+    _write_private_config_bytes(installed, destination)
+    job.update(status="configured", source_sha256=hashlib.sha256(raw).hexdigest(),
+               sha256=hashlib.sha256(installed).hexdigest(), previous_sha256=previous,
+               configuration_changed=previous is not None and previous != hashlib.sha256(installed).hexdigest(),
+               resolver_bindings=changed, readiness=readiness)
+    _write_job_readiness(destination, job)
+
+
 def configure_backend_configs(args: argparse.Namespace) -> dict[str, dict[str, str]]:
     root = Path(args.install_root).expanduser().resolve()
     result: dict[str, dict[str, str]] = {}
@@ -1601,6 +1651,7 @@ def configure_backend_configs(args: argparse.Namespace) -> dict[str, dict[str, s
                 "enabled_backends": "",
                 "automatic_lookup": "unavailable",
             }
+    _bind_local_name_resolver(result["job"], resolver_destination)
     return result
 
 

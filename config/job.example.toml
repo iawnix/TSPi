@@ -16,6 +16,8 @@ lock_ref = "/opt/research-agent/locks/wrapper.lock"
 
 # These Python-only methods use the selected target's RDKit/NumPy environment.
 [environments.local.backends.structure]
+# The installer binds its etc/name-resolver.toml here when no explicit resolver
+# environment is supplied. Remote targets need their own target-local path.
 [environments.local.backends.structure.python]
 manager = "conda"
 conda_executable = "/opt/conda/bin/conda"

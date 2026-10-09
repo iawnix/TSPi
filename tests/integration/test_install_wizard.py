@@ -1424,6 +1424,43 @@ def test_invalid_preserved_name_resolver_config_fails_install_configuration(tmp_
         wizard.configure_backend_configs(args)
 
 
+@pytest.mark.parametrize("imported", [False, True])
+def test_install_binds_local_resolver_and_preserves_explicit_and_remote_settings(tmp_path, imported):
+    import copy
+    import hashlib
+    import tomllib
+    root = tmp_path / 'install'
+    destination = root / 'etc/job.toml'
+    destination.parent.mkdir(parents=True)
+    # Inline tables and dots in target names must survive configuration rewriting.
+    python = '{manager="conda", conda_executable="/opt/conda/bin/conda", prefix="/opt/structure", lock_ref="/opt/structure.lock"}'
+    raw = ('default_environment="local.cpu"\n[environments."local.cpu"]\nkind="local"\npython=' + python + '\n'
+           '[environments."local.cpu".backends]\nstructure={environment={OMP_NUM_THREADS="2"}}\n'
+           '[environments.custom]\nkind="local"\npython=' + python + '\n'
+           '[environments.custom.backends.structure.environment]\nRESEARCH_AGENT_NAME_RESOLVER_CONFIG="/custom/resolver.toml"\n'
+           '[environments.explicit_root]\nkind="local"\npython=' + python + '\n'
+           '[environments.explicit_root.backends.structure.environment]\nRESEARCH_AGENT_INSTALL_ROOT="/custom/install"\n'
+           '[environments.cluster]\nkind="remote"\nssh_host="example.invalid"\nremote_root="/scratch/jobs"\npython=' + python + '\n'
+           '[environments.cluster.submission]\nqueue="batch"\n[environments.cluster.backends.structure]\n')
+    source = tmp_path / 'source.toml' if imported else destination
+    source.write_text(raw)
+    expected = copy.deepcopy(tomllib.loads(raw))
+    expected['environments']['local.cpu']['backends']['structure']['environment']['RESEARCH_AGENT_NAME_RESOLVER_CONFIG'] = str(root/'etc/name-resolver.toml')
+    args = SimpleNamespace(install_root=str(root), job_config=str(source) if imported else None)
+    configs = wizard.configure_backend_configs(args)
+    assert tomllib.loads(destination.read_text()) == expected
+    assert configs['job']['sha256'] == hashlib.sha256(destination.read_bytes()).hexdigest()
+    assert configs['job']['resolver_bindings'] == ['local.cpu']
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o600
+    if imported:
+        assert source.read_text() == raw
+    installed = destination.read_bytes()
+    args.job_config = None
+    wizard.configure_backend_configs(args)
+    assert destination.read_bytes() == installed
+
+
+
 def test_install_uninstaller_copies_recovery_files_and_marks_ownership(tmp_path: Path) -> None:
     root = tmp_path / "install"
     uninstaller = install_uninstaller(root, ROOT)
