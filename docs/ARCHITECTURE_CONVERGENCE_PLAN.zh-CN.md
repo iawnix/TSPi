@@ -5,8 +5,8 @@
 
 ## 当前状态快照（2026-10-09）
 
-- 仓库 `main` 与 `origin/main` 同步；本次部署源码提交为 `1b70cf2b5d78d528f962a7edd4073b460c7db25a`（`docs: reconcile convergence acceptance status`）。
-- 生产 `current` 指向 `/home/iaw/ResearchAgent/releases/0.18.0-sha256-085c864342ffdad9`，source provenance 绑定上述提交；App Server、TS Web、Link Relay 的 systemd user services 核验为 active 且 enabled。`app_layout_doctor.py` 返回 `ok=true`。
+- 仓库 `main` 与 `origin/main` 同步。部署源码提交以 `/home/iaw/ResearchAgent/var/state/installation/source-provenance.json` 为准；活动 release 以 `install-state.json` 和 `current` 指针为准，避免在内容寻址的 release 内重复硬编码自身版本。
+- App Server、TS Web、Link Relay 的 systemd user services 核验为 active 且 enabled；`app_layout_doctor.py` 返回 `ok=true`。
 - 升级保留了 Pi `models.json`/`auth.json`、`job.toml`、邮件配置与密码文件、TS Web token；这些文件的升级前后 SHA-256 一致。模型图标仍为启用状态且字体路径不变，安装器重新生成了图标标记文件。旧 `job.toml` 备份 `etc/job.toml.legacy-20261008` 保留。
 - 远端 CF22D 环境已安装到版本化 prefix，并使用目标主机锁完成小型 H₂ SCF 计算。通过 `fat` 队列验证过 SSH 上传、Torque 提交、轮询、结果回传及清理。
 - `batch` 是生产远端默认队列，提交成功；但验收任务排队超过 4 分钟后取消。因此 `batch` 的实际运行和结果回传仍未验证。默认队列配置正确不等于该队列端到端验收通过。
