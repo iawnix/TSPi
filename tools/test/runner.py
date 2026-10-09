@@ -48,6 +48,7 @@ def changes(base: str | None) -> list[str]:
 
 
 def select(args) -> tuple[list[str],list[dict]]:
+    if args.command=='phone': return ['phone'],[{'reason':'explicit local Phone contract validation'}]
     if args.command in DETERMINISTIC: return [args.command],[{'reason':'explicit suite'}]
     if args.command=='verify': return DETERMINISTIC.copy(),[{'reason':'full deterministic validation'}]
     if args.command=='release': return ['release'],[{'reason':'accept the specified complete package bytes'}]
@@ -159,6 +160,7 @@ def command_for(name: str, run: Path, dependencies: dict[str,Path], extra: list[
     paths=suite_paths(name,source)
     if files: paths=[path for path in paths if any(str(Path(path).relative_to(source)) == value or str(Path(path).relative_to(source)).startswith(value.rstrip('/')+'/') for value in files)]
     kind=selected['kind']
+    if kind=='flutter': return [python,str(source/'tools/test/phone.py'),*extra]
     if kind in ('pytest','systemd'):
         return [python,str(source/'tools/test/pytest_lane.py'),'--name',name,'--workers',str(workers),'--files',*paths,'--',*extra]
     if kind in ('node','node-native'):
@@ -205,6 +207,9 @@ def execute(args, root: Path, replay: Path | None = None) -> int:
     audit()
     run,record=create_run(root,plan,reasons,replay)
     audit(run/'source')
+    if 'phone' in plan:
+        from tools.test.phone import capture_phone
+        capture_phone(args, root, run, record, replay)
     if args.command=='release':
         if not args.artifact or not args.artifact.is_file(): raise ValueError('release requires --artifact pointing at the complete package archive')
         artifact=args.artifact.resolve()
@@ -232,6 +237,11 @@ def execute(args, root: Path, replay: Path | None = None) -> int:
     write_json(run/'run.json',record)
     os.symlink(dependencies['node']/'node_modules',run/'source/node_modules',target_is_directory=True)
     env=child_environment(root,run,dependencies)
+    if 'phone' in plan:
+        env.update({'RESEARCH_AGENT_SOURCE':str(run/'source'),
+                    'RESEARCH_AGENT_TEST_FLUTTER_ROOT':record['phone']['flutter'],
+                    'PUB_CACHE':record['phone']['pub_cache'],
+                    'CI':'true','FLUTTER_SUPPRESS_ANALYTICS':'true','DART_SUPPRESS_ANALYTICS':'true'})
     env['RESEARCH_AGENT_TEST_SEED']=str(record['seed'])
     env['PYTHONHASHSEED']=str(record['seed'])
     write_json(root/'registry'/f'lease-{run.name}.json',{'run':str(run),'dependencies':record['dependencies']})
@@ -262,6 +272,10 @@ def execute(args, root: Path, replay: Path | None = None) -> int:
         record['finished']=time.time()
         record['status']='passed' if len(record['results'])==len(plan) and all(item['status']=='passed' for item in record['results']) and record['cleanup']['status']=='passed' else 'failed'
         record['source_current']=digest_source(ROOT,source_files(ROOT))==record['source_sha256'] if not replay else False
+        if 'phone' in plan and not replay:
+            phone_source=Path(record['phone']['source'])
+            record['phone_source_current']=digest_source(phone_source,source_files(phone_source))==record['phone']['sha256']
+            record['source_current'] &= record['phone_source_current']
         if not record['source_current'] and not replay and record['status']=='passed': record['status']='stale'
         write_json(run/'run.json',record)
         write_json(run/'report/result.json',record)
@@ -356,6 +370,9 @@ def main(argv=None):
     parser.add_argument('--workers',type=int,default=max(1,min(8,(os.cpu_count() or 2)//2)))
     parser.add_argument('--timeout',type=int)
     parser.add_argument('--run')
+    parser.add_argument('--phone-source',type=Path)
+    parser.add_argument('--flutter-root',type=Path)
+    parser.add_argument('--pub-cache',type=Path)
     parser.add_argument('--failed',action='store_true')
     parser.add_argument('--artifact',type=Path)
     parser.add_argument('--allow-dirty',action='store_true')

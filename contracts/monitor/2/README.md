@@ -29,6 +29,19 @@ Inputs accepted before disable keep their existing execution identity; disabling
 a Monitor does not cancel an already accepted turn. Pending events remain
 available for later delivery.
 
+Host `monitor/list` and `monitor/status` return `{workspace_id, monitors}`.
+Each monitor is a flat binding plus `pending_count` (undelivered events),
+`last_observed_at` (latest stored execution event timestamp, or null), and
+`last_error` (a pending delivery error, otherwise the latest execution error).
+`last_state`, `enabled`, `session_id`, and `node_id` remain top-level fields.
+These extra fields are read projections, not new persisted monitor state.
+Reading them never claims, batches, or acknowledges delivery.
+
+`monitor/enable` and `monitor/disable` return `{workspace_id, updated}`.
+Clients verify that one requested monitor was updated, then use `monitor/status`
+with the same `monitor_id` to obtain its current view. The mutation receipt is
+not a monitor object. `updated: 0` means no matching monitor was found.
+
 The event contains the submitted Node revision. The Agent can read that Node,
 inspect or collect Job outputs, and publish its own research interpretation.
 Actual input and output provenance remains in Job receipts and Artifact Store.

@@ -1,6 +1,6 @@
 """Resolve, patch, and verify the Pi v1 durable runtime used by ResearchAgent."""
 from __future__ import annotations
-import argparse, json, os, shutil, subprocess, sys, tempfile
+import argparse, json, os, re, shutil, subprocess, sys, tempfile
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PIN_PATH = ROOT / "config" / "pi-source.json"
@@ -33,6 +33,10 @@ def verify(source):
     for patch in patches():
         if not patch_check(source, patch, reverse=True):
             raise PiSourceError(f"Pi patch is missing or incompatible: {patch.name}")
+    protocol = (source / "packages/protocol/src/protocol.ts").read_text()
+    version = re.search(r"export const PROTOCOL_VERSION = (\d+) as const;", protocol)
+    if version is None or int(version[1]) != pin()["protocolVersion"]:
+        raise PiSourceError("Pi protocol version does not match the pinned source descriptor")
     return expected
 
 def patches():

@@ -22,11 +22,24 @@ def test_terminal_job_wakes_once_and_reclaims_failed_delivery(tmp_path):
     assert first['claimed'] and first['session_id']=='session_original'
     assert command(tmp_path,'claim',{'event_id':event_id,'channel':'notify'})['claimed'] is False
     command(tmp_path,'complete',{'event_id':event_id,'channel':'wake','claim_token':first['claim_token'],'error':'host offline'})
+    before = {p: p.read_bytes() for p in (tmp_path/'operations/monitors').rglob('*.json')}
+    view = command(tmp_path, 'list', {})['monitors'][0]
+    assert view['last_state'] == 'succeeded'
+    assert view['pending_count'] == 1
+    assert view['last_observed_at']
+    assert view['last_error'] == 'host offline'
+    assert {p: p.read_bytes() for p in before} == before
+    assert command(tmp_path, 'disable', {'monitor_id': view['monitor_id']})['updated'] == 1
+    assert command(tmp_path, 'status', {'monitor_id': view['monitor_id']})['monitors'][0]['enabled'] is False
+    command(tmp_path, 'enable', {'monitor_id': view['monitor_id']})
     second=command(tmp_path,'claim',{'event_id':event_id,'channel':'wake'})
     assert second['request_id']==first['request_id']
     command(tmp_path,'complete',{'event_id':event_id,'channel':'wake','claim_token':second['claim_token'],'delivered':True})
     command(tmp_path,'tick',{})
     assert command(tmp_path,'pending',{})['deliveries']==[]
+    view = command(tmp_path, 'status', {})['monitors'][0]
+    assert view['pending_count'] == 0
+    assert view['last_error'] is None
 
 
 def test_pending_delivery_does_not_read_research_memory(tmp_path):

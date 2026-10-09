@@ -18,6 +18,7 @@ python3 tools/test/runner.py source -- -q
 python3 tools/test/runner.py verify
 python3 tools/test/runner.py replay --run RUN_ID --failed
 python3 tools/test/runner.py release --artifact /absolute/path/to/package.tar.gz
+python3 tools/test/runner.py phone --phone-source /absolute/path/to/ts-phone --flutter-root /home/iaw/project/TSPi/local_debug/deps/flutter/3.44.0 --pub-cache /home/iaw/project/TSPi/local_debug/deps/flutter-pub
 python3 tools/test/runner.py gc --dry-run
 python3 tools/test/runner.py gc --apply
 ```
@@ -78,3 +79,13 @@ non-private data; the normal runner does not send test data externally.
 CI uses these same commands, with an ephemeral root under `runner.temp`, and
 never uploads the test root, logs, databases or cache. The manifest discovers
 files automatically; all primary test suites must own disjoint sets of tests.
+
+The optional `phone` suite captures both repositories, runs Flutter with the
+supplied private SDK and offline package cache, and connects the actual Dart
+client to a real local Host/Pi Worker with a deterministic provider. It covers
+protocol identity, Monitor views and mutation receipts, models, input and
+interrupts. It rejects skipped tests, records both source digests, and uses the
+same network isolation and process cleanup as other suites. Prepare the SDK and
+package cache under `local_debug/` before invoking it; it does not download them
+or write Flutter caches into either source repository. This is automated local
+interop, not an installed Android/iOS device test.

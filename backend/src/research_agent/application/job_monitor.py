@@ -44,6 +44,19 @@ def read_delivery(path):
     return value
 
 
+def monitor_view(path):
+    """Project existing observations and outbox facts for Host clients."""
+    binding = read_binding(path)
+    pending = [row for p in sorted((path.parent / 'deliveries').glob('*.json'))
+               if not (row := read_delivery(p)).get('delivered')]
+    events = [read(p) for p in (path.parent / 'events').glob('*.json')]
+    latest = max(events, key=lambda event: event['sequence'], default={})
+    errors = [row['error'] for row in pending if row.get('error')]
+    return {**binding, 'pending_count': len(pending),
+            'last_observed_at': latest.get('observed_at'),
+            'last_error': errors[-1] if errors else latest.get('error')}
+
+
 def bind(root, intent, session_id):
     if not session_id:return
     job=intent['job_id'];mid='monitor_'+hashlib.sha256(job.encode()).hexdigest()[:24]
@@ -71,7 +84,7 @@ def _command(root,base,action,args):
     bindings=sorted(base.glob('*/binding.json'))
     if args.get('monitor_id'):bindings=[p for p in bindings if p.parent.name==args['monitor_id']]
     if action in {'list','status'}:
-        result = {'workspace_id':workspace_id,'monitors':[read_binding(p) for p in bindings]}
+        result = {'workspace_id':workspace_id,'monitors':[monitor_view(p) for p in bindings]}
         if action == 'status':
             # Observation must not claim, batch or retry the delivery outbox.
             result['pending_deliveries'] = [

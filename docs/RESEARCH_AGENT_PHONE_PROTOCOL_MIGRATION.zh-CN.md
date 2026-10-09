@@ -1,6 +1,6 @@
 # ResearchAgent：Phone 协议改名交接说明
 
-状态：服务端已采用此合同，完整确定性回归通过，供手机端同步。真实手机尚未更新及联调，不能用服务端测试客户端的通过结果替代。
+状态：服务端和手机源码已对齐此合同；本机自动化联调使用真实 Dart 客户端及 Pi Worker。尚未构建、部署或验证手机设备上的新版应用，不能把本机联调视为实机验收。
 
 本说明配套[重构方案](RESEARCH_AGENT_REFACTOR_PLAN.zh-CN.md)。服务端直接采用新名称，不接受旧协议和旧令牌前缀；手机端由用户后续同步。现有 Pi SDK、Server、Durable 和原生终端继续使用。
 
@@ -71,4 +71,19 @@
 
 旧手机无法连接新服务端属于预期切换边界。服务端重构交付不等待旧手机兼容；真实 Phone 联调完成前，报告中必须标记该项待更新/待联调，不能以测试客户端结果冒充实际手机验收。
 
-本说明不修改现有配对数据库、凭据或手机仓库。
+协议切换需要重新配对，不能给旧令牌替换前缀来转换身份。
+
+## 5. Monitor 与模型请求的跨端合同
+
+`monitor/list`、`monitor/status` 的 `monitors` 元素为平铺视图，手机直接读取
+`last_state`、`pending_count`、`last_observed_at` 和 `last_error`，不再读取旧的
+`state`、`delivery` 嵌套对象。后面三个字段由已有事件及投递记录派生，不另存状态。
+
+`monitor/enable`、`monitor/disable` 返回 `{workspace_id, updated}`。手机确认
+`updated == 1` 后使用相同 `monitor_id` 调用 `monitor/status`，将返回的视图用于界面；
+`updated == 0` 表示目标不存在。不能把更新回执解析为 Monitor。
+
+`model/select` 使用 `model: {provider, id}`，不发送旧的顶层 `provider/model_id`。
+跨仓库 fixture 使用 `apps/agent/host/server.mjs`、`apps/agent/pi/backend.mjs`、
+`apps/agent/host/workspace.mjs`，环境变量采用 `RESEARCH_AGENT_*`。
+统一运行入口见 `tools/test/README.md` 的 `phone` 套件。

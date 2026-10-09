@@ -92,3 +92,11 @@ description = "Real service resource limits and jobs surviving Host stop."
 globs = ["tests/unit/test_local_job_isolation.py", "tests/contract/test_system_service_cleanup.py"]
 requires = ["python", "node"]
 timeout = 300
+
+[suites.phone]
+kind = "flutter"
+environment = "private Flutter SDK and offline pub cache"
+description = "Phone contracts and real local Host interop from both source snapshots."
+requires = ["python", "node", "pi"]
+timeout = 900
+aggregate = true

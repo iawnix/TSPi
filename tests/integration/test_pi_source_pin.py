@@ -15,7 +15,7 @@ def test_pi_source_pin_is_explicit_and_uses_latest_durable_runtime() -> None:
         "repository": "https://github.com/earendil-works/pi.git",
         "tag": "v1.0.4",
         "commit": "7c10bd4337495ee613f2224843ecdf349b80d1df",
-        "protocolVersion": 9,
+        "protocolVersion": 8,
     }
     patch = "\n".join(path.read_text(encoding="utf-8") for path in sorted((ROOT / "config/pi-patches").glob("*.patch")))
     assert "PI_SESSION_WORKER_ENTRY" in patch
@@ -33,6 +33,16 @@ def test_prepare_pi_source_verifies_a_matching_checkout() -> None:
         cwd=ROOT, text=True, capture_output=True, check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_prepare_pi_source_rejects_incorrect_protocol_metadata(monkeypatch) -> None:
+    import pytest
+    from scripts import prepare_pi_source as prepare
+    source = Path(os.environ["RESEARCH_AGENT_TEST_PI_RUNTIME_ROOT"])
+    descriptor = {**prepare.pin(), "protocolVersion": -1}
+    monkeypatch.setattr(prepare, "pin", lambda: descriptor)
+    with pytest.raises(prepare.PiSourceError, match="protocol version"):
+        prepare.verify(source)
 
 
 def test_prepare_pi_source_rejects_unpatched_checkout(tmp_path) -> None:
