@@ -1,4 +1,4 @@
-"""Contracts and archive helpers for a selected TSPi Package release."""
+"""Contracts and archive helpers for a selected ResearchAgent Package release."""
 
 from __future__ import annotations
 
@@ -23,18 +23,18 @@ except ImportError:
     from _component_release import ComponentArchiveError, load_manifest as _load_agent_manifest
 
 
-SUITE_SCHEMA_VERSION = "tspi-package-release/4"
-SUITE_COMPONENTS_SCHEMA_VERSION = "tspi-package-components/4"
-SUITE_INSTALL_SCHEMA_VERSION = "tspi-package-install/1"
+SUITE_SCHEMA_VERSION = "research-agent-package-release/4"
+SUITE_COMPONENTS_SCHEMA_VERSION = "research-agent-package-components/4"
+SUITE_INSTALL_SCHEMA_VERSION = "research-agent-package-install/1"
 WEB_SCHEMA_VERSION = "ts-web-component-release/1"
 WEB_COMPONENT_PACKAGE_NAME = "@iawnix/ts-web"
-WEB_PROVIDER_PROTOCOL = "research-map-provider/1"
-WEB_MAP_PROTOCOL = "research-map/1"
+WEB_PROVIDER_PROTOCOL = "research-memory-provider/1"
+WEB_SNAPSHOT_PROTOCOL = "research-snapshot/2"
 WEB_THEME_PROTOCOL = "ts-theme/1"
-SUITE_MANIFEST_NAME = "tspi-package-release.json"
-SUITE_PACKAGE_NAME = "@iawnix/tspi"
+SUITE_MANIFEST_NAME = "research-agent-package-release.json"
+SUITE_PACKAGE_NAME = "@iawnix/research-agent"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
-SEMANTIC_VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+SEMANTIC_VERSION = re.compile(r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-rc\.(?:0|[1-9][0-9]*))?$")
 RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$")
 WEB_COMPONENT_FILES = frozenset(
     {
@@ -50,14 +50,13 @@ WEB_COMPONENT_FILES = frozenset(
         "static/index.html",
         "static/app.css",
         "static/app.js",
-        "static/i18n.js",
         "static/logo.svg",
         "static/favicon.svg",
     }
 )
 WEB_PROTOCOLS = {
     "provider": WEB_PROVIDER_PROTOCOL,
-    "map": WEB_MAP_PROTOCOL,
+    "snapshot": WEB_SNAPSHOT_PROTOCOL,
     "theme": WEB_THEME_PROTOCOL,
 }
 MAX_ARCHIVE_MEMBER_BYTES = 512 * 1024 * 1024
@@ -108,7 +107,7 @@ def validate_web_manifest(value: object) -> dict[str, Any]:
         raise SuiteReleaseError("web component.version must use semantic x.y.z form")
     protocols = exact_object(manifest.get("protocols"), "web protocols", set(WEB_PROTOCOLS))
     if protocols != WEB_PROTOCOLS:
-        raise SuiteReleaseError("Web component protocols are incompatible with this TSPi Package")
+        raise SuiteReleaseError("Web component protocols are incompatible with this ResearchAgent Package")
     entrypoint = exact_object(manifest.get("entrypoint"), "web entrypoint", {"path"})
     if not isinstance(entrypoint.get("path"), str) or entrypoint["path"] != "bin/ts-web":
         raise SuiteReleaseError("Web component entrypoint path is invalid")
@@ -164,7 +163,7 @@ def suite_components(
 def suite_components_schema_version(schema_version: str) -> str:
     if schema_version == SUITE_SCHEMA_VERSION:
         return SUITE_COMPONENTS_SCHEMA_VERSION
-    raise SuiteReleaseError("unsupported TSPi Package manifest schema")
+    raise SuiteReleaseError("unsupported ResearchAgent Package manifest schema")
 
 
 def validate_components(
@@ -173,7 +172,7 @@ def validate_components(
     schema_version: str = SUITE_COMPONENTS_SCHEMA_VERSION,
 ) -> dict[str, Any]:
     if schema_version != SUITE_COMPONENTS_SCHEMA_VERSION:
-        raise SuiteReleaseError("unsupported TSPi Package components schema")
+        raise SuiteReleaseError("unsupported ResearchAgent Package components schema")
     if (
         not isinstance(value, dict)
         or "agent" not in value
@@ -189,14 +188,14 @@ def validate_components(
     agent_release_id = require_release_id(agent.get("release_id"), "suite agent release_id")
     agent_version = require_string(agent.get("version"), "suite agent version")
     agent_archive = validate_file_descriptor(agent.get("archive"), "suite agent archive", key="path")
-    expected_agent_archive = f"components/agent/tspi-{agent_release_id}.tgz"
+    expected_agent_archive = f"components/agent/research-agent-{agent_release_id}.tgz"
     if agent_archive["path"] != expected_agent_archive:
         raise SuiteReleaseError(f"suite Agent archive path must be {expected_agent_archive}")
     try:
         distribution = validate_descriptor(agent.get("python_distribution"))
     except WheelContractError as error:
         raise SuiteReleaseError(f"invalid suite Agent python_distribution: {error}") from error
-    if distribution["version"] != agent_version:
+    if distribution["version"] != agent_version.replace("-rc.", "rc"):
         raise SuiteReleaseError("suite Agent Python distribution version does not match the component version")
     validate_source(agent.get("source"), "suite agent source")
     if "web" in components:
@@ -232,12 +231,12 @@ def _validate_suite_web_component(value: object) -> None:
 def validate_suite_manifest(value: object) -> dict[str, Any]:
     manifest = exact_object(
         value,
-        "TSPi Package manifest",
+        "ResearchAgent Package manifest",
         {"schema_version", "release_id", "package", "components", "archive", "created_at_utc"},
     )
     schema_version = manifest.get("schema_version")
     if schema_version != SUITE_SCHEMA_VERSION:
-        raise SuiteReleaseError("unsupported TSPi Package manifest schema")
+        raise SuiteReleaseError("unsupported ResearchAgent Package manifest schema")
     release_id = require_release_id(manifest.get("release_id"), "suite release_id")
     package = exact_object(manifest.get("package"), "suite package", {"name", "version"})
     if package.get("name") != SUITE_PACKAGE_NAME:
@@ -253,7 +252,7 @@ def validate_suite_manifest(value: object) -> dict[str, Any]:
     expected_release_id = f"{version}-sha256-{archive['sha256'][:16]}"
     if release_id != expected_release_id:
         raise SuiteReleaseError("suite release_id does not match package version and archive digest")
-    if archive["filename"] != f"tspi-package-{release_id}.tgz":
+    if archive["filename"] != f"research-agent-package-{release_id}.tgz":
         raise SuiteReleaseError("suite archive filename does not match release_id")
     require_string(manifest.get("created_at_utc"), "suite created_at_utc")
     return manifest
@@ -403,9 +402,9 @@ def validate_web_archive_files(files: set[str]) -> None:
     forbidden = sorted(
         name
         for name in files
-        if set(PurePosixPath(name).parts) & {".git", "__pycache__", "build", "dist", "node_modules", "tests"}
+        if set(PurePosixPath(name).parts) & {".git", "__pycache__", "build", "dist", "node_modules", "tests", "local_debug"}
         or name.endswith((".pyc", ".pyo"))
-        or name.startswith(("tspi_runtime/", "packages/", "source/"))
+        or name.startswith(("research_agent.application/", "packages/", "source/"))
     )
     if forbidden:
         raise SuiteReleaseError(f"TS Web component archive contains forbidden runtime content: {', '.join(forbidden)}")
@@ -448,8 +447,8 @@ def validate_web_component_archive(content: bytes, manifest: dict[str, Any]) -> 
             if entrypoint_member is None or not entrypoint_member.mode & 0o111:
                 raise SuiteReleaseError("TS Web component entrypoint is not executable")
             for name in files:
-                if name.endswith(".py") and b"tspi_runtime" in read_member(name):
-                    raise SuiteReleaseError(f"TS Web component imports private TSPi module: {name}")
+                if name.endswith(".py") and b"research_agent.application" in read_member(name):
+                    raise SuiteReleaseError(f"TS Web component imports private ResearchAgent module: {name}")
     except (OSError, tarfile.TarError) as error:
         raise SuiteReleaseError(f"could not validate TS Web component archive: {error}") from error
 

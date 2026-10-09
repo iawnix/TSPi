@@ -1,6 +1,6 @@
-"""Read-only diagnostics and execution-ID CLI for canonical workspaces.
+"""Diagnostics, projection repair and execution-ID CLI for canonical workspaces.
 
-Workspace creation/admission belongs to ``research_state.workspace`` and the
+Workspace creation/admission belongs to ``research_agent.research.workspace`` and the
 Host.  The retired ResearchMap initializer and bootstrap commands are not
 part of this command boundary.
 """
@@ -12,9 +12,8 @@ import json
 import sys
 from typing import Any
 
-from research_state.operational_ids import allocate_operational_id
-from research_state.agent_workspace import validate_workspace
-from research_state.doctor import inspect_workspace
+from research_agent.research.operational_ids import allocate_operational_id
+from research_agent.research.doctor import inspect_workspace, rebuild
 
 
 def main(argv: list[str] | None = None, **_: Any) -> int:
@@ -23,7 +22,8 @@ def main(argv: list[str] | None = None, **_: Any) -> int:
 
     for name, help_text in (
         ("validate_workspace", "validate one canonical workspace"),
-        ("doctor", "validate canonical workspace state without writing"),
+        ("doctor", "inspect canonical research and generated views"),
+        ("rebuild", "rebuild research projections from immutable records"),
     ):
         command = sub.add_parser(name, help=help_text)
         command.add_argument("--root", required=True)
@@ -34,9 +34,11 @@ def main(argv: list[str] | None = None, **_: Any) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "validate_workspace":
-            result = validate_workspace(args.root)
+            result = inspect_workspace(args.root)
         elif args.command == "doctor":
             result = inspect_workspace(args.root)
+        elif args.command == "rebuild":
+            result = rebuild(args.root)
         else:
             result = allocate_operational_id(args.root, args.kind)
     except (ValueError, OSError) as exc:

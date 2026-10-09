@@ -1,7 +1,7 @@
 import importlib.util
 from pathlib import Path
 import pytest
-from job_runtime.config_contract import validate_job_config, resolve_python, python_command
+from research_agent.jobs.config_contract import validate_job_config, resolve_python, python_command
 
 
 def binding(prefix):
@@ -33,7 +33,7 @@ def test_legacy_interpreter_is_not_a_second_configuration_protocol():
 def test_skill_preparation_uses_bound_conda_and_rejects_dual_pyscf_binding(tmp_path, mock_environment_probe):
     import json
     import tomllib
-    from tspi_runtime.executors import prepare
+    from research_agent.application.executors import prepare
     path = tmp_path / "job.toml"
     text = '''default_environment = "remote"
 [environments.remote]
@@ -77,7 +77,7 @@ def test_example_and_python_binding_share_public_schema():
     from jsonschema import Draft202012Validator
     root = Path(__file__).resolve().parents[2]
     schema = json.loads((root / 'config/job.schema.json').read_text())
-    from job_runtime.config_contract import job_config_schema
+    from research_agent.jobs.config_contract import job_config_schema
     assert schema == job_config_schema()
     validator = Draft202012Validator(schema)
     example = tomllib.loads((root / 'config/compute.example.toml').read_text())
@@ -110,7 +110,7 @@ def test_installer_refuses_unverified_prefix_and_does_not_publish_bad_receipt(tm
     monkeypatch.setattr('subprocess.run', lambda *a, **k: SimpleNamespace(stdout='@EXPLICIT\nhttps://example.test/wrong.conda\n', returncode=0))
     with pytest.raises(ValueError, match='does not match'):
         installer(b, adopt=True)
-    assert not (prefix / 'tspi-environment.json').exists()
+    assert not (prefix / 'research-agent-environment.json').exists()
 
 
 def test_failed_new_install_removes_only_its_partial_prefix(tmp_path, monkeypatch):
@@ -146,7 +146,7 @@ def test_pip_install_requires_pinned_versions_and_hashes_before_creating_prefix(
 
 
 def test_remote_queue_selection_is_explicit_and_allowlisted():
-    from job_runtime.config_contract import resolve_submission
+    from research_agent.jobs.config_contract import resolve_submission
     c=config();remote=c['environments']['remote'];remote['allowed_queues']=['test']
     assert resolve_submission(c,'remote','xtb')['queue']=='test'
     remote['submission']['queue']='forbidden'
@@ -167,17 +167,37 @@ def test_remote_queue_selection_is_explicit_and_allowlisted():
 ])
 def test_runtime_and_generated_schema_reject_invalid_remote_settings(mutate):
     from jsonschema import Draft202012Validator
-    from job_runtime.config_contract import job_config_schema
+    from research_agent.jobs.config_contract import job_config_schema
     value = config(); mutate(value['environments']['remote'])
     with pytest.raises(ValueError): validate_job_config(value)
     assert list(Draft202012Validator(job_config_schema()).iter_errors(value))
 
 
 def test_platform_selection_has_no_implicit_local_or_remote_alias(tmp_path, monkeypatch):
-    from job_runtime.config import platforms_from_config
-    monkeypatch.delenv('TS_JOB_CONFIG', raising=False)
+    from research_agent.jobs.config import platforms_from_config
+    monkeypatch.delenv('RESEARCH_AGENT_JOB_CONFIG', raising=False)
     with pytest.raises(ValueError, match='job_config_required'): platforms_from_config()
     path = tmp_path / 'remote.toml'
     path.write_text('default_environment="cluster_a"\n[environments.cluster_a]\nkind="remote"\nssh_host="fixture"\nremote_root="/scratch/jobs"\n')
     platforms, default = platforms_from_config(path)
     assert set(platforms) == {'cluster_a'} and default == 'cluster_a'
+
+
+def test_local_supervisor_is_explicit_and_part_of_prepared_binding(tmp_path):
+    from research_agent.jobs.config_contract import resolve_binding, binding_digest
+    from research_agent.jobs.config import platforms_from_config
+    settings = config()
+    settings['environments']['local']['backends'] = {'shell': {'command': '/bin/sh'}}
+    baseline = resolve_binding(settings, 'local', 'shell', runtime='native')
+    assert baseline['supervisor'] == 'systemd'
+    settings['environments']['local']['supervisor'] = 'process'
+    selected = resolve_binding(validate_job_config(settings), 'local', 'shell', runtime='native')
+    assert selected['supervisor'] == 'process'
+    assert binding_digest(selected) != binding_digest(baseline)
+    path = tmp_path / 'process.toml'
+    path.write_text('default_environment="local"\n[environments.local]\nkind="local"\nsupervisor="process"\n')
+    platforms, _ = platforms_from_config(path)
+    assert platforms['local'].supervisor == 'process'
+    settings['environments']['remote']['supervisor'] = 'process'
+    with pytest.raises(ValueError, match='local supervisor'):
+        validate_job_config(settings)

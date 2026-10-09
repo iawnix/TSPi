@@ -1,22 +1,9 @@
-# Artifact execution and evidence
+# Materials, provenance and read-only views
 
-The former ArtifactProvider registry and general Provider dispatcher have been
-removed. Scientific execution uses installed Skill scripts through `job_start`;
-`job_collect` registers actual outputs with producer and input provenance.
+Artifact Store owns immutable payloads and provenance manifests. `artifact_register` imports a file, `artifact_create` stores new content, and `artifact_read` reads bounded content. Scientific execution uses `job_start`; `job_collect` registers actual outputs with their producing Job and inputs. Run analysis as a Job when it needs durable execution evidence.
 
-`artifact_register` preserves existing material, `artifact_create` preserves new
-content, and `artifact_link` records evidence relations. `artifact_derive` records
-a derivation descriptor only; it does not execute an analyzer or create its output.
-Run real analysis as a Job and register the output before using it as evidence.
+A ResearchResult references registered materials in files, inputs or evidence_refs. Mutable Node work files are drafts until registered. Equal payload bytes do not identify a unique scientific producer, and browsing a material does not create a uses relation. Research conclusions remain Agent-authored interpretations of cited evidence.
 
-Installed extension validators are invoked through Job Runtime and produce bound
-result receipts. Registered acceptance profiles declare finite checks. They do
-not select methods or implement a second workflow engine.
+The optional TS Web provider at `apps/agent-cli/research_web_bridge.py` exposes read-only Research Memory context, Node/Result details, relations and material references. It is a transport adapter, not an execution provider or alternate research database. Its versioned schema is under `contracts/ts-web/`.
 
-Extension `providers` metadata remains readable for third-party inventory; it
-does not grant a general provider execution API. The TS Web provider is a separate
-read-only ResearchMap JSONL adapter at `apps/agent-cli/research_web_bridge.py`, using
-`research-map-provider/1`; it does not load arbitrary Python entry points.
-
-See [execution boundaries](ARCHITECTURE_BOUNDARIES.md),
-[the architecture](ARCHITECTURE.md), and [the retirement decision](adr/0010-retire-parallel-runtimes.md).
+See [execution boundaries](ARCHITECTURE_BOUNDARIES.md), [architecture and implementation status](ARCHITECTURE.md), and [historical decisions](archive/README.md).

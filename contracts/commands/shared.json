@@ -1,0 +1,877 @@
+{
+  "schema_version": "research-agent-command-schemas/1",
+  "tools": {
+    "systemPrompt": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "state": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "field": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "goal"
+            },
+            {
+              "type": "string",
+              "const": "title"
+            },
+            {
+              "type": "string",
+              "const": "proposal"
+            },
+            {
+              "type": "string",
+              "const": "plan"
+            },
+            {
+              "type": "string",
+              "const": "progress"
+            },
+            {
+              "type": "string",
+              "const": "status"
+            },
+            {
+              "type": "string",
+              "const": "assessment_ref"
+            },
+            {
+              "type": "string",
+              "const": "relations"
+            }
+          ]
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32000
+        }
+      },
+      "additionalProperties": false
+    },
+    "search": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "node_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "node"
+            },
+            {
+              "type": "string",
+              "const": "result"
+            },
+            {
+              "type": "string",
+              "const": "record"
+            }
+          ]
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "user"
+            },
+            {
+              "type": "string",
+              "const": "runtime"
+            },
+            {
+              "type": "string",
+              "const": "agent"
+            }
+          ]
+        },
+        "after_sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "additionalProperties": false
+    },
+    "create": {
+      "type": "object",
+      "required": [
+        "goal"
+      ],
+      "properties": {
+        "root": {
+          "type": "string"
+        },
+        "goal": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64000
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "proposal": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64000
+        },
+        "plan": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64000
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 64,
+          "uniqueItems": true
+        },
+        "input_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 64,
+          "uniqueItems": true
+        },
+        "relations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "target"
+            ],
+            "properties": {
+              "kind": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "part_of"
+                  },
+                  {
+                    "type": "string",
+                    "const": "requires"
+                  },
+                  {
+                    "type": "string",
+                    "const": "alternative_to"
+                  }
+                ]
+              },
+              "target": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64000
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 64
+        }
+      },
+      "additionalProperties": false
+    },
+    "update": {
+      "type": "object",
+      "required": [
+        "node_id",
+        "note"
+      ],
+      "properties": {
+        "root": {
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64000
+        },
+        "proposal": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64000
+        },
+        "plan": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64000
+        },
+        "progress": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64000
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "open"
+            },
+            {
+              "type": "string",
+              "const": "paused"
+            },
+            {
+              "type": "string",
+              "const": "closed"
+            }
+          ]
+        },
+        "add_relations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "target"
+            ],
+            "properties": {
+              "kind": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "part_of"
+                  },
+                  {
+                    "type": "string",
+                    "const": "requires"
+                  },
+                  {
+                    "type": "string",
+                    "const": "alternative_to"
+                  }
+                ]
+              },
+              "target": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64000
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 64
+        },
+        "remove_relations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 64,
+          "uniqueItems": true
+        },
+        "assessment_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "required": [
+        "node_id",
+        "conclusion"
+      ],
+      "properties": {
+        "root": {
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "conclusion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64000
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64000
+        },
+        "observation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64000
+        },
+        "limitations": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64000
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 64,
+          "uniqueItems": true
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "maxItems": 64,
+          "uniqueItems": true
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "artifact_ref"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "purpose": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64000
+              },
+              "artifact_ref": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 128
+        },
+        "supersedes": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "as_assessment": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "jobStart": {
+      "type": "object",
+      "required": [
+        "node_id"
+      ],
+      "properties": {
+        "node_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "validator_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "validator_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "work_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "repeat": {
+          "type": "object",
+          "required": [
+            "predecessor_job_id",
+            "reason",
+            "budget"
+          ],
+          "properties": {
+            "predecessor_job_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "budget": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "request_file": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "prepared_ref": {
+          "type": "string",
+          "pattern": "^p[1-9][0-9]*$"
+        },
+        "request_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "metadata": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {}
+          }
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          },
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Relative subdirectory of the isolated runs/jobs/<job_id> directory; omit for its root. Absolute workspace paths are invalid."
+        },
+        "environment": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {
+              "type": "string",
+              "maxLength": 16384
+            }
+          }
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              {
+                "type": "object",
+                "required": [
+                  "source",
+                  "destination"
+                ],
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "destination": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Relative path under Job cwd; source is absolute or workspace-relative and is copied before execution."
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          },
+          "maxItems": 256
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096,
+                "description": "Relative to Job cwd; declare paths produced by the command, never absolute workspace paths."
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "min_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "recursive": {
+                "type": "boolean",
+                "description": "Collect every file in this declared output directory, preserving Job provenance."
+              },
+              "media_type": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 256
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 604800
+        },
+        "platform": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "root": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "command"
+          ]
+        },
+        {
+          "required": [
+            "prepared_ref"
+          ]
+        },
+        {
+          "required": [
+            "request_file",
+            "request_sha256"
+          ]
+        },
+        {
+          "required": [
+            "validator_id",
+            "validator_version",
+            "input_artifact_ids"
+          ]
+        }
+      ]
+    },
+    "jobStatus": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "root": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "job_id"
+          ]
+        },
+        {
+          "required": [
+            "event_id"
+          ]
+        }
+      ]
+    },
+    "jobCollect": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "root": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "job_id"
+          ]
+        },
+        {
+          "required": [
+            "event_id"
+          ]
+        }
+      ]
+    },
+    "jobCancel": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "root": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "job_id"
+          ]
+        },
+        {
+          "required": [
+            "event_id"
+          ]
+        }
+      ]
+    },
+    "jobProbe": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "root": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "jobReconcile": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "root": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "job_id"
+          ]
+        },
+        {
+          "required": [
+            "event_id"
+          ]
+        }
+      ]
+    },
+    "artifactRegister": {
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "job_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "media_type": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "root": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifactCreate": {
+      "type": "object",
+      "required": [
+        "content",
+        "name"
+      ],
+      "properties": {
+        "content": {
+          "type": "string",
+          "maxLength": 4000000
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "media_type": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "root": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifactRead": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "artifact_ref": {
+          "type": "string",
+          "pattern": "^a[1-9][0-9]*$"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "root": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "artifact_id"
+          ]
+        },
+        {
+          "required": [
+            "artifact_ref"
+          ]
+        }
+      ]
+    }
+  }
+}

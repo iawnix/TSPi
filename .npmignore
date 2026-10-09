@@ -1,4 +1,5 @@
 __pycache__/
+/local_debug/
 *.egg-info/
 build/
 .pytest_cache/

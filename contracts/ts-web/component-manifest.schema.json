@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://tspi.iawnix.xyz/schema/ts-web-component-manifest-v1.json",
+  "$id": "https://research-agent.iawnix.xyz/schema/ts-web-component-manifest-v1.json",
   "title": "TS Web component release manifest",
   "type": "object",
   "additionalProperties": false,
@@ -20,10 +20,10 @@
     "protocols": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["provider", "map", "theme"],
+      "required": ["provider", "snapshot", "theme"],
       "properties": {
-        "provider": { "const": "research-map-provider/1" },
-        "map": { "const": "research-map/1" },
+        "provider": { "const": "research-memory-provider/1" },
+        "snapshot": { "const": "research-snapshot/2" },
         "theme": { "const": "ts-theme/1" }
       }
     },

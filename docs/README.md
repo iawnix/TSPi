@@ -1,31 +1,20 @@
-# TSPi Documentation
+# ResearchAgent Documentation
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Use this page to choose the smallest document that answers a question. The
-root [README](../README.md) is the installation overview; these documents are
-the normative runtime and research contracts.
+The Research Memory refactor has passed local acceptance. [Architecture](ARCHITECTURE.md) describes current boundaries; the [implementation plan](RESEARCH_MEMORY_DESIGN_AND_IMPLEMENTATION_PLAN.zh-CN.md) defines the design and the [validation record](RESEARCH_MEMORY_VALIDATION.zh-CN.md) records test evidence and limits.
 
 | Need | Read |
 | --- | --- |
-| Install, configure, upgrade, recover | [Installation and Operations](INSTALLATION.md) |
-| Understand Agent, Research State, Host, Monitor, Memory, and Compute boundaries | [Architecture](ARCHITECTURE.md) |
-| Inspect the t003 reliability changes and acceptance limits | [Plan (Chinese)](T003_RELIABILITY_REPAIR_PLAN.zh-CN.md) · [Implementation and validation (Chinese)](T003_RELIABILITY_VALIDATION.zh-CN.md) |
-| Understand ResearchMap objects and turn checkpoints | [ResearchMap Design](RESEARCH_MAP_DESIGN.md) and [ADR 0006](adr/0006-unified-research-harness-lifecycle.md) |
-| Select and run scientific methods | [Scientific execution and operations](SCIENTIFIC_CAPABILITIES_OPERATIONS.md) |
-| Use the terminal, Phone, browser, or Monitor | [Terminal](TERMINAL.md), [TSPi Link](TSPi_LINK.md) |
-| Maintain, test, package, and release | [Maintainer Guide](MAINTAINER_GUIDE.md) and [Contributing](../CONTRIBUTING.md) |
-| Understand model/provider support | [Model Compatibility](MODEL_COMPATIBILITY.md) |
-| Review historical design decisions | [Architecture Decision Records](adr/) |
+| Install, configure, upgrade and recover | [Installation and Operations](INSTALLATION.md) |
+| Workspace, Node, Result, Agent Server and Monitor ownership | [Architecture](ARCHITECTURE.md) |
+| Research model, files, tools, concurrency and next_run | [Research Memory implementation plan (Chinese)](RESEARCH_MEMORY_DESIGN_AND_IMPLEMENTATION_PLAN.zh-CN.md) |
+| Scientific methods and execution | [Scientific operations](SCIENTIFIC_CAPABILITIES_OPERATIONS.md) |
+| Terminal, Phone and browser | [Terminal](TERMINAL.md), [ResearchAgent Link](RESEARCH_AGENT_LINK.md) |
+| Maintain, test and package | [Maintainer Guide](MAINTAINER_GUIDE.md), [Contributing](../CONTRIBUTING.md) |
+| research-agent naming and code structure refactor (proposal, not implemented) | [Detailed refactor plan (Chinese)](RESEARCH_AGENT_REFACTOR_PLAN.zh-CN.md) |
+| Test environment cleanup, test selection, parallelism and daily checks (proposal) | [Test refactor plan (Chinese)](RESEARCH_AGENT_TEST_REFACTOR_PLAN.zh-CN.md) |
+| Model/provider behavior | [Model Compatibility](MODEL_COMPATIBILITY.md) |
+| Superseded designs and one-off validation reports | [Historical archive](archive/README.md) |
 
-## Authority And Status
-
-Code and versioned schemas are authoritative for behavior. Documentation
-explains the public contract and must be updated with code changes. A historical
-ADR is not an active compatibility promise; the current Native-only runtime and
-the latest accepted ADRs define supported behavior.
-
-Project-owned source is licensed under the [Apache License 2.0](../LICENSE).
-Third-party dependencies, the pinned Pi source, native chemistry programs, and
-bundled assets may have separate licenses; preserve their notices when
-redistributing them.
+Current code and versioned schemas define behavior. Archived documents are not compatibility promises or acceptance evidence for the present implementation. Project source uses [Apache License 2.0](../LICENSE); preserve separate third-party dependency, Pi source and asset notices.

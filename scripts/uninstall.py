@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safely remove a TSPi installation and its optional runtime state."""
+"""Safely remove a ResearchAgent installation and its optional runtime state."""
 
 from __future__ import annotations
 
@@ -21,13 +21,13 @@ except ImportError:
 
 
 SERVICE_NAMES = (
-    "ts-app-server-tspi.service",
-    "ts-app-server-tspi@.service",
-    "ts-web-tspi.service",
-    "tspi-link-relay.service",
+    "ts-app-server-research-agent.service",
+    "ts-app-server-research-agent@.service",
+    "ts-web-research-agent.service",
+    "research-agent-relay.service",
 )
 LINK_RELAY_MARKER = "etc/link-relay.json"
-ENTRYPOINTS = ("ResearchAgent", "TSWeb")
+ENTRYPOINTS = ("research-agent", "TSWeb")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -143,7 +143,7 @@ def service_belongs_to_root(name: str, root: Path, scope: str) -> bool:
     except OSError:
         return False
     root_value = str(root).replace("%", "%%")
-    relay_root_value = str(root / "runtimes/link-relay" / "current" / "service").replace("%", "%%")
+    relay_root_value = str(root / "runtimes/link-relay" / "current" / "services/relay").replace("%", "%%")
     for line in content.splitlines():
         key, _, value = line.partition("=")
         value = value.strip().strip('"')
@@ -161,11 +161,11 @@ def stop_services(args: argparse.Namespace, root: Path) -> list[str]:
         scope_stopped = False
         command = systemctl_args(scope)
         for name in SERVICE_NAMES:
-            if name == "tspi-link-relay.service" and getattr(args, "keep_link_relay", False):
+            if name == "research-agent-relay.service" and getattr(args, "keep_link_relay", False):
                 continue
             if not service_belongs_to_root(name, root, scope):
                 continue
-            if name == "ts-app-server-tspi@.service":
+            if name == "ts-app-server-research-agent@.service":
                 for instance in app_server_instances(command):
                     subprocess.run(
                         [*command, "disable", "--now", instance],
@@ -194,7 +194,7 @@ def _owned_relay(root: Path) -> dict[str, object] | None:
         value = json.loads(marker.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
-    if not isinstance(value, dict) or value.get("schema") != "tspi-install-link-relay/1" or value.get("owned") is not True:
+    if not isinstance(value, dict) or value.get("schema") != "research-agent-install-link-relay/1" or value.get("owned") is not True:
         return None
     if value.get("install_root") != str(root):
         return None
@@ -237,7 +237,7 @@ def remove_owned_relay(args: argparse.Namespace, root: Path) -> dict[str, object
 
 def app_server_instances(command: list[str]) -> list[str]:
     completed = subprocess.run(
-        [*command, "list-units", "--all", "--plain", "--no-legend", "ts-app-server-tspi@*.service"],
+        [*command, "list-units", "--all", "--plain", "--no-legend", "ts-app-server-research-agent@*.service"],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -248,7 +248,7 @@ def app_server_instances(command: list[str]) -> list[str]:
     names = []
     for line in completed.stdout.splitlines():
         name = line.split(None, 1)[0] if line.strip() else ""
-        if name.startswith("ts-app-server-tspi@") and name.endswith(".service") and "/" not in name:
+        if name.startswith("ts-app-server-research-agent@") and name.endswith(".service") and "/" not in name:
             names.append(name)
     return names
 
@@ -335,7 +335,7 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
         workspace_root = root / "workspaces"
     if args.purge_workspaces:
         workspace_root = _validated_workspace_purge_target(root, workspace_root)
-    activity = Spinner("Stopping TSPi services", stream=sys.stderr, enabled=show_progress)
+    activity = Spinner("Stopping ResearchAgent services", stream=sys.stderr, enabled=show_progress)
     activity.start()
     try:
         stopped = stop_services(args, root)
@@ -369,12 +369,12 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
             activity.update("Removing the installation directory")
             removed.extend(remove_paths([root]))
         removed.extend(service_units)
-        activity.succeed("TSPi application files removed")
+        activity.succeed("ResearchAgent application files removed")
         return {"ok": True, "install_root": str(root), "workspace_root": str(workspace_root), "stopped_services": stopped, "removed": removed,
                 "preserved_workspaces": not args.purge_workspaces, "preserved_config": not args.purge_config,
                 "preserved_runtime": not args.purge_runtime, "link_relay": relay_result}
     except BaseException:
-        activity.fail("TSPi uninstall failed")
+        activity.fail("ResearchAgent uninstall failed")
         raise
 
 
@@ -403,11 +403,11 @@ def main(argv: list[str] | None = None) -> int:
         if not args.non_interactive:
             if not sys.stdin.isatty() or not sys.stdout.isatty():
                 raise RuntimeError("interactive uninstall requires a TTY; use --non-interactive --yes")
-            title("TSPi Uninstaller", "Remove TSPi while keeping research data by default.", tone="warning")
+            title("ResearchAgent Uninstaller", "Remove ResearchAgent while keeping research data by default.", tone="warning")
         if not args.install_root and not args.non_interactive:
             bundled = Path(__file__).resolve()
-            default = str(bundled.parents[2]) if bundled.parent.name == "maintenance" and bundled.parent.parent.name == "runtimes" else str(Path.home() / ".local/share/tspi")
-            args.install_root = ask("TSPi installation directory", default)
+            default = str(bundled.parents[2]) if bundled.parent.name == "maintenance" and bundled.parent.parent.name == "runtimes" else str(Path.home() / ".local/share/research-agent")
+            args.install_root = ask("ResearchAgent installation directory", default)
         if not args.install_root:
             raise ValueError("--install-root is required")
         result = uninstall(args, show_progress=not args.json)
@@ -436,7 +436,7 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit as error:
         return int(error.code or 0)
     except (OSError, RuntimeError, ValueError) as error:
-        failure(f"TSPi uninstall failed: {error}")
+        failure(f"ResearchAgent uninstall failed: {error}")
         return 1
 
 

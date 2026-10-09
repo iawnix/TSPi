@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-REPO_URL="${TSPI_INSTALL_REPO:-https://github.com/iawnix/TSPi.git}"
-REPO_REF="${TSPI_INSTALL_REF:-main}"
-WITH_LINK_RELAY="${TSPI_WITH_LINK_RELAY:-false}"
-RELAY_INSTALL_ROOT="${TSPI_LINK_RELAY_ROOT:-}"
-RELAY_STATE_DIR="${TSPI_LINK_RELAY_STATE_DIR:-}"
-RELAY_PUBLIC_URL="${TSPI_LINK_URL:-}"
-RELAY_LISTEN="${TSPI_LINK_RELAY_LISTEN:-127.0.0.1}"
-RELAY_PORT="${TSPI_LINK_RELAY_PORT:-8788}"
-RELAY_SERVICE_SCOPE="${TSPI_LINK_RELAY_SERVICE_SCOPE:-user}"
-RELAY_SERVICE_USER="${TSPI_LINK_RELAY_SERVICE_USER:-tspi-link-relay}"
-RELAY_ENABLE_SERVICES="${TSPI_LINK_RELAY_ENABLE_SERVICES:-true}"
-RELAY_START_SERVICES="${TSPI_LINK_RELAY_START_SERVICES:-true}"
+REPO_URL="${RESEARCH_AGENT_INSTALL_REPO:-https://github.com/iawnix/TSPi.git}"
+REPO_REF="${RESEARCH_AGENT_INSTALL_REF:-main}"
+WITH_LINK_RELAY="${RESEARCH_AGENT_WITH_LINK_RELAY:-false}"
+RELAY_INSTALL_ROOT="${RESEARCH_AGENT_LINK_RELAY_ROOT:-}"
+RELAY_STATE_DIR="${RESEARCH_AGENT_LINK_RELAY_STATE_DIR:-}"
+RELAY_PUBLIC_URL="${RESEARCH_AGENT_LINK_URL:-}"
+RELAY_LISTEN="${RESEARCH_AGENT_LINK_RELAY_LISTEN:-127.0.0.1}"
+RELAY_PORT="${RESEARCH_AGENT_LINK_RELAY_PORT:-8788}"
+RELAY_SERVICE_SCOPE="${RESEARCH_AGENT_LINK_RELAY_SERVICE_SCOPE:-user}"
+RELAY_SERVICE_USER="${RESEARCH_AGENT_LINK_RELAY_SERVICE_USER:-research-agent-relay}"
+RELAY_ENABLE_SERVICES="${RESEARCH_AGENT_LINK_RELAY_ENABLE_SERVICES:-true}"
+RELAY_START_SERVICES="${RESEARCH_AGENT_LINK_RELAY_START_SERVICES:-true}"
 FORWARD_ARGS=()
 
 if [[ -t 2 && ! -v NO_COLOR && "${TERM:-}" != "dumb" ]]; then
@@ -23,7 +23,7 @@ else
 fi
 
 fail() {
-  printf '%bTSPi installer failed:%b %s\n' "${BOOTSTRAP_DANGER}" "${BOOTSTRAP_RESET}" "$1" >&2
+  printf '%bResearchAgent installer failed:%b %s\n' "${BOOTSTRAP_DANGER}" "${BOOTSTRAP_RESET}" "$1" >&2
   exit "${2:-1}"
 }
 
@@ -44,7 +44,7 @@ installer from that immutable checkout. All options not handled here are
 forwarded to scripts/install_wizard.py.
 
 Bootstrap options:
-  --tspi-repo URL, --tspi-ref REF
+  --research-agent-repo URL, --research-agent-ref REF
   --with-link-relay / --without-link-relay
   --relay-install-root PATH, --relay-state-dir PATH
   --relay-public-url URL, --relay-listen HOST, --relay-port PORT
@@ -69,26 +69,26 @@ command -v git >/dev/null 2>&1 || fail "Git is required." 127
 
 while (( $# )); do
   case "$1" in
-    --tspi-repo)
-      (( $# >= 2 )) || fail "--tspi-repo requires a value."
+    --research-agent-repo)
+      (( $# >= 2 )) || fail "--research-agent-repo requires a value."
       REPO_URL="$2"
       shift 2
       ;;
-    --tspi-repo=*)
+    --research-agent-repo=*)
       REPO_URL="${1#*=}"
       shift
       ;;
-    --tspi-ref)
-      (( $# >= 2 )) || fail "--tspi-ref requires a value."
+    --research-agent-ref)
+      (( $# >= 2 )) || fail "--research-agent-ref requires a value."
       REPO_REF="$2"
       shift 2
       ;;
-    --tspi-ref=*)
+    --research-agent-ref=*)
       REPO_REF="${1#*=}"
       shift
       ;;
-    --tspi-commit|--tspi-commit=*)
-      fail "--tspi-commit is reserved for the installer bootstrap."
+    --research-agent-commit|--research-agent-commit=*)
+      fail "--research-agent-commit is reserved for the installer bootstrap."
       ;;
     --source-root|--source-root=*)
       fail "--source-root is reserved for the installer bootstrap."
@@ -186,9 +186,9 @@ while (( $# )); do
       ;;
   esac
 done
-[[ -n "${REPO_URL}" ]] || fail "--tspi-repo must not be empty."
+[[ -n "${REPO_URL}" ]] || fail "--research-agent-repo must not be empty."
 if [[ ! "${REPO_REF}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$ || "${REPO_REF}" == *..* ]]; then
-  fail "--tspi-ref must be a branch, tag, or full 40-character commit SHA."
+  fail "--research-agent-ref must be a branch, tag, or full 40-character commit SHA."
 fi
 truthy "${WITH_LINK_RELAY}" >/dev/null || true
 truthy "${RELAY_ENABLE_SERVICES}" >/dev/null || true
@@ -198,11 +198,11 @@ truthy "${RELAY_START_SERVICES}" >/dev/null || true
 if truthy "${WITH_LINK_RELAY}"; then
   [[ -n "${RELAY_PUBLIC_URL}" ]] || fail "--relay-public-url is required with --with-link-relay."
   if [[ "${RELAY_SERVICE_SCOPE}" == system ]]; then
-    [[ -n "${RELAY_INSTALL_ROOT}" ]] || RELAY_INSTALL_ROOT=/opt/tspi-link-relay
-    [[ -n "${RELAY_STATE_DIR}" ]] || RELAY_STATE_DIR=/var/lib/tspi-link-relay
+    [[ -n "${RELAY_INSTALL_ROOT}" ]] || RELAY_INSTALL_ROOT=/opt/research-agent-relay
+    [[ -n "${RELAY_STATE_DIR}" ]] || RELAY_STATE_DIR=/var/lib/research-agent-relay
   else
-    [[ -n "${RELAY_INSTALL_ROOT}" ]] || RELAY_INSTALL_ROOT="${HOME}/.local/share/tspi-link-relay"
-    [[ -n "${RELAY_STATE_DIR}" ]] || RELAY_STATE_DIR="${HOME}/.local/state/tspi-link-relay"
+    [[ -n "${RELAY_INSTALL_ROOT}" ]] || RELAY_INSTALL_ROOT="${HOME}/.local/share/research-agent-relay"
+    [[ -n "${RELAY_STATE_DIR}" ]] || RELAY_STATE_DIR="${HOME}/.local/state/research-agent-relay"
   fi
   non_interactive=false
   for argument in "${FORWARD_ARGS[@]}"; do
@@ -212,12 +212,12 @@ if truthy "${WITH_LINK_RELAY}"; then
 fi
 readonly REPO_URL REPO_REF
 
-printf '\n%bTSPi Installer%b\n' "${BOOTSTRAP_ACCENT}" "${BOOTSTRAP_RESET}" >&2
+printf '\n%bResearchAgent Installer%b\n' "${BOOTSTRAP_ACCENT}" "${BOOTSTRAP_RESET}" >&2
 printf '==============\n' >&2
-printf 'Configure a reproducible TSPi installation.\n\n' >&2
+printf 'Configure a reproducible ResearchAgent installation.\n\n' >&2
 printf 'Preparing source %s (%s)...\n' "${REPO_URL}" "${REPO_REF}" >&2
 
-readonly TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/tspi-installer.XXXXXX")"
+readonly TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/research-agent-installer.XXXXXX")"
 readonly BOOTSTRAP_LOG="${TEMP_ROOT}/bootstrap.log"
 BOOTSTRAP_SPINNER_PID=""
 BOOTSTRAP_ANIMATIONS=true
@@ -349,7 +349,7 @@ PY
 install_embedded_relay() {
   local relay_log="${TEMP_ROOT}/link-relay-install.log"
   local -a relay_args=(
-    python3 "${TEMP_ROOT}/TSPi/scripts/install_link_relay.py"
+    python3 "${TEMP_ROOT}/ResearchAgent/scripts/install_link_relay.py"
     --install-root "${RELAY_INSTALL_ROOT}"
     --state-dir "${RELAY_STATE_DIR}"
     --public-url "${RELAY_PUBLIC_URL}"
@@ -357,7 +357,7 @@ install_embedded_relay() {
     --port "${RELAY_PORT}"
     --service-scope "${RELAY_SERVICE_SCOPE}"
     --service-user "${RELAY_SERVICE_USER}"
-    --source-root "${TEMP_ROOT}/TSPi"
+    --source-root "${TEMP_ROOT}/ResearchAgent"
     --non-interactive
     --yes
     --json
@@ -416,7 +416,7 @@ marker = root / ".pi" / "link-relay.json"
 marker.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
 marker.parent.chmod(0o700)
 value = {
-    "schema": "tspi-install-link-relay/1",
+    "schema": "research-agent-install-link-relay/1",
     "install_root": str(root),
     "relay_install_root": str(Path(sys.argv[2]).expanduser().resolve()),
     "state_dir": str(Path(sys.argv[3]).expanduser().resolve()),
@@ -435,31 +435,31 @@ os.chmod(marker, 0o600)
 PY
 }
 
-run_bootstrap_step "repository access" git_clone_source "${TEMP_ROOT}/TSPi"
-run_bootstrap_step "revision ${REPO_REF}" git_fetch_revision "${TEMP_ROOT}/TSPi"
-run_bootstrap_step "source checkout" git -C "${TEMP_ROOT}/TSPi" checkout --quiet --detach FETCH_HEAD
-RESOLVED_COMMIT="$(git -C "${TEMP_ROOT}/TSPi" rev-parse --verify 'HEAD^{commit}')" \
-  || fail "could not read the resolved TSPi commit."
+run_bootstrap_step "repository access" git_clone_source "${TEMP_ROOT}/ResearchAgent"
+run_bootstrap_step "revision ${REPO_REF}" git_fetch_revision "${TEMP_ROOT}/ResearchAgent"
+run_bootstrap_step "source checkout" git -C "${TEMP_ROOT}/ResearchAgent" checkout --quiet --detach FETCH_HEAD
+RESOLVED_COMMIT="$(git -C "${TEMP_ROOT}/ResearchAgent" rev-parse --verify 'HEAD^{commit}')" \
+  || fail "could not read the resolved ResearchAgent commit."
 [[ "${RESOLVED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] \
-  || fail "resolved TSPi revision is not a full commit SHA."
+  || fail "resolved ResearchAgent revision is not a full commit SHA."
 readonly RESOLVED_COMMIT
 if truthy "${WITH_LINK_RELAY}"; then
   install_embedded_relay
 fi
-wizard=(python3 "${TEMP_ROOT}/TSPi/scripts/install_wizard.py"
-  --tspi-repo "${REPO_URL}" --tspi-ref "${REPO_REF}"
-  --tspi-commit "${RESOLVED_COMMIT}" --source-root "${TEMP_ROOT}/TSPi"
+wizard=(python3 "${TEMP_ROOT}/ResearchAgent/scripts/install_wizard.py"
+  --research-agent-repo "${REPO_URL}" --research-agent-ref "${REPO_REF}"
+  --research-agent-commit "${RESOLVED_COMMIT}" --source-root "${TEMP_ROOT}/ResearchAgent"
   "${FORWARD_ARGS[@]}")
 non_interactive=false
 for argument in "${FORWARD_ARGS[@]}"; do
   [[ "${argument}" == "--non-interactive" ]] && non_interactive=true
 done
 if [[ -t 0 || "${non_interactive}" == true ]]; then
-  TSPI_INSTALL_BOOTSTRAPPED=1 "${wizard[@]}"
+  RESEARCH_AGENT_INSTALL_BOOTSTRAPPED=1 "${wizard[@]}"
 elif { true </dev/tty; } 2>/dev/null; then
-  TSPI_INSTALL_BOOTSTRAPPED=1 "${wizard[@]}" </dev/tty
+  RESEARCH_AGENT_INSTALL_BOOTSTRAPPED=1 "${wizard[@]}" </dev/tty
 else
-  TSPI_INSTALL_BOOTSTRAPPED=1 "${wizard[@]}"
+  RESEARCH_AGENT_INSTALL_BOOTSTRAPPED=1 "${wizard[@]}"
 fi
 if truthy "${WITH_LINK_RELAY}"; then
   write_relay_ownership_marker

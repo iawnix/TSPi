@@ -1,0 +1,411 @@
+{
+  "schema_version": "research-agent-command-source/1",
+  "commands": [
+    {
+      "id": "job.start",
+      "domain": "runtime",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cwd": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inputs": {
+            "type": "array"
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "env": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "timeout_seconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "metadata": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "workspace_id": {
+            "type": "string"
+          },
+          "work_id": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "execution_target": {
+            "type": "object"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "validator_id": {
+            "type": "string"
+          },
+          "input_artifact_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "repeat": {
+            "$ref": "shared.json#/tools/jobStart/properties/repeat"
+          },
+          "prepared_ref": {
+            "type": "string"
+          },
+          "validator_version": {
+            "type": "string"
+          },
+          "request_file": {
+            "type": "string"
+          },
+          "request_sha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "node_id": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "examples": [
+        {}
+      ],
+      "result": {
+        "$ref": "results.json#/commands/job.start"
+      }
+    },
+    {
+      "id": "job.status",
+      "domain": "runtime",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "examples": [
+        {}
+      ],
+      "result": {
+        "$ref": "results.json#/commands/job.status"
+      }
+    },
+    {
+      "id": "job.collect",
+      "domain": "runtime",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "examples": [
+        {}
+      ],
+      "result": {
+        "$ref": "results.json#/commands/job.collect"
+      }
+    },
+    {
+      "id": "job.cancel",
+      "domain": "runtime",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "examples": [
+        {}
+      ],
+      "result": {
+        "$ref": "results.json#/commands/job.cancel"
+      }
+    },
+    {
+      "id": "job.probe",
+      "domain": "runtime",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cwd": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inputs": {
+            "type": "array"
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "env": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "timeout_seconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "metadata": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "workspace_id": {
+            "type": "string"
+          },
+          "work_id": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "execution_target": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "examples": [
+        {}
+      ],
+      "result": {
+        "$ref": "results.json#/commands/job.probe"
+      }
+    },
+    {
+      "id": "job.reconcile",
+      "domain": "runtime",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "examples": [
+        {}
+      ],
+      "result": {
+        "$ref": "results.json#/commands/job.reconcile"
+      }
+    },
+    {
+      "id": "job.prepare",
+      "domain": "job",
+      "effect": "write",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "request_file": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_file"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "request_file": "prepared.json"
+        }
+      ],
+      "result": {
+        "$ref": "results.json#/commands/job.prepare"
+      }
+    },
+    {
+      "id": "job.resolve_prepared",
+      "domain": "job",
+      "effect": "read",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "prepared_ref": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "repeat": {
+            "$ref": "shared.json#/tools/jobStart/properties/repeat"
+          }
+        },
+        "required": [
+          "prepared_ref"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "prepared_ref": "prepared_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "result": {
+        "$ref": "results.json#/commands/job.resolve_prepared"
+      }
+    },
+    {
+      "id": "job.monitor_assess",
+      "domain": "job",
+      "effect": "read",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "event_id",
+          "session_id"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "event_id": "fixture-event",
+          "session_id": "fixture-session"
+        }
+      ],
+      "result": {
+        "$ref": "results.json#/commands/job.monitor_assess"
+      }
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interactive installer and service configurator for a TSPi installation."""
+"""Interactive installer and service configurator for a ResearchAgent installation."""
 
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO = "git@github.com:iawnix/TSPi.git"
-PROGRESS_PREFIX = "@@tspi-progress@@"
+PROGRESS_PREFIX = "@@research-agent-progress@@"
 MINIMUM_NODE_VERSION = (22, 19, 0)
 EMAIL_PROVIDERS = {"clawemail", "smtp"}
 SMTP_PRESETS = {
@@ -79,9 +79,9 @@ SMTP_PRESETS = {
 }
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 WEB_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,100}$")
-SERVICE_CONFIG_SCHEMA = "tspi-service/1"
+SERVICE_CONFIG_SCHEMA = "research-agent-service/1"
 SERVICE_CONFIG_RELATIVE = Path("etc/installation.json")
-REMOTE_HOST_CONFIG_SCHEMA = "tspi-remote-host/1"
+REMOTE_HOST_CONFIG_SCHEMA = "research-agent-remote-host/1"
 REMOTE_HOST_CONFIG_RELATIVE = Path("etc/remote-host.json")
 PI_AGENT_CONFIG_FILES = ("models.json", "auth.json")
 PI_AGENT_CONFIG_MAX_BYTES = 2 * 1024 * 1024
@@ -134,6 +134,12 @@ def collect_preflight() -> list[dict[str, object]]:
     npm_ok, npm_version = _command_output([npm, "--version"]) if npm else (False, "not found")
     checks.append({"key": "npm", "label": "npm", "ok": npm_ok, "required": True, "detail": npm_version})
 
+    for key, candidates in (("rg", ("rg",)), ("fd", ("fd", "fdfind"))):
+        executable = next((path for name in candidates if (path := shutil.which(name))), None)
+        ready, version = _command_output([executable, "--version"]) if executable else (False, "not found")
+        checks.append({"key": key, "label": key, "ok": ready, "required": True,
+                       "detail": f"{executable}: {version}" if executable else version})
+
     conda = shutil.which("mamba") or shutil.which("conda")
     conda_ok, conda_version = _command_output([conda, "--version"]) if conda else (False, "not found")
     if not conda_ok:
@@ -152,7 +158,7 @@ def show_preflight(checks: list[dict[str, object]], *, require_conda: bool = Tru
 
 
 def require_preflight(checks: list[dict[str, object]], *, require_conda: bool = True) -> None:
-    required = {"python", "git", "node", "npm", "conda"}
+    required = {"python", "git", "node", "npm", "conda", "rg", "fd"}
     if not require_conda:
         required.remove("conda")
     failed = [str(check["label"]) for check in checks if check["key"] in required and not check["ok"]]
@@ -170,8 +176,8 @@ def inspect_installation(root: Path) -> dict[str, str | None]:
     if not metadata["state_present"]:
         if metadata["owned"]:
             return {"operation": "restore", "release_id": None}
-        tspi_like = [root / "ResearchAgent", root / "current", root / "bin", root / "releases"]
-        if any(path.exists() or path.is_symlink() for path in tspi_like):
+        research_agent_like = [root / "research-agent", root / "current", root / "bin", root / "releases"]
+        if any(path.exists() or path.is_symlink() for path in research_agent_like):
             raise RuntimeError(
                 f"installation-like files exist without trusted package state in {root}; "
                 "choose a dedicated empty directory or remove the stale files"
@@ -197,9 +203,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--install-root")
     parser.add_argument("--workspace-root", help="Absolute directory containing named research workspaces.")
-    parser.add_argument("--tspi-repo", default=DEFAULT_REPO)
-    parser.add_argument("--tspi-ref", default=os.environ.get("TSPI_INSTALL_REF", "main"))
-    parser.add_argument("--tspi-commit", help=argparse.SUPPRESS)
+    parser.add_argument("--research-agent-repo", default=DEFAULT_REPO)
+    parser.add_argument("--research-agent-ref", default=os.environ.get("RESEARCH_AGENT_INSTALL_REF", "main"))
+    parser.add_argument("--research-agent-commit", help=argparse.SUPPRESS)
     parser.add_argument("--source-root", help=argparse.SUPPRESS)
     web = parser.add_mutually_exclusive_group()
     web.add_argument("--with-web", dest="with_web", action="store_true", help="Install TS Web.")
@@ -210,13 +216,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--with-model-icons",
         dest="with_model_icons",
         action="store_true",
-        help="Install the optional TSPi model icon font.",
+        help="Install the optional ResearchAgent model icon font.",
     )
     icons.add_argument(
         "--without-model-icons",
         dest="with_model_icons",
         action="store_false",
-        help="Do not install the optional TSPi model icon font.",
+        help="Do not install the optional ResearchAgent model icon font.",
     )
     parser.set_defaults(with_model_icons=None)
     parser.add_argument("--web-port", type=int, help="TS Web HTTP port.")
@@ -245,24 +251,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--service-user", help="Unix account used by systemd services (required for system scope).")
     remote = parser.add_argument_group("remote terminal SSH")
-    remote.add_argument("--remote-host", help="SSH host that owns the remote TSPi Host.")
-    remote.add_argument("--remote-host-socket", help="Absolute Unix socket path of the remote TSPi Host.")
-    remote.add_argument("--remote-proxy-path", help="Absolute path to tspi-host-proxy.mjs on the remote host.")
+    remote.add_argument("--remote-host", help="SSH host that owns the remote ResearchAgent Host.")
+    remote.add_argument("--remote-host-socket", help="Absolute Unix socket path of the remote ResearchAgent Host.")
+    remote.add_argument("--remote-proxy-path", help="Absolute path to research-agent-host-proxy.mjs on the remote host.")
     remote.add_argument("--ssh-config", help="Absolute OpenSSH config file for the remote terminal.")
     remote.add_argument("--ssh-option", action="append", default=None, help="Additional OpenSSH option; repeatable.")
     parser.add_argument("--phone-access", choices=("disabled", "link"), help="TS Phone access mode.")
     parser.add_argument(
         "--link-relay-root",
-        default=os.environ.get("TSPI_LINK_RELAY_ROOT"),
-        help="Existing local TSPi Link Relay installation root (auto-detected when omitted).",
+        default=os.environ.get("RESEARCH_AGENT_LINK_RELAY_ROOT"),
+        help="Existing local ResearchAgent Link Relay installation root (auto-detected when omitted).",
     )
-    parser.add_argument("--link-url", default=os.environ.get("TSPI_LINK_URL"), help="TSPi Link Relay HTTPS origin.")
+    parser.add_argument("--link-url", default=os.environ.get("RESEARCH_AGENT_LINK_URL"), help="ResearchAgent Link Relay HTTPS origin.")
     parser.add_argument(
         "--link-enrollment-url",
-        default=os.environ.get("TSPI_LINK_ENROLLMENT_URL"),
+        default=os.environ.get("RESEARCH_AGENT_LINK_ENROLLMENT_URL"),
         help="Optional local Relay origin used only while redeeming the Host enrollment code.",
     )
-    parser.add_argument("--link-enrollment-code", help="Single-use Host enrollment code issued by TSPi Link Relay.")
+    parser.add_argument("--link-enrollment-code", help="Single-use Host enrollment code issued by ResearchAgent Link Relay.")
     parser.add_argument("--enable-services", action="store_true")
     parser.add_argument("--start-services", action="store_true")
     email = parser.add_argument_group("email notifications")
@@ -292,18 +298,18 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
         raise RuntimeError("interactive installation requires a TTY; use --non-interactive")
 
     section("Source and destination")
-    args.install_root = args.install_root or ask("Installation directory", str(Path.home() / ".local/share/tspi"))
+    args.install_root = args.install_root or ask("Installation directory", str(Path.home() / ".local/share/research-agent"))
     args.workspace_root = args.workspace_root or ask(
         "Workspace root",
         str(read_workspace_root(Path(args.install_root).expanduser())),
     )
-    field("Repository", args.tspi_repo)
-    field("Requested revision", args.tspi_ref)
-    if args.tspi_commit:
-        field("Resolved commit", args.tspi_commit)
+    field("Repository", args.research_agent_repo)
+    field("Requested revision", args.research_agent_ref)
+    if args.research_agent_commit:
+        field("Resolved commit", args.research_agent_commit)
 
     section("Core")
-    field("TSPi terminal client", "required", tone="success")
+    field("ResearchAgent terminal client", "required", tone="success")
     field("Control runtime", "required", tone="success")
     field("Scientific execution", "configured separately in job.toml", tone="muted")
     field("Pi App Server runtime", "required", tone="success")
@@ -319,7 +325,7 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
         if args.web_auth_token is None and ask_yes_no("Use a custom TS Web access token", False):
             args.web_auth_token = _ask_web_auth_token()
     if args.with_model_icons is None:
-        args.with_model_icons = ask_yes_no("Install TSPi model icon font", True)
+        args.with_model_icons = ask_yes_no("Install ResearchAgent model icon font", True)
     section("Job platforms")
     args.job_config = ask(
         "Job platform TOML path (blank preserves existing configuration)",
@@ -332,10 +338,10 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
     section("Phone connection")
     existing_link = _existing_link_configuration(Path(args.install_root))
     if args.phone_access is None:
-        args.phone_access = "link" if ask_yes_no("Enable TS Phone through TSPi Link Relay", existing_link is not None) else "disabled"
+        args.phone_access = "link" if ask_yes_no("Enable TS Phone through ResearchAgent Link Relay", existing_link is not None) else "disabled"
     if args.phone_access == "link":
         args.link_url = ask(
-            "TSPi Link Relay URL",
+            "ResearchAgent Link Relay URL",
             args.link_url or (existing_link[0] if existing_link else ""),
         ).strip()
         token_exists = (Path(args.install_root) / "var/state/host/host.token").is_file()
@@ -397,7 +403,7 @@ def _load_existing_menu_defaults(args: argparse.Namespace) -> None:
         # but never choose it implicitly for a user installation.
         args.service_scope = DEFAULT_SERVICE_SCOPE
     if args.service_scope == "system" and not args.service_user:
-        unit = Path("/etc/systemd/system/ts-app-server-tspi.service")
+        unit = Path("/etc/systemd/system/ts-app-server-research-agent.service")
         try:
             for line in unit.read_text(encoding="utf-8").splitlines():
                 if line.startswith("User=") and line.removeprefix("User=").strip():
@@ -406,7 +412,7 @@ def _load_existing_menu_defaults(args: argparse.Namespace) -> None:
         except OSError:
             pass
     if args.service_scope != "none":
-        # ResearchAgent is a client of the installation Host.  Enabling the
+        # research-agent is a client of the installation Host.  Enabling the
         # unit without starting it leaves a freshly installed CLI unusable.
         args.enable_services = True
         args.start_services = True
@@ -523,7 +529,7 @@ def _ask_int(
 
 
 def _configure_menu_phone(args: argparse.Namespace) -> None:
-    enabled = ask_yes_no("Enable TS Phone through TSPi Link Relay", args.phone_access == "link")
+    enabled = ask_yes_no("Enable TS Phone through ResearchAgent Link Relay", args.phone_access == "link")
     if not enabled:
         args.phone_access = "disabled"
         args.link_url = None
@@ -532,7 +538,7 @@ def _configure_menu_phone(args: argparse.Namespace) -> None:
         return
     args.phone_access = "link"
     existing_link = _existing_link_configuration(Path(args.install_root))
-    args.link_url = ask("TSPi Link Relay URL", args.link_url or (existing_link[0] if existing_link else "")).strip()
+    args.link_url = ask("ResearchAgent Link Relay URL", args.link_url or (existing_link[0] if existing_link else "")).strip()
     token_file = Path(args.install_root) / "var/state/host/host.token"
     enrolled_for_url = token_file.is_file() and existing_link is not None and args.link_url.rstrip("/") == existing_link[0]
     if not enrolled_for_url:
@@ -567,7 +573,7 @@ def _initialize_interactive_menu(args: argparse.Namespace) -> None:
         return
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise RuntimeError("interactive installation requires a TTY; use --non-interactive")
-    args.install_root = args.install_root or ask("Installation directory", str(Path.home() / ".local/share/tspi"))
+    args.install_root = args.install_root or ask("Installation directory", str(Path.home() / ".local/share/research-agent"))
     args.install_root = str(Path(args.install_root).expanduser())
     _load_existing_menu_defaults(args)
     if args.phone_access == "link" and not _link_host_enrolled_for_url(args):
@@ -609,7 +615,7 @@ def interactive_menu_options(args: argparse.Namespace) -> argparse.Namespace:
         elif choice == "6":
             configure_email_interactively(args, force=True)
         elif choice == "7":
-            args.with_model_icons = ask_yes_no("Install TSPi model icon font", bool(args.with_model_icons))
+            args.with_model_icons = ask_yes_no("Install ResearchAgent model icon font", bool(args.with_model_icons))
         else:
             note("Choose a menu number from 1 to 9.", tone="warning")
 
@@ -649,7 +655,7 @@ def configure_email_interactively(args: argparse.Namespace, *, force: bool = Fal
     args.email_security = ask("SMTP security (ssl or starttls)", getattr(args, "email_security", None) or "ssl").lower()
     args.email_username = _ask_email_address("SMTP sender email address", getattr(args, "email_username", None) or "")
     if ask_yes_no("Read SMTP authorization code from an environment variable", False):
-        args.email_password_env = ask("Password environment variable", "TSPI_EMAIL_PASSWORD")
+        args.email_password_env = ask("Password environment variable", "RESEARCH_AGENT_EMAIL_PASSWORD")
         args.email_password_file = None
         return
     default_password_file = root / "etc/secrets" / "smtp-password"
@@ -696,28 +702,28 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     if installation["release_id"]:
         field("Current release", installation["release_id"])
     field("Installation root", args.install_root, tone="accent")
-    field("TSPi revision", args.tspi_ref)
-    if args.tspi_commit:
-        field("Resolved commit", args.tspi_commit)
+    field("ResearchAgent revision", args.research_agent_ref)
+    if args.research_agent_commit:
+        field("Resolved commit", args.research_agent_commit)
     field("Workspace root", args.workspace_root)
     field("Conda root", args.conda_root or "auto-detect")
     if args.service_scope == "system":
         field("Installation owner", f"{args.service_user} (private package/runtime/state tree)", tone="warning")
-    field("Phone access", "TSPi Link Relay" if args.phone_access == "link" else "disabled", tone="success" if args.phone_access == "link" else "muted")
+    field("Phone access", "ResearchAgent Link Relay" if args.phone_access == "link" else "disabled", tone="success" if args.phone_access == "link" else "muted")
     if args.phone_access == "link":
-        field("TSPi Link Relay", args.link_url, tone="success")
+        field("ResearchAgent Link Relay", args.link_url, tone="success")
         if getattr(args, "_defer_link_enrollment", False):
             field("Host enrollment", "request after core installation", tone="warning")
         field("Phone tool access", "same Agent and tools as terminal", tone="success")
     field(
         "Model icon font",
-        "install optional TSPi font" if args.with_model_icons else "use Nerd Font/Unicode fallback",
+        "install optional ResearchAgent font" if args.with_model_icons else "use Nerd Font/Unicode fallback",
         tone="success" if args.with_model_icons else "muted",
     )
 
     root = Path(args.install_root)
     section("Core")
-    field("ResearchAgent terminal client", f"install - {root / 'ResearchAgent'}", tone="success")
+    field("research-agent terminal client", f"install - {root / 'research-agent'}", tone="success")
     field("Control runtime", "install from explicit lock and verify", tone="success")
     field("Scientific execution", "verify configured targets and declared dependencies", tone="muted")
     field("Pi App Server", "install pinned runtime and verify", tone="success")
@@ -817,10 +823,10 @@ def _service_plan(args: argparse.Namespace, *, template: bool = False) -> str:
 
 
 def validate_options(args: argparse.Namespace) -> None:
-    validate_repo(args.tspi_repo)
-    validate_ref(args.tspi_ref)
-    if args.tspi_commit:
-        validate_commit(args.tspi_commit)
+    validate_repo(args.research_agent_repo)
+    validate_ref(args.research_agent_ref)
+    if args.research_agent_commit:
+        validate_commit(args.research_agent_commit)
     if not args.install_root:
         raise ValueError("--install-root is required in non-interactive mode")
     args.install_root = str(validate_install_root(Path(args.install_root)))
@@ -902,7 +908,7 @@ def validate_options(args: argparse.Namespace) -> None:
     if args.service_scope == "none" and (args.enable_services or args.start_services):
         raise ValueError("--enable-services and --start-services require a service scope")
     if args.service_scope != "none":
-        # A normal installation must leave ResearchAgent with a usable Host.
+        # A normal installation must leave research-agent with a usable Host.
         args.enable_services = True
         args.start_services = True
     if args.service_scope == "system" and os.geteuid() != 0:
@@ -932,7 +938,7 @@ def validate_options(args: argparse.Namespace) -> None:
         token_file = Path(args.install_root) / "var/state/host/host.token"
         enrolled_for_url = token_file.is_file() and existing_link is not None and existing_link[0] == args.link_url
         if not enrolled_for_url and not args.link_enrollment_code and not getattr(args, "_defer_link_enrollment", False):
-            raise ValueError("--link-enrollment-code is required when enrolling a new TSPi Host")
+            raise ValueError("--link-enrollment-code is required when enrolling a new ResearchAgent Host")
     elif args.link_url or args.link_enrollment_code or args.link_enrollment_url:
         raise ValueError("Link Relay options require --phone-access link")
     if args.service_scope != "none" and shutil.which("systemctl") is None:
@@ -975,7 +981,7 @@ def configure_workspace_root(args: argparse.Namespace) -> dict[str, str]:
     if not workspace_root.is_dir():
         raise ValueError(f"workspace root is not a directory: {workspace_root}")
     workspace_root.chmod(0o700)
-    catalog_directory = workspace_root / ".tspi-catalog"
+    catalog_directory = workspace_root / ".research-agent-catalog"
     if catalog_directory.is_symlink():
         raise ValueError("workspace catalog cannot be a symbolic link")
     catalog_directory.mkdir(mode=0o700, exist_ok=True)
@@ -991,18 +997,18 @@ def configure_service_runtime(args: argparse.Namespace) -> dict[str, str | None]
     if scope == "none":
         runtime_dir: str | None = None
     elif scope == "system":
-        runtime_dir = "/run/tspi"
+        runtime_dir = "/run/research-agent"
     else:
         service_user = getattr(args, "service_user", None) or pwd.getpwuid(os.getuid()).pw_name
         service_uid = pwd.getpwnam(service_user).pw_uid
         runtime_parent = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{service_uid}"
-        runtime_dir = str(Path(runtime_parent) / "tspi")
+        runtime_dir = str(Path(runtime_parent) / "ra")
     document = {
         "schema_version": SERVICE_CONFIG_SCHEMA,
         "scope": scope,
         "runtime_dir": runtime_dir,
     }
-    from tspi_foundation.layout import paths
+    from research_agent.foundation.layout import paths
     destination = paths(root).update_config(service=document)
     return {"status": "configured", "path": str(destination), "scope": scope, "runtime_dir": runtime_dir}
 
@@ -1037,7 +1043,7 @@ def _existing_link_configuration(root: Path) -> tuple[str, str] | None:
         value = json.loads(manifest.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
-    if not isinstance(value, dict) or value.get("schema_version") != "tspi-link/1":
+    if not isinstance(value, dict) or value.get("schema_version") != "research-agent-link/1":
         return None
     relay_url = value.get("relay_url")
     host_id = value.get("host_id")
@@ -1075,12 +1081,12 @@ def _link_host_enrolled_for_url(args: argparse.Namespace) -> bool:
 
 def _validate_link_url(value: object) -> str:
     if not isinstance(value, str) or not value or len(value) > 512:
-        raise ValueError("--link-url must be a TSPi Link Relay origin")
+        raise ValueError("--link-url must be a ResearchAgent Link Relay origin")
     try:
         parsed = urllib.parse.urlsplit(value)
         _ = parsed.port
     except ValueError as exc:
-        raise ValueError("--link-url must be a TSPi Link Relay origin") from exc
+        raise ValueError("--link-url must be a ResearchAgent Link Relay origin") from exc
     loopback = parsed.hostname in {"127.0.0.1", "::1", "localhost"}
     if not parsed.hostname or (parsed.scheme != "https" and not (loopback and parsed.scheme == "http")):
         raise ValueError("--link-url must use HTTPS except on loopback")
@@ -1377,7 +1383,7 @@ def _validate_job_config(parsed: dict[str, object]) -> dict:
     """Validate the shared environment shape before installing it."""
     # Import the same public contract as Job Runtime and the Skill helper.
     import importlib.util
-    spec = importlib.util.spec_from_file_location("tspi_job_config", ROOT / "packages/job-runtime/job_runtime/config_contract.py")
+    spec = importlib.util.spec_from_file_location("research_agent_job_config", ROOT / "backend/src/research_agent/jobs/config_contract.py")
     contract = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(contract)
     contract.validate_job_config(parsed)
@@ -1389,7 +1395,7 @@ def _validate_job_config(parsed: dict[str, object]) -> dict:
     except ImportError:
         from _bootstrap import activate_source_package
     activate_source_package(ROOT)
-    from tspi_runtime.environment_check import check_environments
+    from research_agent.application.environment_check import check_environments
     return check_environments(parsed, probe=False)
 
 
@@ -1401,8 +1407,8 @@ def verify_job_bindings(args, installed, backend_configs):
     python = installed.get("runtime", {}).get("python_executable")
     if not python:
         raise RuntimeError("environment verification requires the installed Python runtime")
-    environment = {**os.environ, "TSPI_PACKAGE_ROOT": str(Path(installed["package_root"]) / "agent")}
-    completed = subprocess.run([python, "-m", "tspi_runtime.environment_check", "--config", job["path"]],
+    environment = {**os.environ, "RESEARCH_AGENT_PACKAGE_ROOT": str(Path(installed["package_root"]) / "agent")}
+    completed = subprocess.run([python, "-m", "research_agent.application.environment_check", "--config", job["path"]],
                                env=environment, text=True, capture_output=True, check=False)
     if completed.returncode:
         raise RuntimeError("job environment verification failed: " + completed.stderr.strip())
@@ -1452,7 +1458,7 @@ def _validate_name_resolver_config(parsed: object) -> None:
         cache_dir = value.get("cache_dir")
         if cache_dir is not None and (not isinstance(cache_dir, str) or not Path(cache_dir).is_absolute()):
             raise ValueError(f"name-resolver backends.{name}.cache_dir must be an absolute path")
-        user_agent = value.get("user_agent", "TSPi-chemical-name-resolver/1")
+        user_agent = value.get("user_agent", "ResearchAgent-chemical-name-resolver/1")
         if not isinstance(user_agent, str) or not user_agent.strip() or len(user_agent) > 256:
             raise ValueError(f"name-resolver backends.{name}.user_agent must be a non-empty string")
 
@@ -1473,7 +1479,7 @@ def _name_resolver_details(path: Path) -> dict[str, str]:
 def _validate_remote_config(parsed: dict[str, object], base: Path) -> None:
     # Structural validation is identical before installation and every runtime load.
     import importlib.util
-    spec = importlib.util.spec_from_file_location("tspi_job_config", ROOT / "packages/job-runtime/job_runtime/config_contract.py")
+    spec = importlib.util.spec_from_file_location("research_agent_job_config", ROOT / "backend/src/research_agent/jobs/config_contract.py")
     contract = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(contract)
     contract.validate_job_config(parsed)
@@ -1590,11 +1596,11 @@ def run_logged_install(
     stderr_lines: list[str] = []
     stdout = ""
     returncode = 1
-    activity = Spinner("Starting the TSPi package installation", stream=sys.stderr, enabled=show_progress)
+    activity = Spinner("Starting the ResearchAgent package installation", stream=sys.stderr, enabled=show_progress)
     activity.start()
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as log:
-            log.write("TSPi installation diagnostic log\n")
+            log.write("ResearchAgent installation diagnostic log\n")
             log.write(f"started_at_utc={datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')}\n")
             log.write(f"command={shlex.join(command)}\n\n")
             process = subprocess.Popen(
@@ -1649,7 +1655,7 @@ def run_logged_install(
                 else:
                     _append_log_file(_install_log_path(install_root), temporary)
                     temporary.unlink(missing_ok=True)
-                    activity.succeed("TSPi package installed")
+                    activity.succeed("ResearchAgent package installed")
                     return result
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
         failure_log = log_root / f"install-failure-{stamp}.log"
@@ -1659,7 +1665,7 @@ def run_logged_install(
         summary = details[-1] if details else f"installer process exited with status {returncode}"
         raise RuntimeError(f"{summary}\nDiagnostic log: {failure_log}")
     except BaseException:
-        activity.fail("TSPi package installation failed")
+        activity.fail("ResearchAgent package installation failed")
         if temporary.exists():
             temporary.unlink()
         raise
@@ -1720,16 +1726,16 @@ def run_install(args: argparse.Namespace) -> dict[str, object]:
         sys.executable,
         str(ROOT / "scripts/install_from_github.py"),
         "--repo",
-        args.tspi_repo,
+        args.research_agent_repo,
         "--ref",
-        args.tspi_ref,
+        args.research_agent_ref,
         "--install-root",
         args.install_root,
         "--progress",
         "--json",
     ]
-    if args.tspi_commit:
-        command.extend(["--resolved-commit", args.tspi_commit])
+    if args.research_agent_commit:
+        command.extend(["--resolved-commit", args.research_agent_commit])
     source_root = getattr(args, "source_root", None)
     if source_root:
         command.extend(["--source-root", source_root])
@@ -1786,7 +1792,7 @@ def snapshot_active_release(root: Path) -> dict[str, object] | None:
         return None
     launchers = {
         name: os.readlink(root / name)
-        for name in ("ResearchAgent", "TSWeb")
+        for name in ("research-agent", "TSWeb")
         if (root / name).is_symlink()
     }
     state_bytes = state.read_bytes()
@@ -1829,7 +1835,7 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
     """Capture installer-owned configuration before any install side effect."""
 
     relative_paths = [
-        "ResearchAgent",
+        "research-agent",
         "current",
         "TSWeb",
         "uninstall.sh",
@@ -1860,7 +1866,7 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
     instances = []
     if getattr(args, "service_scope", "none") != "none":
         unit_dir = _service_unit_directory(args.service_scope)
-        names = ["ts-app-server-tspi.service", "ts-web-tspi.service", "ts-app-server-tspi@.service"]
+        names = ["ts-app-server-research-agent.service", "ts-web-research-agent.service", "ts-app-server-research-agent@.service"]
         for name in names:
             unit_path = unit_dir / name
             services[str(unit_path)] = {
@@ -1871,7 +1877,7 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
                     name,
                 ),
             }
-        if (unit_dir / "ts-app-server-tspi@.service").is_file():
+        if (unit_dir / "ts-app-server-research-agent@.service").is_file():
             scope = [] if args.service_scope == "system" else ["--user"]
             instances = [_service_status(scope, args.service_scope, name)
                          for name in app_server_service_instances(scope)]
@@ -2029,14 +2035,14 @@ def stop_installation_services(args):
     validate_service_ownership(args)
     scope = [] if args.service_scope == "system" else ["--user"]
     unit_dir = _service_unit_directory(args.service_scope)
-    names = [name for name in ("ts-web-tspi.service", "ts-app-server-tspi.service")
+    names = [name for name in ("ts-web-research-agent.service", "ts-app-server-research-agent.service")
              if (unit_dir / name).is_file()]
-    if (unit_dir / "ts-app-server-tspi@.service").is_file():
+    if (unit_dir / "ts-app-server-research-agent@.service").is_file():
         names.extend(app_server_service_instances(scope))
     for name in names:
         _run_systemctl(scope, "stop", name)
         # systemctl stop waits for the service cgroup, including Pi children.
-        # Do not touch independent tspi-job units or their result directories.
+        # Do not touch independent research-agent-job units or their result directories.
         status = _service_status(scope, args.service_scope, name)
         if status["active"] not in {"inactive", "failed"}:
             raise RuntimeError(f"installation writer did not stop: {name} ({status['active']})")
@@ -2157,10 +2163,10 @@ def prepare_app_server_runtime(root: Path) -> Path:
 
 
 def bind_pi_runtime_node_modules(root: Path, source: Path) -> None:
-    """Expose Pi's dependencies to TypeScript loaded from the TSPi release.
+    """Expose Pi's dependencies to TypeScript loaded from the ResearchAgent release.
 
-    The published TSPi archive intentionally omits a second ``node_modules``
-    tree. Pi's source resolver loads TSPi Agent Runtime files from the selected
+    The published ResearchAgent archive intentionally omits a second ``node_modules``
+    tree. Pi's source resolver loads ResearchAgent Agent Runtime files from the selected
     release, so Node's normal upward package lookup must have a release-local
     link to the exact pinned Pi dependency tree.
     """
@@ -2170,7 +2176,7 @@ def bind_pi_runtime_node_modules(root: Path, source: Path) -> None:
     if link.exists() or link.is_symlink():
         if link.is_symlink() and link.resolve() == runtime_modules.resolve():
             return
-        raise RuntimeError(f"TSPi release node_modules path is already occupied: {link}")
+        raise RuntimeError(f"ResearchAgent release node_modules path is already occupied: {link}")
     original_mode = stat.S_IMODE(package_root.stat().st_mode)
     try:
         package_root.chmod(original_mode | 0o700)
@@ -2388,7 +2394,7 @@ def ensure_host_identity(root: Path) -> Path:
 
 
 def configure_phone_connection(args: argparse.Namespace) -> dict[str, object]:
-    """Enroll the installation Host and write its private TSPi Link files."""
+    """Enroll the installation Host and write its private ResearchAgent Link files."""
 
     root = Path(args.install_root).resolve()
     state = root / "var/state/host"
@@ -2403,7 +2409,7 @@ def configure_phone_connection(args: argparse.Namespace) -> dict[str, object]:
             "status": "disabled",
             "manifest": str(manifest),
             "relay_url": None,
-            "protocol": "tspi-link.v1",
+            "protocol": "research-agent-link.v1",
             "tool_access": "same_as_terminal",
         }
 
@@ -2413,18 +2419,18 @@ def configure_phone_connection(args: argparse.Namespace) -> dict[str, object]:
     if args.link_enrollment_code:
         enrollment_url = getattr(args, "link_enrollment_url", None) or args.link_url
         enrollment = _redeem_link_enrollment(enrollment_url, args.link_enrollment_code, host_id)
-        if enrollment.get("hostId") != host_id or enrollment.get("protocol") != "tspi-link.v1":
-            raise RuntimeError("TSPi Link Relay returned a mismatched Host enrollment")
+        if enrollment.get("hostId") != host_id or enrollment.get("protocol") != "research-agent-link.v1":
+            raise RuntimeError("ResearchAgent Link Relay returned a mismatched Host enrollment")
         host_token = enrollment.get("hostToken")
-        if not isinstance(host_token, str) or re.fullmatch(r"tsph_[A-Za-z0-9_-]{40,80}", host_token) is None:
-            raise RuntimeError("TSPi Link Relay returned an invalid Host token")
+        if not isinstance(host_token, str) or re.fullmatch(r"rah_[A-Za-z0-9_-]{40,80}", host_token) is None:
+            raise RuntimeError("ResearchAgent Link Relay returned an invalid Host token")
         _write_private_text(token_file, host_token + "\n")
     elif not token_file.is_file() or existing is None or existing[0] != args.link_url:
-        raise RuntimeError("a Host enrollment code is required for this TSPi Link Relay")
+        raise RuntimeError("a Host enrollment code is required for this ResearchAgent Link Relay")
 
     payload = {
-        "schema_version": "tspi-link/1",
-        "protocol": "tspi-link.v1",
+        "schema_version": "research-agent-link/1",
+        "protocol": "research-agent-link.v1",
         "relay_url": args.link_url,
         "host_id": host_id,
     }
@@ -2434,13 +2440,13 @@ def configure_phone_connection(args: argparse.Namespace) -> dict[str, object]:
         "manifest": str(manifest),
         "relay_url": args.link_url,
         "host_id": host_id,
-        "protocol": "tspi-link.v1",
+        "protocol": "research-agent-link.v1",
         "tool_access": "same_as_terminal",
     }
 
 
 def _redeem_link_enrollment(relay_url: str, code: str, host_id: str) -> dict[str, object]:
-    payload = json.dumps({"code": code, "hostId": host_id, "name": "TSPi Host"}, separators=(",", ":")).encode("utf-8")
+    payload = json.dumps({"code": code, "hostId": host_id, "name": "ResearchAgent Host"}, separators=(",", ":")).encode("utf-8")
     request = urllib.request.Request(
         urllib.parse.urljoin(relay_url + "/", "v1/enrollments/redeem"),
         data=payload,
@@ -2455,17 +2461,17 @@ def _redeem_link_enrollment(relay_url: str, code: str, host_id: str) -> dict[str
             detail = json.loads(exc.read(16 * 1024)).get("message", exc.reason)
         except (OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError):
             detail = exc.reason
-        raise RuntimeError(f"TSPi Link Relay rejected Host enrollment ({exc.code}): {detail}") from exc
+        raise RuntimeError(f"ResearchAgent Link Relay rejected Host enrollment ({exc.code}): {detail}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise RuntimeError(f"could not reach TSPi Link Relay at {relay_url}: {exc}") from exc
+        raise RuntimeError(f"could not reach ResearchAgent Link Relay at {relay_url}: {exc}") from exc
     if len(raw) > 64 * 1024:
-        raise RuntimeError("TSPi Link Relay enrollment response is too large")
+        raise RuntimeError("ResearchAgent Link Relay enrollment response is too large")
     try:
         value = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise RuntimeError("TSPi Link Relay returned invalid enrollment JSON") from exc
+        raise RuntimeError("ResearchAgent Link Relay returned invalid enrollment JSON") from exc
     if not isinstance(value, dict):
-        raise RuntimeError("TSPi Link Relay enrollment response must be an object")
+        raise RuntimeError("ResearchAgent Link Relay enrollment response must be an object")
     return value
 
 
@@ -2485,9 +2491,9 @@ def app_server_unit(args: argparse.Namespace) -> str:
     # through systemctl and never need to invoke the Host process directly.
     command = _systemd_quote(root / "current/agent/libexec/research-agent-host")
     wanted_by = "multi-user.target" if args.service_scope == "system" else "default.target"
-    runtime_directory = "RuntimeDirectory=tspi\nRuntimeDirectoryMode=0700" if args.service_scope == "system" else ""
+    runtime_directory = "RuntimeDirectory=research-agent\nRuntimeDirectoryMode=0700" if args.service_scope == "system" else ""
     return f"""[Unit]
-Description=TSPi Agent Server (Host API and Pi SDK Harness)
+Description=ResearchAgent Agent Server (Host API and Pi SDK Harness)
 After=network-online.target
 
 [Service]
@@ -2498,10 +2504,10 @@ Environment={_systemd_quote('PATH=' + search_path)}
 Environment={_systemd_quote('HOME=' + str(service_home))}
 Environment={_systemd_quote('XDG_RUNTIME_DIR=' + runtime_dir)}
 Environment={_systemd_quote('PI_CODING_AGENT_DIR=' + str(root / 'etc/pi'))}
-Environment=TSPI_SYSTEMD_HOST=1
-Environment={_systemd_quote("TSPI_INSTALL_ROOT=" + str(root))}
-Environment={_systemd_quote('TSPI_WORKSPACE_ROOT=' + str(workspace_root))}
-Environment={_systemd_quote('TSPI_APP_SERVER_RUNTIME_DIR=' + ('/run/tspi' if args.service_scope == 'system' else str(Path(runtime_dir) / 'tspi')))}
+Environment=RESEARCH_AGENT_SYSTEMD_HOST=1
+Environment={_systemd_quote("RESEARCH_AGENT_INSTALL_ROOT=" + str(root))}
+Environment={_systemd_quote('RESEARCH_AGENT_WORKSPACE_ROOT=' + str(workspace_root))}
+Environment={_systemd_quote('RESEARCH_AGENT_APP_SERVER_RUNTIME_DIR=' + ('/run/research-agent' if args.service_scope == 'system' else str(Path(runtime_dir) / 'ra')))}
 {f'User={_systemd_value(service_user)}' if args.service_scope == 'system' else ''}
 {f'Group={_systemd_value(args.service_group)}' if getattr(args, 'service_group', None) and args.service_scope == 'system' else ''}
 {_notification_environment_directive(args)}
@@ -2517,9 +2523,9 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ReadWritePaths={_systemd_quote(root / 'var/cache')}
 ReadWritePaths={_systemd_quote(root / 'var/state')}
 ReadWritePaths={_systemd_quote(root / 'var/log')}
-ReadWritePaths={_systemd_quote(Path('/run/tspi') if args.service_scope == 'system' else Path(runtime_dir) / 'tspi')}
+ReadWritePaths={_systemd_quote(Path('/run/research-agent') if args.service_scope == 'system' else Path(runtime_dir) / 'ra')}
 ReadWritePaths={_systemd_quote(root / 'etc/pi')}
-ReadWritePaths={_systemd_quote(Path(runtime_dir) / 'tspi')}
+ReadWritePaths={_systemd_quote(Path(runtime_dir) / 'ra')}
 ReadWritePaths={_systemd_quote(workspace_root)}
 
 [Install]
@@ -2549,13 +2555,13 @@ def web_unit(args: argparse.Namespace) -> str:
     command_values.extend(("--port", str(args.web_port), "--workspace-root", workspace_root))
     command = " ".join(_systemd_quote(value) for value in command_values)
     return f"""[Unit]
-Description=TSPi TS Web read-only server
+Description=ResearchAgent TS Web read-only server
 After=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory={working_directory}
-Environment={_systemd_quote("TSPI_INSTALL_ROOT=" + str(root))}
+Environment={_systemd_quote("RESEARCH_AGENT_INSTALL_ROOT=" + str(root))}
 ExecStart={command}
 {f'User={_systemd_value(args.service_user)}' if args.service_scope == 'system' else ''}
 {f'Group={_systemd_value(args.service_group)}' if getattr(args, 'service_group', None) and args.service_scope == 'system' else ''}
@@ -2571,7 +2577,7 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ReadWritePaths={_systemd_quote(root / 'var/state/web')}
 ReadWritePaths={_systemd_quote(root / 'etc/web')}
 ReadOnlyPaths={_systemd_quote(workspace_root)}
-ReadWritePaths={_systemd_quote(workspace_root / '.tspi-catalog')}
+ReadWritePaths={_systemd_quote(workspace_root / '.research-agent-catalog')}
 
 [Install]
 WantedBy={wanted_by}
@@ -2606,9 +2612,9 @@ def _systemd_value(value: object) -> str:
 
 
 def _selected_service_names(args: argparse.Namespace) -> list[str]:
-    names = ["ts-app-server-tspi.service"]
+    names = ["ts-app-server-research-agent.service"]
     if args.with_web:
-        names.append("ts-web-tspi.service")
+        names.append("ts-web-research-agent.service")
     return names
 
 
@@ -2637,9 +2643,9 @@ def validate_service_ownership(args: argparse.Namespace) -> None:
     unit_dir = _service_unit_directory(args.service_scope)
     expected_root = str(Path(args.install_root)).replace("%", "%%")
     names = [*_selected_service_names(args)]
-    if "ts-web-tspi.service" not in names:
-        names.append("ts-web-tspi.service")
-    names.append("ts-app-server-tspi@.service")
+    if "ts-web-research-agent.service" not in names:
+        names.append("ts-web-research-agent.service")
+    names.append("ts-app-server-research-agent@.service")
     for name in names:
         unit = unit_dir / name
         if unit.is_symlink():
@@ -2661,7 +2667,7 @@ def verify_service_units(args: argparse.Namespace, units: list[tuple[str, str]])
     analyzer = shutil.which("systemd-analyze")
     if analyzer is None:
         raise RuntimeError("service configuration requires systemd-analyze to verify generated units")
-    with tempfile.TemporaryDirectory(prefix="tspi-systemd-verify-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="research-agent-systemd-verify-") as temporary:
         unit_root = Path(temporary)
         unit_paths: list[Path] = []
         for name, content in units:
@@ -2672,7 +2678,7 @@ def verify_service_units(args: argparse.Namespace, units: list[tuple[str, str]])
         if args.service_scope == "system":
             dependency_units.extend(["sysinit.target", "local-fs.target"])
         for name in dependency_units:
-            (unit_root / name).write_text("[Unit]\nDescription=TSPi verification dependency\n", encoding="utf-8")
+            (unit_root / name).write_text("[Unit]\nDescription=ResearchAgent verification dependency\n", encoding="utf-8")
         environment = dict(os.environ)
         environment["SYSTEMD_UNIT_PATH"] = str(unit_root)
         if args.service_scope == "user" and not environment.get("XDG_RUNTIME_DIR"):
@@ -2698,10 +2704,10 @@ def configure_services(args: argparse.Namespace, *, start: bool | None = None) -
         return []
     validate_service_ownership(args)
     units: list[tuple[str, str]] = [
-        ("ts-app-server-tspi.service", app_server_unit(args)),
+        ("ts-app-server-research-agent.service", app_server_unit(args)),
     ]
     if args.with_web:
-        units.append(("ts-web-tspi.service", web_unit(args)))
+        units.append(("ts-web-research-agent.service", web_unit(args)))
     prepare_runtime_dirs(Path(args.install_root))
     align_service_ownership(args)
     verify_service_units(args, units)
@@ -2710,7 +2716,7 @@ def configure_services(args: argparse.Namespace, *, start: bool | None = None) -
     names: list[str] = []
     scope = [] if args.service_scope == "system" else ["--user"]
     if not args.with_web:
-        stale_web = unit_dir / "ts-web-tspi.service"
+        stale_web = unit_dir / "ts-web-research-agent.service"
         if stale_web.exists() or stale_web.is_symlink():
             if stale_web.is_symlink() or not stale_web.is_file():
                 raise ValueError(f"optional web service unit is not a regular file: {stale_web}")
@@ -2721,7 +2727,7 @@ def configure_services(args: argparse.Namespace, *, start: bool | None = None) -
         (unit_dir / name).write_text(content, encoding="utf-8")
         (unit_dir / name).chmod(0o644)
         names.append(name)
-    template_unit = unit_dir / "ts-app-server-tspi@.service"
+    template_unit = unit_dir / "ts-app-server-research-agent@.service"
     if template_unit.exists() or template_unit.is_symlink():
         if template_unit.is_symlink() or not template_unit.is_file():
             raise ValueError(f"template service unit is not a regular file: {template_unit}")
@@ -2758,7 +2764,7 @@ def verify_running_services(args, installed, *, timeout_seconds=30):
     """Verify the selected Host identity and Web's actual State bridge."""
     if args.service_scope == "none" or not args.start_services:
         return {"status": "not_started"}
-    from tspi_bootstrap.launcher import resolve_installation, resolve_host_socket, _validate_host_release
+    from research_agent.bootstrap.launcher import resolve_installation, resolve_host_socket, _validate_host_release
     root = Path(args.install_root)
     installation = resolve_installation(Path(installed["package_root"]) / "agent", root)
     deadline = time.monotonic() + timeout_seconds
@@ -2814,7 +2820,7 @@ def align_service_ownership(args: argparse.Namespace) -> None:
             f"make it accessible to {args.service_user} before installing the system service"
         )
     os.chown(workspace_root, account.pw_uid, account.pw_gid)
-    catalog = workspace_root / ".tspi-catalog"
+    catalog = workspace_root / ".research-agent-catalog"
     if catalog.is_dir() and not catalog.is_symlink():
         os.chown(catalog, account.pw_uid, account.pw_gid)
         for entry in catalog.iterdir():
@@ -2825,7 +2831,7 @@ def align_service_ownership(args: argparse.Namespace) -> None:
 def app_server_service_instances(scope: list[str]) -> list[str]:
     """Return loaded concrete instances of the retired per-workspace unit."""
     completed = subprocess.run(
-        ["systemctl", *scope, "list-units", "--all", "--plain", "--no-legend", "ts-app-server-tspi@*.service"],
+        ["systemctl", *scope, "list-units", "--all", "--plain", "--no-legend", "ts-app-server-research-agent@*.service"],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -2836,7 +2842,7 @@ def app_server_service_instances(scope: list[str]) -> list[str]:
     instances: list[str] = []
     for line in completed.stdout.splitlines():
         name = line.split(None, 1)[0] if line.strip() else ""
-        if name.startswith("ts-app-server-tspi@") and name.endswith(".service") and "/" not in name:
+        if name.startswith("ts-app-server-research-agent@") and name.endswith(".service") and "/" not in name:
             instances.append(name)
     return instances
 
@@ -2897,7 +2903,7 @@ def build_component_summary(
     return {
         "agent": {
             "status": "ready",
-            "launcher": str(root / "ResearchAgent"),
+            "launcher": str(root / "research-agent"),
         },
         "runtime": {
             "status": "ready" if probe.get("ok") is True else "not_probed",
@@ -2907,9 +2913,9 @@ def build_component_summary(
             "capabilities": probe.get("capabilities", {}),
         },
         "app_server": {
-            "status": "configured" if args.service_scope == "none" else _service_readiness(service_by_name.get("ts-app-server-tspi.service"), probed=args.start_services),
+            "status": "configured" if args.service_scope == "none" else _service_readiness(service_by_name.get("ts-app-server-research-agent.service"), probed=args.start_services),
             "runtime": str(app_server_runtime),
-            "service": service_by_name.get("ts-app-server-tspi.service"),
+            "service": service_by_name.get("ts-app-server-research-agent.service"),
             "server_id": str(server_id_path),
             "server_uuid": server_id,
             "server_id_path": str(server_id_path),
@@ -2917,13 +2923,13 @@ def build_component_summary(
             "workspace_root": str(workspace_root),
             "start": "systemctl "
             + ("" if args.service_scope == "system" else "--user ")
-            + "start ts-app-server-tspi.service",
+            + "start ts-app-server-research-agent.service",
         },
         "phone": phone_connection or {
             "status": "disabled",
             "manifest": str(root / "var/state/host/link.json"),
             "relay_url": args.link_url,
-            "protocol": "tspi-link.v1",
+            "protocol": "research-agent-link.v1",
             "tool_access": "same_as_terminal",
         },
         "model_icons": model_icons or {
@@ -2938,13 +2944,13 @@ def build_component_summary(
         },
         "web": (
             {
-                "status": "configured" if args.service_scope == "none" else _service_readiness(service_by_name.get("ts-web-tspi.service"), probed=args.start_services),
+                "status": "configured" if args.service_scope == "none" else _service_readiness(service_by_name.get("ts-web-research-agent.service"), probed=args.start_services),
                 "launcher": str(root / "TSWeb"),
                 "url": f"http://{args.web_host}:{args.web_port}",
                 "state_directory": str(root / "var/state/web"),
                 "workspace_root": str(workspace_root),
                 "credential": credentials.get("web_http"),
-                "service": service_by_name.get("ts-web-tspi.service"),
+                "service": service_by_name.get("ts-web-research-agent.service"),
             }
             if args.with_web
             else None
@@ -2981,7 +2987,7 @@ def show_installed_summary(
     section("Installation")
     field("Installation root", root, tone="accent")
     field("Release", installed.get("release_id") or "package")
-    field("TSPi commit", installed.get("commit") or "unknown")
+    field("ResearchAgent commit", installed.get("commit") or "unknown")
     field("Workspace root", args.workspace_root)
     field("Uninstaller", installed.get("uninstaller") or "not installed")
     field("Install log", _install_log_path(root))
@@ -2989,7 +2995,7 @@ def show_installed_summary(
     runtime = components["runtime"]
     assert isinstance(runtime, dict)
     section("Core")
-    field("ResearchAgent terminal client", f"ready - {root / 'ResearchAgent'}", tone="success")
+    field("research-agent terminal client", f"ready - {root / 'research-agent'}", tone="success")
     field(
         "Control runtime",
         f"{runtime['status']} - {runtime.get('environment') or 'unavailable'}",
@@ -3022,7 +3028,7 @@ def show_installed_summary(
     field("Runtime", app_server["runtime"])
     field("Manual start", app_server["start"])
     field("Server ID", app_server.get("server_uuid") or f"not initialized - {app_server['server_id_path']}")
-    field("TSPi Link Relay", app_server.get("link_url", "not configured"))
+    field("ResearchAgent Link Relay", app_server.get("link_url", "not configured"))
     field("Workspace root", app_server["workspace_root"])
     _show_service(app_server.get("service"))
     note("One Host serves all workspaces below the workspace root. The terminal and TS Phone attach once and switch projects.")
@@ -3041,7 +3047,7 @@ def show_installed_summary(
         _show_credential("HTTP token", credentials["web_http"], reveal=True)
 
     note("TS Phone is a separate App Server client and is no longer installed as a local service.")
-    note("Phone pairing uses a short-lived TSPi Link code; it is distinct from the TS Web HTTP token.")
+    note("Phone pairing uses a short-lived ResearchAgent Link code; it is distinct from the TS Web HTTP token.")
     phone = components.get("phone")
     if isinstance(phone, dict):
         field("Phone connection manifest", phone.get("manifest", "not configured"))
@@ -3158,8 +3164,8 @@ def main(argv: list[str] | None = None) -> int:
         if interactive:
             if not sys.stdin.isatty() or not sys.stdout.isatty():
                 raise RuntimeError("interactive installation requires a TTY; use --non-interactive")
-            if os.environ.get("TSPI_INSTALL_BOOTSTRAPPED") != "1":
-                title("TSPi Installer", "Configure a reproducible TSPi installation.")
+            if os.environ.get("RESEARCH_AGENT_INSTALL_BOOTSTRAPPED") != "1":
+                title("ResearchAgent Installer", "Configure a reproducible ResearchAgent installation.")
         checks = collect_preflight()
         if interactive:
             show_preflight(checks, require_conda=False)
@@ -3177,7 +3183,7 @@ def main(argv: list[str] | None = None) -> int:
         except ImportError:
             from _bootstrap import activate_source_package
         activate_source_package(ROOT)
-        from tspi_foundation.installation_maintenance import InstallationMaintenance
+        from research_agent.foundation.installation_maintenance import InstallationMaintenance
         maintenance = InstallationMaintenance(installation_root).acquire()
         previous_release = snapshot_active_release(installation_root)
         previous_configuration = snapshot_install_configuration(installation_root, args)
@@ -3185,7 +3191,7 @@ def main(argv: list[str] | None = None) -> int:
         install_uninstaller(Path(args.install_root), ROOT)
         installed = run_install(args)
         maintenance.transition("preparing", release_id=installed.get("release_id"))
-        from tspi_bootstrap.session_guard import guard_installation_upgrade
+        from research_agent.bootstrap.session_guard import guard_installation_upgrade
         writer_guard.enter_context(guard_installation_upgrade(installation_root))
         collect_deferred_link_enrollment(args)
         with Spinner("Finalizing installation", stream=sys.stderr, enabled=not args.json) as activity:
@@ -3276,7 +3282,7 @@ def main(argv: list[str] | None = None) -> int:
         }
         append_install_log(
             Path(args.install_root),
-            "TSPi installer final summary",
+            "ResearchAgent installer final summary",
             f"completed_at_utc={datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')}",
             f"operation={installation['operation']}",
             f"install_root={args.install_root}",
@@ -3326,7 +3332,7 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 append_install_log(
                     installation_root,
-                    "TSPi installer failure",
+                    "ResearchAgent installer failure",
                     f"failed_at_utc={datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')}",
                     f"install_root={installation_root}",
                     f"error={error}",
@@ -3334,7 +3340,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
             except (OSError, RuntimeError, ValueError):
                 pass
-        failure(f"TSPi installation failed: {error}")
+        failure(f"ResearchAgent installation failed: {error}")
         return 1
     finally:
         writer_guard.close()

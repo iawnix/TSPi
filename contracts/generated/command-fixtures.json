@@ -1,0 +1,102 @@
+{
+  "schema_version": "research-agent-command-fixtures/1",
+  "cases": [
+    {
+      "command": "research.read",
+      "params": {}
+    },
+    {
+      "command": "research.search",
+      "params": {}
+    },
+    {
+      "command": "research.create",
+      "params": {
+        "goal": "Determine the reaction pathway"
+      }
+    },
+    {
+      "command": "research.update",
+      "params": {
+        "node_id": "node_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "note": "A new observation"
+      }
+    },
+    {
+      "command": "research.result",
+      "params": {
+        "node_id": "node_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "conclusion": "The calculation supports this candidate"
+      }
+    },
+    {
+      "command": "research.source",
+      "params": {
+        "session_id": "fixture-session",
+        "message_id": "fixture-message",
+        "text": "Investigate this question"
+      }
+    },
+    {
+      "command": "research.observe",
+      "params": {
+        "read_basis": "read_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "command": "job.start",
+      "params": {}
+    },
+    {
+      "command": "job.status",
+      "params": {}
+    },
+    {
+      "command": "job.collect",
+      "params": {}
+    },
+    {
+      "command": "job.cancel",
+      "params": {}
+    },
+    {
+      "command": "job.probe",
+      "params": {}
+    },
+    {
+      "command": "job.reconcile",
+      "params": {}
+    },
+    {
+      "command": "job.prepare",
+      "params": {
+        "request_file": "prepared.json"
+      }
+    },
+    {
+      "command": "job.resolve_prepared",
+      "params": {
+        "prepared_ref": "prepared_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "command": "job.monitor_assess",
+      "params": {
+        "event_id": "fixture-event",
+        "session_id": "fixture-session"
+      }
+    },
+    {
+      "command": "artifact.register",
+      "params": {}
+    },
+    {
+      "command": "artifact.create",
+      "params": {}
+    },
+    {
+      "command": "artifact.read",
+      "params": {}
+    }
+  ]
+}

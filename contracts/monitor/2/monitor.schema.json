@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-agent.iawnix.xyz/contracts/monitor/2/monitor.schema.json",
+  "title": "ResearchAgent Job Monitor Monitor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "monitor_id",
+    "workspace_id",
+    "job_id",
+    "job_digest",
+    "session_id",
+    "wake_policy",
+    "notify_policy",
+    "enabled",
+    "created_at",
+    "sequence",
+    "last_state",
+    "node_id",
+    "node_revision"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "research-agent-job-monitor/2"
+    },
+    "monitor_id": {
+      "type": "string",
+      "pattern": "^monitor_[a-f0-9]{24}$"
+    },
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "job_id": {
+      "type": "string",
+      "pattern": "^job_[A-Za-z0-9_.:-]+$"
+    },
+    "job_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "wake_policy": {
+      "enum": [
+        "none",
+        "next_run"
+      ]
+    },
+    "notify_policy": {
+      "const": "none"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "created_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "last_state": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "queue_wait_reported": {
+      "type": "boolean"
+    },
+    "node_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^node_[A-Za-z0-9_-]+$"
+    },
+    "node_revision": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "node_id": {
+          "type": "null"
+        },
+        "node_revision": {
+          "type": "null"
+        }
+      }
+    },
+    {
+      "properties": {
+        "node_id": {
+          "type": "string",
+          "pattern": "^node_[a-f0-9]{32}$"
+        },
+        "node_revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  ]
+}

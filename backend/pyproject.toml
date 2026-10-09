@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "research-agent"
+dynamic = ["version"]
+description = "ResearchAgent scientific application and execution runtime"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = ["jsonschema>=4.23,<5", "packaging>=24,<27"]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = false
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["research_agent", "research_agent.*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "research_agent._version.__version__"}
+
+[tool.setuptools.package-data]
+"research_agent.application" = ["command_catalog.json", "execution_schema.json"]
+"research_agent.foundation" = ["protocol.json"]

@@ -1,0 +1,17 @@
+{
+  "extensions/core/skills/research-memory": "skills/research-memory",
+  "extensions/core/skills/orchestration": "skills/research-workflow",
+  "extensions/email": "skills/email",
+  "extensions/chemical": "domains/chemical",
+  "packages/tspi-link": "packages/link",
+  "services/tspi-link-relay": "services/relay",
+  "ResearchAgent": "research-agent",
+  "apps/agent-cli/tspi_launcher.py": "apps/agent-cli/launcher.py",
+  "contracts/tspi-link/1": "contracts/link/1",
+  "contracts/tspi-monitor/2": "contracts/monitor/2",
+  "extensions/core/README.md": "skills/README.md",
+  "extensions/core/README.zh-CN.md": "skills/README.zh-CN.md",
+  "assets/fonts/tspi-model-icons.ttf": "assets/fonts/research-agent-model-icons.ttf",
+  "docs/TSPi_LINK.md": "docs/RESEARCH_AGENT_LINK.md",
+  "docs/TSPi_LINK.zh-CN.md": "docs/RESEARCH_AGENT_LINK.zh-CN.md"
+}

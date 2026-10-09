@@ -2,7 +2,7 @@
 
 [English](TERMINAL.md) | [简体中文](TERMINAL.zh-CN.md)
 
-`ResearchAgent --workspace <name>` is the public launcher for Pi's official remote
+`research-agent --workspace <name>` is the public launcher for Pi's official remote
 `ExperimentalClientTui`. It uses Pi's editor, transcript rendering, and input loop.
 This is a separate presentation from ordinary Pi `InteractiveMode`, with its own
 command and plugin capabilities. The selected workspace is
@@ -11,12 +11,11 @@ bound to one installation-level Pi Harness SQLite durable session.
 New workspaces may be explicitly bound to one immutable framework mode:
 
 ```bash
-./ResearchAgent --workspace quick-task --mode light
-./ResearchAgent --workspace reaction-a --mode research
+./research-agent --workspace quick-task --mode light
+./research-agent --workspace reaction-a --mode research
 ```
 
-`light` creates the minimal workspace profile. `research` creates the Research
-Research State state and performs Host admission before the terminal session starts.
+`light` creates the minimal workspace profile. `research` creates the Research Memory workspace and performs Host admission before the terminal session starts.
 For an existing framework workspace, omitting `--mode` uses the recorded mode;
 a workspace cannot be converted between modes.
 
@@ -25,7 +24,7 @@ a workspace cannot be converted between modes.
 There is one Agent Server owner and several clients:
 
 ```text
-TS Phone/Web -- Link/HTTP --+      TSPi Agent Server / Host API
+TS Phone/Web -- Link/HTTP --+      ResearchAgent Agent Server / Host API
 Pi native TUI -- Unix/SSH ---+-->   Root Agent Session
 Monitor -- Host RPC ---------+      Harness / Pi App Server / SessionWorker
 ```
@@ -38,17 +37,17 @@ The native Pi TUI, Phone, and Monitor all address that same lane; none starts
 another agent loop.
 
 The Host client's RPC transport can be a local Unix socket or an SSH-launched
-`tspi-host-proxy`, which forwards the same `tspi-host/2` NDJSON over SSH
+`research-agent-host-proxy`, which forwards the same `research-agent-host/2` NDJSON over SSH
 stdin/stdout to a private remote socket. SSH changes the connection path, not
 the owner of the workspace, session, or Agent lane.
 
 For a remote installation, provide the remote Host socket and the proxy path:
 
 ```bash
-./ResearchAgent --workspace reaction-a \
+./research-agent --workspace reaction-a \
   --remote-host pi.example \
-  --remote-host-socket /run/user/1000/tspi/host.sock \
-  --remote-proxy-path /opt/tspi/apps/app-server/tspi-host-proxy.mjs \
+  --remote-host-socket /run/user/1000/research-agent/host.sock \
+  --remote-proxy-path /opt/research-agent/apps/agent/transport/ssh.mjs \
   --ssh-config ~/.ssh/config
 ```
 
@@ -59,8 +58,8 @@ remain on the remote Host; the local directory is only a presentation cwd.
 ## Open a workspace
 
 ```bash
-./ResearchAgent --workspace reaction-a
-./ResearchAgent --workspace reaction-a -c
+./research-agent --workspace reaction-a
+./research-agent --workspace reaction-a -c
 ```
 
 The launcher first ensures the installation Host is ready, then requests a
@@ -74,8 +73,8 @@ The Host service is installation-wide and scans direct child workspaces. It is
 normally managed with:
 
 ```bash
-systemctl --user start ts-app-server-tspi.service
-systemctl --user status ts-app-server-tspi.service
+systemctl --user start ts-app-server-research-agent.service
+systemctl --user status ts-app-server-research-agent.service
 ```
 
 Use the same commands without `--user` for a system unit. The private Host
@@ -84,7 +83,7 @@ socket is under the configured runtime directory.
 ## Sessions and controls
 
 The remote `ExperimentalClientTui` provides `/resume`, `/model`, `/thinking`,
-`/compact`, `/reload`, and the Native TSPi commands. `/resume`
+`/compact`, `/reload`, and the Native ResearchAgent commands. `/resume`
 switches to another SQLite durable session in the current workspace; it does not
 cross workspace boundaries. Switching disposes the old terminal connection before
 attaching the selected session; background tasks continue. Other standalone Pi
@@ -98,10 +97,10 @@ status line and leave the editor usable; no panel needs to be dismissed.
 that it was skipped, cancelled, or failed. The transcript shows a compacted
 context marker; it does not print the internal summary as an ordinary reply.
 
-TSPi command names, arguments, and completions share one catalogue:
+ResearchAgent command names, arguments, and completions share one catalogue:
 
-- `/research [summary|context|liveness|map|decisions|storage|detail <kind> <id>|locate <query>|validate|operations]`: read-only queries in the attached worker, including a remote workspace over SSH. Long results use the native Pi selector for paging.
-- `/sys-prompt`: inspect the current worker's TSPi system prompt manifest and sources without a model request.
+- `/research`: read-only queries in the attached worker, for Memory context and records, including a remote workspace over SSH. Use the command help for supported selectors. Long results use the native Pi selector for paging.
+- `/sys-prompt`: inspect the current worker's ResearchAgent system prompt manifest and sources without a model request.
 - `/resume [session-id]`: select or specify a session in the current workspace. Cancelling keeps the current session.
 - `/quit`: disconnect this terminal while leaving the worker and its tasks running.
 
@@ -127,13 +126,13 @@ retrying the same business ID does not create another input.
 
 ## Phone and browser
 
-Phone clients must implement the versioned `tspi-host/2` NDJSON methods through TSPi Link. The
+Phone clients must implement the versioned `research-agent-host/2` NDJSON methods through ResearchAgent Link. The
 Relay transports opaque frames and does not own sessions or research state.
 Phone and the terminal receive the same Pi snapshot and events. The optional
 browser gateway attaches to one existing session over loopback HTTP/SSE; it
 does not start Pi or a worker.
 
-Host accepts only `initialize` with `protocol: "tspi-host/2"`. Version 1 clients
+Host accepts only `initialize` with `protocol: "research-agent-host/2"`. Version 1 clients
 must be updated. Capability names are the callable slash-separated methods.
 Session reads and attachments accept only `after_cursor: {epoch, sequence}`;
 a different Host epoch returns a current snapshot without replaying old events.
@@ -147,7 +146,7 @@ ticks durable Compute status and writes event and delivery receipts inside each
 workspace. Wake and user-notification channels are acknowledged independently,
 with leases and backoff. A wake is an accepted input, not proof that an agent
 turn finished; the Root Agent must reread state and inspect the calculation.
-Monitor never finalizes a calculation or edits `ResearchMap`.
+Monitor delivers authenticated execution events through next_run; it does not publish scientific conclusions or edit Node content.
 
 `workspace_manifest.json` binds the canonical `workspace_id` to both scientific
 state and Host routing. There is no separate scientific identity or direct-child

@@ -7,7 +7,7 @@ import sys
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS = ROOT/'extensions/chemical/skills/gaussian/scripts'
+SCRIPTS = ROOT/'domains/chemical/skills/gaussian/scripts'
 sys.path[:0] = [str(SCRIPTS), str(SCRIPTS.parents[1]/'_shared')]
 spec = importlib.util.spec_from_file_location('gaussian_input_job', SCRIPTS/'input_job.py')
 helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
@@ -71,7 +71,7 @@ def test_xyz_shortcut_rejects_ignored_scientific_validation(tmp_path):
 
 
 def test_prepared_gaussian_request_tracks_checkpoint_and_collection(tmp_path, mock_environment_probe):
-    from tspi_runtime.executors import prepare
+    from research_agent.application.executors import prepare
     config = tmp_path/'job.toml'
     config.write_text('''default_environment = "local"
 [environments.local]

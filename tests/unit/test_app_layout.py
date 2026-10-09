@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 import pytest
-from tspi_foundation.layout import paths, inspect_installation
+from research_agent.foundation.layout import paths, inspect_installation
 
 
 def test_layout_initialization_and_configuration_are_shared(tmp_path):
@@ -44,6 +44,19 @@ def test_doctor_requires_matching_release_receipt(tmp_path):
 
 @pytest.mark.parametrize('store', ['/', 'relative'])
 def test_environment_store_cannot_be_a_broad_or_relative_path(tmp_path, monkeypatch, store):
-    monkeypatch.setenv('TSPI_HOST_ENV_ROOT', store)
+    monkeypatch.setenv('RESEARCH_AGENT_HOST_ENV_ROOT', store)
     with pytest.raises(ValueError, match='Host environment store'):
         paths(tmp_path/'install').initialize()
+
+
+def test_layout_secures_state_parents_created_before_host_installation(tmp_path):
+    root = tmp_path / 'install'
+    relay_state = root / 'var/state/link-relay'
+    relay_state.mkdir(parents=True)
+    (root / 'var/state').chmod(0o755)
+    database = relay_state / 'relay.db'
+    database.write_bytes(b'relay state')
+    paths(root).initialize()
+    for relative in ('var', 'var/state', 'var/state/installation', 'var/state/host'):
+        assert (root / relative).stat().st_mode & 0o077 == 0
+    assert database.read_bytes() == b'relay state'

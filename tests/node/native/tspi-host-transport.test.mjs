@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { buildSshProxyArgs, createRpcPeer, createSshUnixProxy, connectHost, connectHostSsh, connectHostStream, HOST_PROTOCOL } from "../../../apps/app-server/tspi-host-client.mjs";
+import { buildSshProxyArgs, createRpcPeer, createSshUnixProxy, connectHost, connectHostSsh, connectHostStream, HOST_PROTOCOL } from "../../../apps/agent/transport/host-client.mjs";
 
 test("Host stream transport preserves the protocol and initializes once", async () => {
   const clientToServer = new PassThrough();
@@ -29,11 +29,11 @@ test("Host stream transport preserves the protocol and initializes once", async 
 
 test("SSH transport validates paths before spawning a process", async () => {
   await assert.rejects(
-    connectHostSsh({ sshHost: "test", remoteSocketPath: "relative.sock", remoteProxyPath: "/opt/tspi/proxy" }),
+    connectHostSsh({ sshHost: "test", remoteSocketPath: "relative.sock", remoteProxyPath: "/opt/research-agent/proxy" }),
     (error) => error instanceof TypeError && /remoteSocketPath/.test(error.message),
   );
   await assert.rejects(
-    connectHostSsh({ sshHost: "", remoteSocketPath: "/run/tspi.sock", remoteProxyPath: "/opt/tspi/proxy" }),
+    connectHostSsh({ sshHost: "", remoteSocketPath: "/run/research-agent.sock", remoteProxyPath: "/opt/research-agent/proxy" }),
     (error) => error instanceof TypeError && /sshHost/.test(error.message),
   );
 });
@@ -42,24 +42,24 @@ test("SSH proxy arguments quote remote paths and retain option ordering", () => 
   assert.deepEqual(
     buildSshProxyArgs({
       sshHost: "pi.example",
-      remoteSocketPath: "/run/tspi/host socket.sock",
-      remoteProxyPath: "/opt/tspi/tspi-host-proxy.mjs",
+      remoteSocketPath: "/run/research-agent/host socket.sock",
+      remoteProxyPath: "/opt/research-agent/research-agent-host-proxy.mjs",
       sshConfig: "/home/user/.ssh/config",
       sshOptions: ["-i", "/home/user/.ssh/id_ed25519"],
     }),
     [
       "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "-F", "/home/user/.ssh/config",
-      "-i", "/home/user/.ssh/id_ed25519", "pi.example", "node", "'/opt/tspi/tspi-host-proxy.mjs'", "--socket", "'/run/tspi/host socket.sock'",
+      "-i", "/home/user/.ssh/id_ed25519", "pi.example", "node", "'/opt/research-agent/research-agent-host-proxy.mjs'", "--socket", "'/run/research-agent/host socket.sock'",
     ],
   );
 });
 
 test("Host stdio proxy forwards bytes to a private Unix socket", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "tspi-host-proxy-"));
+  const root = await mkdtemp(join(tmpdir(), "t-"));
   const socketPath = join(root, "host.sock");
   const server = createServer((socket) => socket.on("data", (chunk) => socket.write(chunk)));
   await new Promise((resolve) => server.listen(socketPath, resolve));
-  const child = spawn(process.execPath, ["apps/app-server/tspi-host-proxy.mjs", "--socket", socketPath], {
+  const child = spawn(process.execPath, ["apps/agent/transport/ssh.mjs", "--socket", socketPath], {
     cwd: new URL("../../../", import.meta.url),
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -88,8 +88,8 @@ test("terminal SSH proxies carry Host and Pi traffic and await child cleanup", {
     const fakeSsh = join(root, "ssh");
     const pids = join(root, "pids");
     await writeFile(fakeSsh, `#!${process.execPath}
-const { createConnection } = require("node:net");
-const { appendFileSync } = require("node:fs");
+import { createConnection } from "node:net";
+import { appendFileSync } from "node:fs";
 appendFileSync(${JSON.stringify(pids)}, process.pid + "\\n");
 process.on("SIGTERM", () => {});
 const socket = createConnection(process.argv.at(-1).slice(1, -1));

@@ -9,7 +9,7 @@ test("retired compute bootstrap and implementation have no compatibility modules
 });
 
 test("canonical command adapters reject obsolete fields instead of dropping them", async () => {
-  const { commandArguments, createCommandService } = await import("../../packages/agent-runtime/host-api/commands.mjs");
+  const { commandArguments, createCommandService } = await import("../../apps/agent/tools/commands.mjs");
   let called = false;
   const service = createCommandService({ execute() { called = true; } });
   for (const params of [{ jobId: "job_1" }, { intent_id: "calc_1" }, { job_id: "job_1", unknown: null }]) {
@@ -17,8 +17,8 @@ test("canonical command adapters reject obsolete fields instead of dropping them
     assert.throws(() => commandArguments("job.collect", params), /schema_field_invalid/);
   }
   for (const params of [{ node_ref: "node_1" }, { storage_operation: "status" }]) {
-    assert.throws(() => service.execute("research.evidence", "/unused", params), /schema_field_invalid/);
+    assert.throws(() => service.execute("research.read", "/unused", params), /schema_field_invalid/);
   }
   assert.equal(called, false);
-  assert.deepEqual(commandArguments("job.collect", { attempt_id: "attempt_1" }), ["--attempt-id", "attempt_1"]);
+  assert.deepEqual(commandArguments("job.collect", { job_id: "job_1" }), ["--job-id", "job_1"]);
 });

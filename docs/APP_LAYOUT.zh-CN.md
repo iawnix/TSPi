@@ -4,7 +4,7 @@
 
 ```text
 <install>/
-  ResearchAgent             # 唯一公开客户端入口，经 current 选择版本
+  research-agent             # 唯一公开客户端入口，经 current 选择版本
   uninstall.sh              # 独立卸载入口
   current -> releases/<id>  # 唯一活动版本指针
   releases/<id>/            # 不可变代码、Skill 文本、脚本和模板
@@ -24,17 +24,17 @@
   workspaces/               # 默认研究数据根，可显式配置其它位置
 ```
 
-`bin/` 和公开的 `ResearchAgentServer` 不再创建。systemd 调用
+`bin/` 和公开的 `research-agentServer` 不再创建。systemd 调用
 `current/agent/libexec/research-agent-host`，并明确传入安装根目录。日常使用
-`./ResearchAgent --workspace <name>`，服务管理使用 `systemctl --user … ts-app-server-tspi.service`。
+`./research-agent --workspace <name>`，服务管理使用 `systemctl --user … ts-app-server-research-agent.service`。
 
 Host Conda 基础环境及应用 overlay 存放在
-`~/soft/tspi/host-envs/<installation-id>/{base,kernels}/<hash>`；安装器可通过
-`TSPI_HOST_ENV_ROOT` 指定其它专属路径，该路径会持久记录，运行时不依赖此临时变量。
+`~/soft/research-agent/host-envs/<installation-id>/{base,kernels}/<hash>`；安装器可通过
+`RESEARCH_AGENT_HOST_ENV_ROOT` 指定其它专属路径，该路径会持久记录，运行时不依赖此临时变量。
 科学 Job 环境通过 `etc/job.toml` 单独指定；本地与远端解释器分别验证。
 
 Socket 和进程互斥锁位于安装身份隔离的系统 runtime 目录；持久回执不随它清理。
-所有者定义以 `tspi_foundation.layout` 为准，安装器、bootstrap 和诊断工具复用同一实现。
+所有者定义以 `research_agent.foundation.layout` 为准，安装器、bootstrap 和诊断工具复用同一实现。
 Node 服务由 bootstrap 接收解析后的路径，Skill 从显式配置/环境绑定读取依赖。
 工作区内部的 Pi 设置与安装级目录是不同的边界，不按目录名称批量删除。
 

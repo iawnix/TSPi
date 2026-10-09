@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the standalone TSPi Link Relay service."""
+"""Install the standalone ResearchAgent Link Relay service."""
 
 from __future__ import annotations
 
@@ -16,9 +16,9 @@ import urllib.parse
 from pathlib import Path
 
 
-SERVICE_NAME = "tspi-link-relay.service"
-DEFAULT_INSTALL_ROOT = Path("/opt/tspi-link-relay")
-DEFAULT_STATE_ROOT = Path("/var/lib/tspi-link-relay")
+SERVICE_NAME = "research-agent-relay.service"
+DEFAULT_INSTALL_ROOT = Path("/opt/research-agent-relay")
+DEFAULT_STATE_ROOT = Path("/var/lib/research-agent-relay")
 SERVICE_USER = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 
 
@@ -30,7 +30,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--listen", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8788)
     parser.add_argument("--service-scope", choices=("system", "user", "none"), default="system")
-    parser.add_argument("--service-user", default="tspi-link-relay")
+    parser.add_argument("--service-user", default="research-agent-relay")
     parser.add_argument("--enable-services", action="store_true")
     parser.add_argument("--start-services", action="store_true")
     parser.add_argument("--source-root", default=str(Path(__file__).resolve().parents[1]))
@@ -66,9 +66,9 @@ def validate_options(args: argparse.Namespace) -> None:
         # /opt and /var/lib are appropriate for a system service, but should
         # not make a development or user-scoped install fail for permissions.
         if args.install_root == str(DEFAULT_INSTALL_ROOT):
-            args.install_root = str(Path.home() / ".local/share/tspi-link-relay")
+            args.install_root = str(Path.home() / ".local/share/research-agent-relay")
         if args.state_dir == str(DEFAULT_STATE_ROOT):
-            args.state_dir = str(Path.home() / ".local/state/tspi-link-relay")
+            args.state_dir = str(Path.home() / ".local/state/research-agent-relay")
     args.install_root = str(Path(args.install_root).expanduser().resolve())
     args.state_dir = str(Path(args.state_dir).expanduser().resolve())
     args.source_root = str(Path(args.source_root).expanduser().resolve())
@@ -89,8 +89,8 @@ def validate_options(args: argparse.Namespace) -> None:
         args.enable_services = True
     if args.service_scope == "system" and os.geteuid() != 0:
         raise ValueError("system Relay service installation requires root; choose --service-scope user")
-    if not (Path(args.source_root) / "services/tspi-link-relay/package.json").is_file():
-        raise ValueError("source root does not contain services/tspi-link-relay")
+    if not (Path(args.source_root) / "services/relay/package.json").is_file():
+        raise ValueError("source root does not contain services/relay")
     source_root = Path(args.source_root)
     install_root = Path(args.install_root)
     state_root = Path(args.state_dir)
@@ -104,7 +104,7 @@ def validate_options(args: argparse.Namespace) -> None:
         raise ValueError("service installation requires systemctl; choose --service-scope none")
     for command in ("node", "npm", "git"):
         if shutil.which(command) is None:
-            raise ValueError(f"{command} is required to install TSPi Link Relay")
+            raise ValueError(f"{command} is required to install ResearchAgent Link Relay")
 
 
 def ensure_service_user(name: str) -> pwd.struct_passwd:
@@ -132,7 +132,7 @@ def ensure_directory(path: Path, mode: int = 0o700) -> None:
 
 
 def install_release(args: argparse.Namespace) -> tuple[Path, str]:
-    source = Path(args.source_root) / "services/tspi-link-relay"
+    source = Path(args.source_root) / "services/relay"
     install_root = Path(args.install_root)
     ensure_directory(install_root, 0o755)
     releases = install_root / "releases"
@@ -142,23 +142,15 @@ def install_release(args: argparse.Namespace) -> tuple[Path, str]:
     if not release.exists():
         staging = Path(tempfile.mkdtemp(prefix=".install-", dir=releases))
         try:
-            shutil.copytree(source, staging / "service")
-            # The relay service imports the shared protocol and backpressure
-            # modules from ``releases/packages`` (two levels above
-            # ``releases/<commit>/service``). Keep that shared package in the
-            # installation release collection so a standalone Relay does not
-            # depend on the source checkout.
-            shared_link = Path(args.source_root) / "packages" / "tspi-link"
+            shutil.copytree(source, staging / "services/relay")
+            # Preserve repository-relative imports inside this immutable release.
+            shared_link = Path(args.source_root) / "packages/link"
             if not shared_link.is_dir():
-                raise ValueError("source root does not contain packages/tspi-link")
-            shared_release = releases / "packages" / "tspi-link"
-            if shared_release.exists():
-                shutil.rmtree(shared_release)
-            shared_release.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(shared_link, shared_release)
+                raise ValueError("source root does not contain packages/link")
+            shutil.copytree(shared_link, staging / "packages/link")
             dependencies = subprocess.run(
                 ["npm", "ci", "--omit=dev", "--ignore-scripts"],
-                cwd=staging / "service",
+                cwd=staging / "services/relay",
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -176,7 +168,7 @@ def install_release(args: argparse.Namespace) -> tuple[Path, str]:
     temporary.unlink(missing_ok=True)
     temporary.symlink_to(Path("releases") / commit)
     os.replace(temporary, current)
-    return current / "service", commit
+    return current / "services/relay", commit
 
 
 def git_revision(source_root: Path, *, allow_dirty: bool) -> str:
@@ -260,7 +252,7 @@ def systemd_unit(
         )
     )
     return f"""[Unit]
-Description=TSPi Link Relay
+Description=ResearchAgent Link Relay
 After=network-online.target
 
 [Service]
@@ -337,7 +329,7 @@ def ask(prompt: str, default: str = "") -> str:
 def interactive_options(args: argparse.Namespace) -> None:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise RuntimeError("interactive Link Relay installation requires a TTY")
-    args.public_url = ask("TSPi Link Relay public URL", args.public_url or "")
+    args.public_url = ask("ResearchAgent Link Relay public URL", args.public_url or "")
     args.listen = ask("Listen address", args.listen)
     args.port = int(ask("Listen port", str(args.port)))
     args.install_root = ask("Installation directory", args.install_root)
@@ -354,7 +346,7 @@ def main(argv: list[str] | None = None) -> int:
         validate_options(args)
         account = ensure_service_user(args.service_user) if args.service_scope == "system" else None
         if account is not None and account.pw_uid == 0:
-            raise ValueError("TSPi Link Relay must not run as root")
+            raise ValueError("ResearchAgent Link Relay must not run as root")
         service_root, commit = install_release(args)
         state = prepare_state(args, account)
         enrollment = create_enrollment(service_root, state, account)
@@ -371,7 +363,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, indent=2, sort_keys=True) if args.json else format_result(result))
         return 0
     except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
-        print(f"TSPi Link Relay installation failed: {exc}", file=sys.stderr)
+        print(f"ResearchAgent Link Relay installation failed: {exc}", file=sys.stderr)
         return 1
 
 
@@ -379,10 +371,10 @@ def format_result(result: dict[str, object]) -> str:
     enrollment = result["enrollment"]
     code = enrollment.get("code") if isinstance(enrollment, dict) else None
     return (
-        "TSPi Link Relay installed.\n"
+        "ResearchAgent Link Relay installed.\n"
         f"Public URL: {result['public_url']}\n"
         f"Host enrollment code: {code}\n"
-        "Use this code once in the local TSPi installer."
+        "Use this code once in the local ResearchAgent installer."
     )
 
 

@@ -6,7 +6,7 @@ import { Harness, MemoryStorage, createRegistry, LiveDoc, InboxDoc } from "@eare
 import { createModels, fauxProvider, fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { TODO_CONTEXT as context } from "@earendil-works/chord/context";
 import { pinnedPiSource } from "./test-environment.mjs";
-import { createInputAdmission, bindUserInputConversation } from "../../../apps/app-server/input-admission.mjs";
+import { createInputAdmission, bindUserInputConversation } from "../../../apps/agent/host/admission/input.mjs";
 
 const { admitSubmission } = await import(pathToFileURL(join(pinnedPiSource(), "packages/durable/src/harness/submissions.ts")).href);
 const { createAgentController } = await import(pathToFileURL(join(pinnedPiSource(), "packages/coding-agent/src/experimental/services/agent-controller-provider.ts")).href);

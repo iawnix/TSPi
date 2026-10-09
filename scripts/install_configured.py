@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install TSPi with one installation-owned configuration directory.
+"""Install ResearchAgent with one installation-owned configuration directory.
 
 This is a thin, non-interactive front end over ``install_wizard.py``.  It is
 intended for repeatable workstation installs: job.toml, Pi model files,
@@ -29,8 +29,8 @@ except ImportError:
     from link_relay_discovery import discover_link_relay
 
 
-DEFAULT_INSTALL_ROOT = Path("/home/iaw/ResearchAgent")
-DEFAULT_CONFIG_ROOT = Path("/home/iaw/DATA/tspi_install_config")
+DEFAULT_INSTALL_ROOT = Path("/home/iaw/research-agent")
+DEFAULT_CONFIG_ROOT = Path("/home/iaw/DATA/research_agent_install_config")
 DEFAULT_RELAY_URL = "https://tsphone.iawnix.xyz"
 RELAY_MARKER_NAME = "link-relay.json"
 
@@ -41,8 +41,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--workspace-root")
     parser.add_argument("--config-dir", default=str(DEFAULT_CONFIG_ROOT))
     parser.add_argument("--source-root", default=str(Path(__file__).resolve().parents[1]))
-    parser.add_argument("--tspi-repo", default="git@github.com:iawnix/TSPi.git")
-    parser.add_argument("--tspi-ref", default=os.environ.get("TSPI_INSTALL_REF", "main"))
+    parser.add_argument("--research-agent-repo", default="git@github.com:iawnix/TSPi.git")
+    parser.add_argument("--research-agent-ref", default=os.environ.get("RESEARCH_AGENT_INSTALL_REF", "main"))
     parser.add_argument("--with-web", action="store_true", default=True)
     parser.add_argument("--without-web", action="store_false", dest="with_web")
     parser.add_argument("--web-host", default="127.0.0.1")
@@ -55,8 +55,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ssh-option", action="append", default=[])
     parser.add_argument("--link-relay-root")
     parser.add_argument("--relay-state-dir")
-    parser.add_argument("--link-url", default=os.environ.get("TSPI_LINK_URL", DEFAULT_RELAY_URL))
-    parser.add_argument("--link-enrollment-url", default=os.environ.get("TSPI_LINK_ENROLLMENT_URL"))
+    parser.add_argument("--link-url", default=os.environ.get("RESEARCH_AGENT_LINK_URL", DEFAULT_RELAY_URL))
+    parser.add_argument("--link-enrollment-url", default=os.environ.get("RESEARCH_AGENT_LINK_ENROLLMENT_URL"))
     parser.add_argument("--link-enrollment-code")
     parser.add_argument("--phone-access", choices=("auto", "disabled", "link"), default="auto")
     relay = parser.add_mutually_exclusive_group()
@@ -66,7 +66,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--relay-listen", default="127.0.0.1")
     parser.add_argument("--relay-port", type=int, default=8788)
     parser.add_argument("--relay-service-scope", choices=("none", "user", "system"), default="user")
-    parser.add_argument("--relay-service-user", default="tspi-link-relay")
+    parser.add_argument("--relay-service-user", default="research-agent-relay")
     parser.add_argument("--relay-enable-services", action="store_true", default=True)
     parser.add_argument("--relay-no-enable-services", action="store_false", dest="relay_enable_services")
     parser.add_argument("--relay-start-services", action="store_true", default=True)
@@ -159,6 +159,21 @@ def _relay_install(args: argparse.Namespace, install_root: Path) -> tuple[dict[s
         state_db = Path(discovered.get("state", str(state_root / "relay.db")))
         if state_db.name != "relay.db":
             state_db = state_db / "relay.db"
+        try:
+            from .install_wizard import _existing_link_configuration
+        except ImportError:
+            from install_wizard import _existing_link_configuration
+        existing = _existing_link_configuration(install_root)
+        token = install_root / "var/state/host/host.token"
+        identity = install_root / "var/state/host/server-id"
+        if (not args.link_enrollment_code and existing is not None
+                and existing[0] == discovered["relay_url"]
+                and token.is_file() and not token.is_symlink()
+                and identity.is_file() and identity.read_text().strip() == existing[1]):
+            return {
+                "ok": True, "service_root": str(service_root), "state_dir": str(state_db.parent),
+                "public_url": discovered["relay_url"], "reused": True, "host_enrollment_preserved": True,
+            }, False
         completed = subprocess.run(
             ["node", str(service_root / "cli.mjs"), "enrollment", "create", "--state", str(state_db)],
             text=True,
@@ -208,7 +223,7 @@ def _relay_install(args: argparse.Namespace, install_root: Path) -> tuple[dict[s
     if not isinstance(result, dict) or not isinstance(result.get("enrollment"), dict):
         raise RuntimeError("Link Relay installer did not return enrollment metadata")
     _write_json_private(install_root / "etc" / RELAY_MARKER_NAME, {
-        "schema": "tspi-install-link-relay/1",
+        "schema": "research-agent-install-link-relay/1",
         "install_root": str(install_root),
         "relay_install_root": str(relay_root),
         "state_dir": str(state_root),
@@ -266,10 +281,10 @@ def build_command(args: argparse.Namespace, config: Path, install_root: Path) ->
         str(Path(__file__).with_name("install_wizard.py")),
         "--source-root",
         args.source_root,
-        "--tspi-repo",
-        args.tspi_repo,
-        "--tspi-ref",
-        args.tspi_ref,
+        "--research-agent-repo",
+        args.research_agent_repo,
+        "--research-agent-ref",
+        args.research_agent_ref,
         "--install-root",
         str(install_root),
         "--workspace-root",
@@ -352,11 +367,12 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("--with-link-relay requires --phone-access link or auto")
             relay_result, relay_owned = _relay_install(args, install_root)
             enrollment = relay_result.get("enrollment")
-            if not isinstance(enrollment, dict) or not isinstance(enrollment.get("code"), str):
-                raise RuntimeError("Link Relay did not return a Host enrollment code")
-            args.link_enrollment_code = enrollment["code"]
+            if not relay_result.get("host_enrollment_preserved"):
+                if not isinstance(enrollment, dict) or not isinstance(enrollment.get("code"), str):
+                    raise RuntimeError("Link Relay did not return a Host enrollment code")
+                args.link_enrollment_code = enrollment["code"]
             args.link_url = str(relay_result.get("public_url") or args.link_url)
-            args.link_relay_root = str(relay_result.get("service_root", "")).removesuffix("/current/service")
+            args.link_relay_root = str(relay_result.get("service_root", "")).removesuffix("/current/services/relay")
             if not args.link_enrollment_url and args.relay_listen in {"127.0.0.1", "::1", "localhost"}:
                 host = f"[{args.relay_listen}]" if ":" in args.relay_listen else args.relay_listen
                 args.link_enrollment_url = f"http://{host}:{args.relay_port}"
@@ -370,7 +386,7 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError) as exc:
         if relay_owned and relay_result is not None:
             _rollback_relay(args, relay_result)
-        print(f"configured TSPi installation failed: {exc}", file=sys.stderr)
+        print(f"configured ResearchAgent installation failed: {exc}", file=sys.stderr)
         return 1
 
 

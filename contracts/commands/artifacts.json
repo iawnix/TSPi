@@ -1,0 +1,116 @@
+{
+  "schema_version": "research-agent-command-source/1",
+  "commands": [
+    {
+      "id": "artifact.register",
+      "domain": "runtime",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "media_type": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "examples": [
+        {}
+      ],
+      "result": {
+        "$ref": "results.json#/commands/artifact.register"
+      }
+    },
+    {
+      "id": "artifact.create",
+      "domain": "runtime",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 255
+                }
+              }
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "media_type": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "examples": [
+        {}
+      ],
+      "result": {
+        "$ref": "results.json#/commands/artifact.create"
+      }
+    },
+    {
+      "id": "artifact.read",
+      "domain": "runtime",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "artifact_ref": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "examples": [
+        {}
+      ],
+      "result": {
+        "$ref": "results.json#/commands/artifact.read"
+      }
+    }
+  ]
+}

@@ -1,1 +1,1 @@
-"""Test support package for the TSPi repository."""
+"""Test support package for the ResearchAgent repository."""

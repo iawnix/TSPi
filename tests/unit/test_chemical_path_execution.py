@@ -13,7 +13,7 @@ import pytest
 from rdkit import Chem
 
 ROOT=Path(__file__).resolve().parents[2]
-SKILLS=ROOT/'extensions/chemical/skills'
+SKILLS=ROOT/'domains/chemical/skills'
 sys.path[:0]=[str(SKILLS/'_shared'),str(SKILLS/'gaussian/scripts')]
 from reaction_checks import reaction, path_spec, ordered_molecule
 from path_validation import validate, topology
@@ -93,7 +93,7 @@ def synthetic_logs(row):
     r=np.array([a[1:] for a in reactants]);p=np.array([a[1:] for a in product]);middle=(r+p)/2
     saddle=[(a[0],*v) for a,v in zip(reactants,middle)]
     vector=p-r;vector/=np.linalg.norm(vector)
-    title=' SYNTHETIC FIXTURE: exercises parser and runtime, not physical chemistry\n %nprocshared=12\n %mem=4000MB\n TSPiSpec '+hashlib.sha256(Path(row['files']['spec.json']['path']).read_bytes()).hexdigest()+'\n'
+    title=' SYNTHETIC FIXTURE: exercises parser and runtime, not physical chemistry\n %nprocshared=12\n %mem=4000MB\n ResearchAgentSpec '+hashlib.sha256(Path(row['files']['spec.json']['path']).read_bytes()).hexdigest()+'\n'
     route=Path(row['files']['ts.gjf']['path']).read_text().splitlines()[3]
     log=title+route+'\n ----------------\n Charge = 0 Multiplicity = 1\n'+orientation(saddle)+'\n SCF Done: E(RM062X) = -270.0 A.U.\n'
     log+=' Maximum Force 0.00001 0.00045 YES\n RMS     Force 0.00001 0.00030 YES\n Maximum Displacement 0.00001 0.0018 YES\n RMS     Displacement 0.00001 0.0012 YES\n Stationary point found.\n Harmonic frequencies\n'
@@ -131,7 +131,7 @@ def test_scientific_checks_reject_method_mode_missing_origin_and_wrong_endpoint(
     assert direct_validate(tmp_path,row,'saddle',[logs['ts'].replace('M062X/6-31G**','HF/6-31G**')])['verdict']=='fail'
     assert direct_validate(tmp_path,row,'saddle',[logs['ts'].replace('%nprocshared=12','%nprocshared=1')])['verdict']=='fail'
     assert direct_validate(tmp_path,row,'saddle',[logs['ts'].replace('%mem=4000MB','%mem=1000MB')])['verdict']=='fail'
-    assert direct_validate(tmp_path,row,'saddle',[logs['ts'].replace('TSPiSpec ', 'UnknownSpec ')])['verdict']!='pass'
+    assert direct_validate(tmp_path,row,'saddle',[logs['ts'].replace('ResearchAgentSpec ', 'UnknownSpec ')])['verdict']!='pass'
     wrong_mode=logs['ts'].replace('Frequencies -- -200.0','Frequencies -- 200.0')
     assert direct_validate(tmp_path,row,'saddle',[wrong_mode])['verdict']=='fail'
     spectator=logs['ts']
@@ -168,8 +168,8 @@ def test_scientific_checks_reject_method_mode_missing_origin_and_wrong_endpoint(
 
 
 def run_job(root, params):
-    from tspi_runtime.execution import dispatch
-    job=dispatch('start',{'root':str(root),'node_id':'node_1','timeout_seconds':20,**params})
+    from research_agent.application.execution import dispatch
+    job=dispatch('start',{'root':str(root),'timeout_seconds':20,**params})
     deadline=time.monotonic()+20
     while time.monotonic()<deadline:
         status=dispatch('status',{'root':str(root),'job_id':job['job_id']})
@@ -192,26 +192,27 @@ def selected(result, suffix):
 ])
 def test_registered_validator_rejects_resource_target_collisions(tmp_path, monkeypatch, destinations):
     from tests.unit.test_job_recovery import workspace
-    from tspi_runtime.validators import prepare
+    from research_agent.application.validators import prepare
     workspace(tmp_path)
-    package=tmp_path/'package';extension=package/'extensions'/'fixture';extension.mkdir(parents=True)
-    script=extension/'validator.py';script.write_text('print("fixture")\n')
+    package=tmp_path/'package';domain=package/'domains'/'fixture';domain.mkdir(parents=True)
+    script=domain/'validator.py';script.write_text('print("fixture")\n')
     digest='sha256:'+hashlib.sha256(script.read_bytes()).hexdigest()
     descriptor={'id':'fixture.validator','version':'1','entry':'validator.py','sha256':digest,'backend':'validation',
                 'resources':{name:{'path':'validator.py','sha256':digest} for name in destinations}}
-    (extension/'manifest.json').write_text(json.dumps({'schema_version':'tspi-extension/1','name':'fixture','version':'1.0.0','skills':[],'validators':[descriptor]}))
-    monkeypatch.setenv('TSPI_EXTENSION_MANIFESTS',str(extension/'manifest.json'))
-    with pytest.raises(ValueError,match='resource destination'):
+    (domain/'execution.json').write_text(json.dumps({'schema_version':'research-agent-execution/1','name':'fixture','version':'1.0.0','executors':[],'validators':[descriptor],'acceptance_profiles':[]}))
+    (package/'package.json').write_text(json.dumps({'researchAgent':{'execution':['domains/fixture/execution.json']}}))
+    monkeypatch.setenv('RESEARCH_AGENT_PACKAGE_ROOT',str(package))
+    with pytest.raises(ValueError,match='execution_(resource_path_invalid|destinations_overlap_or_reserved)'):
         prepare(tmp_path,{'validator_id':'fixture.validator', "validator_version": "1",'input_artifact_ids':['art_unused']})
 
 
 def test_generic_jobs_execute_candidate_gaussian_and_registered_validators(tmp_path):
     from tests.unit.test_job_recovery import workspace
-    from tspi_runtime.evidence import dispatch as artifact
-    from tspi_runtime.validators import prepare
+    from research_agent.application.evidence import dispatch as artifact
+    from research_agent.application.validators import prepare
     workspace(tmp_path)
     _,row=candidate(tmp_path);spec,logs=synthetic_logs(row)
-    spec_record=artifact('register',{'root':str(tmp_path),'node_id':'node_1','path':row['files']['spec.json']['path']})
+    spec_record=artifact('register',{'root':str(tmp_path),'path':row['files']['spec.json']['path']})
     ref=spec_record['artifact_id']
     mapping=run_job(tmp_path,{'job_id':'job_mapping','validator_id':'chemical.reaction_mapping', "validator_version": "1",'input_artifact_ids':[ref]})
     assert mapping['result_receipt']['validator_result']['verdict']=='pass'
@@ -243,7 +244,7 @@ def test_generic_jobs_execute_candidate_gaussian_and_registered_validators(tmp_p
     proof=joined['result_receipt']['validator_result']
     assert proof['verdict']=='pass',proof
     assert proof['bindings']['method']=='M062X'
-    assert set(proof['input_result_versions'])=={ts['result_receipt']['attempt_id'],forwards['result_receipt']['attempt_id'],reverse['result_receipt']['attempt_id']}
+    assert set(proof['input_result_versions'])=={ts['result_receipt']['job_id'],forwards['result_receipt']['job_id'],reverse['result_receipt']['job_id']}
     # Registered source bytes cannot be modified behind the bound Artifact manifest.
     Path(spec_record['location']).write_text('{}')
     with pytest.raises(ValueError,match='digest_mismatch'):

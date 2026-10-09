@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remove a standalone TSPi Link Relay installation and its service."""
+"""Remove a standalone ResearchAgent Link Relay installation and its service."""
 
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ import sys
 from pathlib import Path
 
 
-SERVICE_NAME = "tspi-link-relay.service"
-DEFAULT_INSTALL_ROOT = Path("/opt/tspi-link-relay")
-DEFAULT_STATE_ROOT = Path("/var/lib/tspi-link-relay")
+SERVICE_NAME = "research-agent-relay.service"
+DEFAULT_INSTALL_ROOT = Path("/opt/research-agent-relay")
+DEFAULT_STATE_ROOT = Path("/var/lib/research-agent-relay")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -33,9 +33,9 @@ def _user_defaults(args: argparse.Namespace) -> None:
     user_scope = args.service_scope == "user" or (args.service_scope in {"auto", "none"} and os.geteuid() != 0)
     if user_scope:
         if args.install_root == str(DEFAULT_INSTALL_ROOT):
-            args.install_root = str(Path.home() / ".local/share/tspi-link-relay")
+            args.install_root = str(Path.home() / ".local/share/research-agent-relay")
         if args.state_dir == str(DEFAULT_STATE_ROOT):
-            args.state_dir = str(Path.home() / ".local/state/tspi-link-relay")
+            args.state_dir = str(Path.home() / ".local/state/research-agent-relay")
 
 
 def validate_root(value: str, *, label: str) -> Path:
@@ -82,12 +82,12 @@ def unit_belongs_to_root(unit: Path, root: Path) -> bool:
         lines = unit.read_text(encoding="utf-8").splitlines()
     except OSError:
         return False
-    expected = str(root / "current" / "service")
+    expected = str(root / "current" / "services/relay")
     has_description = False
     has_working_directory = False
     for line in lines:
         key, _, value = line.partition("=")
-        if key == "Description" and value == "TSPi Link Relay":
+        if key == "Description" and value == "ResearchAgent Link Relay":
             has_description = True
         if key == "WorkingDirectory" and _unquote_systemd(value) == expected:
             has_working_directory = True
@@ -152,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
         if not args.non_interactive:
             if not sys.stdin.isatty() or not sys.stdout.isatty():
                 raise RuntimeError("interactive Relay uninstall requires a TTY; use --non-interactive --yes")
-            print(f"Remove TSPi Link Relay code from {root}? [y/N] ", end="", flush=True)
+            print(f"Remove ResearchAgent Link Relay code from {root}? [y/N] ", end="", flush=True)
             if input().strip().lower() not in {"y", "yes"}:
                 return 0
             if args.purge_state:
@@ -170,13 +170,13 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, indent=2, sort_keys=True) if args.json else format_result(result))
         return 0
     except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
-        print(f"TSPi Link Relay uninstall failed: {exc}", file=sys.stderr)
+        print(f"ResearchAgent Link Relay uninstall failed: {exc}", file=sys.stderr)
         return 1
 
 
 def format_result(result: dict[str, object]) -> str:
     state = "preserved" if result["state_preserved"] else "removed"
-    return f"TSPi Link Relay removed. Service units: {len(result['service_units'])}. State: {state}."
+    return f"ResearchAgent Link Relay removed. Service units: {len(result['service_units'])}. State: {state}."
 
 
 if __name__ == "__main__":

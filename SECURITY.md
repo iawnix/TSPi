@@ -3,7 +3,7 @@
 ## Supported Versions
 
 Security fixes target the latest revision on `main` and the latest published
-TSPi release. Older releases may not receive fixes for the Host, Link Relay,
+ResearchAgent release. Older releases may not receive fixes for the Host, Link Relay,
 Native Pi Harness, or workspace formats.
 
 ## Reporting A Vulnerability

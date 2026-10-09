@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createServer as createNetServer } from "node:net";
 import { createRequire } from "node:module";
@@ -14,12 +15,12 @@ import {
   MAX_PAYLOAD_BYTES,
   decodeHostData,
   encodeHostData,
-} from "../../../packages/tspi-link/protocol.mjs";
-import { createWebSocketForwarder } from "../../../packages/tspi-link/backpressure.mjs";
-import { createRelayServer } from "../../../services/tspi-link-relay/server.mjs";
-import { RelayStore } from "../../../services/tspi-link-relay/store.mjs";
+} from "../../../packages/link/protocol.mjs";
+import { createWebSocketForwarder } from "../../../packages/link/backpressure.mjs";
+import { createRelayServer } from "../../../services/relay/server.mjs";
+import { RelayStore } from "../../../services/relay/store.mjs";
 
-const requireRelayDependency = createRequire(new URL("../../../services/tspi-link-relay/package.json", import.meta.url));
+const requireRelayDependency = createRequire(new URL("../../../services/relay/package.json", import.meta.url));
 const WebSocket = requireRelayDependency("ws");
 
 const cleanups = [];
@@ -28,7 +29,7 @@ afterEach(async () => {
 });
 
 test("Link enrollment, pairing, forwarding, and revocation form one bounded transport", async () => {
-  const root = await mkdtemp(join(tmpdir(), "tspi-link-test-"));
+  const root = await mkdtemp(join(tmpdir(), "t-"));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, "state"));
   const statePath = join(root, "state", "relay.db");
@@ -52,8 +53,10 @@ test("Link enrollment, pairing, forwarding, and revocation form one bounded tran
     method: "POST",
     body: { code: enrollment.code, hostId, name: "Lab Host" },
   });
-  assert.match(enrolled.hostToken, /^tsph_/u);
+  assert.match(enrolled.hostToken, /^rah_/u);
 
+  await assert.rejects(openLink(origin, enrolled.hostToken, "tspi-link.v1"), /Unexpected server response|subprotocol|protocol/i);
+  await assert.rejects(openLink(origin, enrolled.hostToken.replace(/^rah_/u, "tsph_")), /Unexpected server response|unauthor/i);
   const host = await openLink(origin, enrolled.hostToken);
   cleanups.push(() => closeSocket(host));
   const pairing = await jsonRequest(`${origin}/v1/pairings`, {
@@ -66,7 +69,8 @@ test("Link enrollment, pairing, forwarding, and revocation form one bounded tran
     body: { code: pairing.code, deviceName: "Test Phone" },
   });
   assert.equal(paired.hostId, hostId);
-  assert.match(paired.deviceToken, /^tspd_/u);
+  assert.match(paired.deviceToken, /^rad_/u);
+  await assert.rejects(openLink(origin, paired.deviceToken.replace(/^rad_/u, "tspd_")), /Unexpected server response|unauthor/i);
 
   const openMessage = nextMessage(host);
   const device = await openLink(origin, paired.deviceToken);
@@ -93,8 +97,27 @@ test("Link enrollment, pairing, forwarding, and revocation form one bounded tran
   assert.equal((await closed).code, 4003);
 });
 
+test("old credential hashes cannot authenticate after the identity cutover", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tokens-"));
+  cleanups.push(() => rm(root, { recursive: true, force: true }));
+  const store = new RelayStore(join(root, "relay.db"));
+  cleanups.push(async () => store.close());
+  const enrollment = store.createEnrollment();
+  const host = store.redeemEnrollment({ code: enrollment.code,
+    hostId: "423e4567-e89b-42d3-a456-426614174000", name: "Host" });
+  const pairing = store.createPairing(host.hostId);
+  const device = store.redeemPairing({ code: pairing.code, deviceName: "Phone" });
+  const oldHost = host.hostToken.replace(/^rah_/u, "tsph_");
+  const oldDevice = device.deviceToken.replace(/^rad_/u, "tspd_");
+  const digest = token => createHash("sha256").update(token).digest("hex");
+  store.database.prepare("UPDATE hosts SET token_hash = ? WHERE host_id = ?").run(digest(oldHost), host.hostId);
+  store.database.prepare("UPDATE devices SET token_hash = ? WHERE device_id = ?").run(digest(oldDevice), device.deviceId);
+  assert.equal(store.authenticate(oldHost), undefined);
+  assert.equal(store.authenticate(oldDevice), undefined);
+});
+
 test("pairing codes are single use", async () => {
-  const root = await mkdtemp(join(tmpdir(), "tspi-link-store-test-"));
+  const root = await mkdtemp(join(tmpdir(), "t-"));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const store = new RelayStore(join(root, "relay.db"));
   cleanups.push(async () => store.close());
@@ -113,7 +136,7 @@ test("pairing codes are single use", async () => {
 });
 
 test("replacing a Host closes devices attached to the old Host socket", async () => {
-  const root = await mkdtemp(join(tmpdir(), "tspi-link-reconnect-test-"));
+  const root = await mkdtemp(join(tmpdir(), "t-"));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const statePath = join(root, "relay.db");
   const provisioning = new RelayStore(statePath);
@@ -230,7 +253,7 @@ test("bounded forwarding rejects an over-limit queue without dropping an active 
 });
 
 test("Host bridge carries native App Server bytes through a private Unix socket", async () => {
-  const root = await mkdtemp(join(tmpdir(), "tspi-link-host-test-"));
+  const root = await mkdtemp(join(tmpdir(), "t-"));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const statePath = join(root, "relay.db");
   const provisioning = new RelayStore(statePath);
@@ -265,7 +288,7 @@ test("Host bridge carries native App Server bytes through a private Unix socket"
   const tokenFile = join(root, "host.token");
   await import("node:fs/promises").then(({ writeFile }) => writeFile(tokenFile, `${enrolled.hostToken}\n`, { mode: 0o600 }));
   const connector = spawn(process.execPath, [
-    join(process.cwd(), "apps/app-server/tspi-link-host.mjs"),
+    join(process.cwd(), "apps/agent/transport/link.mjs"),
     "--relay-url", origin,
     "--token-file", tokenFile,
     "--socket-path", socketPath,
@@ -298,11 +321,11 @@ async function jsonRequest(url, { method, token, body }) {
   return value;
 }
 
-function openLink(origin, token) {
+function openLink(origin, token, protocol = "research-agent-link.v1") {
   return new Promise((resolvePromise, rejectPromise) => {
     const url = new URL("/v1/link", origin);
     url.protocol = "ws:";
-    const socket = new WebSocket(url, "tspi-link.v1", { headers: { authorization: `Bearer ${token}` } });
+    const socket = new WebSocket(url, protocol, { headers: { authorization: `Bearer ${token}` } });
     socket.binaryType = "arraybuffer";
     socket.once("open", () => resolvePromise(socket));
     socket.once("error", rejectPromise);

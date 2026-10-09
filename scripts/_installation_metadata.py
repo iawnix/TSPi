@@ -1,4 +1,4 @@
-"""Validate and write metadata that binds a TSPi installation to its root."""
+"""Validate and write metadata that binds a ResearchAgent installation to its root."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from pathlib import Path
 
 
 INSTALLATION_MARKER_SCHEMA = "research-agent-installation/2"
-PACKAGE_STATE_SCHEMA = "tspi-package-install/1"
-WORKSPACE_ROOT_SCHEMA = "tspi-workspace-root/1"
+PACKAGE_STATE_SCHEMA = "research-agent-package-install/1"
+WORKSPACE_ROOT_SCHEMA = "research-agent-workspace-root/1"
 RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
@@ -58,7 +58,7 @@ def read_installation_metadata(
 
     if require_ownership and not marker_valid and not state_valid:
         raise ValueError(
-            f"does not contain trusted TSPi installation metadata: {root}; "
+            f"does not contain trusted ResearchAgent installation metadata: {root}; "
             "refusing to treat a source checkout or arbitrary directory as an installation"
         )
     return {

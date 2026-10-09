@@ -1,38 +1,53 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync } from "node:fs";
 
-// Keep persistent installations separate from short-lived, writable fixtures.
-export const TEST_ROOT = process.env.TSPI_TEST_ROOT || join(process.env.TSPI_TEST_ENV_ROOT || "/home/iaw/debug/tspi-test-env", "n");
-
-export function pinnedPiSource() {
-  if (process.env.TSPI_TEST_PI_RUNTIME_ROOT) return process.env.TSPI_TEST_PI_RUNTIME_ROOT;
-  try {
-    const pin = JSON.parse(readFileSync(join(process.cwd(), "config", "pi-source.json"), "utf8"));
-    if (typeof pin.commit === "string" && pin.commit) {
-      return join(process.env.TSPI_TEST_ENV_ROOT || "/home/iaw/debug/tspi-test-env", ".pi", "runtime-cache", "pi", pin.commit);
-    }
-  } catch {
-    // The native runner reports a missing prepared Pi source separately.
-  }
-  return undefined;
+function requiredPath(name) {
+  const path = process.env[name];
+  if (!path || !existsSync(path)) throw new Error(`${name} must be supplied by tools/test/runner.py`);
+  return path;
 }
 
-export function managedPython() {
-  if (process.env.TSPI_PYTHON) return process.env.TSPI_PYTHON;
-  const envRoot = process.env.TSPI_TEST_ENV_ROOT || "/home/iaw/debug/tspi-test-env";
-  try {
-    const manifest = JSON.parse(readFileSync(join(envRoot, "runtime", "env.json"), "utf8"));
-    if (typeof manifest.python_executable === "string" && existsSync(manifest.python_executable)) {
-      return manifest.python_executable;
-    }
-    const candidates = readdirSync(join(envRoot, "kernels"), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => join(envRoot, "kernels", entry.name, "bin", "python"))
-      .filter((candidate) => existsSync(candidate))
-      .sort();
-    if (candidates.length > 0) return candidates[candidates.length - 1];
-  } catch {
-    // Let the subprocess report a missing managed environment clearly.
+export const TEST_ROOT = requiredPath("RESEARCH_AGENT_TEST_ROOT");
+export function pinnedPiSource() { return requiredPath("RESEARCH_AGENT_TEST_PI_RUNTIME_ROOT"); }
+export function managedPython() { return requiredPath("RESEARCH_AGENT_PYTHON"); }
+
+export const TEST_SOCKET_ROOT = requiredPath("RESEARCH_AGENT_TEST_SOCKET_ROOT");
+
+export async function assertInstalledRuntime(packageRoot) {
+  const installRoot = process.env.RESEARCH_AGENT_TEST_INSTALLED_ROOT;
+  if (!installRoot) return;
+  const assert = (await import("node:assert/strict")).default;
+  const { realpath } = await import("node:fs/promises");
+  const { join, relative, sep, dirname } = await import("node:path");
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const inside = (root, path) => {
+    const child = relative(root, path);
+    return child !== ".." && !child.startsWith(`..${sep}`) && !child.startsWith(sep);
+  };
+  const installation = await realpath(installRoot);
+  const product = await realpath(packageRoot);
+  const pi = await realpath(pinnedPiSource());
+  assert.ok(inside(installation, product), "product code must come from the installed release");
+  assert.ok(inside(installation, pi), "Pi code must come from the installed runtime");
+  assert.equal(await realpath(join(product, "node_modules")), await realpath(join(pi, "node_modules")));
+  assert.equal(process.env.PYTHONPATH, undefined, "installed acceptance must not import source Python");
+  assert.equal(await realpath(process.env.RESEARCH_AGENT_PACKAGE_ROOT), product);
+  const modules = ["research_agent", "research_agent.application", "research_agent.research", "research_agent.jobs", "research_agent.artifacts"];
+  const program = `import importlib,json,sys; print(json.dumps({"prefix":sys.prefix,"origins":[importlib.import_module(name).__file__ for name in ${JSON.stringify(modules)}]}))`;
+  const { stdout } = await promisify(execFile)(managedPython(), ["-I", "-c", program], { cwd: TEST_ROOT });
+  const python = JSON.parse(stdout);
+  assert.equal(await realpath(python.prefix), await realpath(dirname(dirname(managedPython()))));
+  for (const origin of python.origins) assert.ok(inside(await realpath(python.prefix), await realpath(origin)), "business modules must come from the installed wheel");
+}
+
+export async function retainPiDiagnostics(source, destination) {
+  const { readdir, lstat, mkdir, copyFile } = await import("node:fs/promises");
+  const { join, dirname } = await import("node:path");
+  for (const entry of await readdir(source, { recursive: true })) {
+    const path = join(source, entry);
+    if (!(await lstat(path)).isFile()) continue;
+    const target = join(destination, entry);
+    await mkdir(dirname(target), { recursive: true });
+    await copyFile(path, target);
   }
-  return "python3";
 }

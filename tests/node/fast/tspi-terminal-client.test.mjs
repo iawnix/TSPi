@@ -5,8 +5,8 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { selectSession, sessionActivityAt } from "../../../apps/app-server/session-selection.mjs";
-import { createRpcPeer, HOST_PROTOCOL } from "../../../apps/app-server/tspi-host-client.mjs";
+import { selectSession, sessionActivityAt } from "../../../apps/agent/host/session-selection.mjs";
+import { createRpcPeer, HOST_PROTOCOL } from "../../../apps/agent/transport/host-client.mjs";
 
 test("default starts fresh even with online sessions; continue uses durable activity", () => {
   const first = { session_id: "first", online: true, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-03T00:00:00Z" };
@@ -21,13 +21,13 @@ test("default starts fresh even with online sessions; continue uses durable acti
 });
 
 test("terminal model flags reach creation and resumption as one identity", { timeout: 20_000 }, async t => {
-  const root = await mkdtemp(join(tmpdir(), "tspi-terminal-model-"));
+  const root = await mkdtemp(join(tmpdir(), "t-"));
   const resolverDirectory = join(root, "packages/coding-agent/src/experimental");
-  const clientDirectory = join(root, "apps/app-server");
+  const clientDirectory = join(root, "apps/agent/pi");
   await mkdir(resolverDirectory, { recursive: true });
   await mkdir(clientDirectory, { recursive: true });
   await writeFile(join(resolverDirectory, "source-resolver.ts"), "");
-  await writeFile(join(clientDirectory, "pi-native-client.mjs"), "process.exitCode = 0;\n");
+  await writeFile(join(clientDirectory, "client.mjs"), "process.exitCode = 0;\n");
   const requests = [];
   const peers = new Set();
   const server = createServer(socket => {
@@ -48,9 +48,9 @@ test("terminal model flags reach creation and resumption as one identity", { tim
   await new Promise(resolve => server.listen(join(root, "host.sock"), resolve));
   for (const flags of [["--provider", "fixture", "--model", "chosen"], ["--continue", "--", "--provider=fixture", "--model=chosen"]]) {
     requests.length = 0;
-    const child = spawn(process.execPath, ["apps/app-server/tspi-terminal-client.mjs", "--socket-path", join(root, "host.sock"),
+    const child = spawn(process.execPath, ["apps/agent/terminal/main.mjs", "--socket-path", join(root, "host.sock"),
       "--workspace-id", "work", "--workspace-root", root, "--package-root", root, ...flags], {
-      env: { ...process.env, TSPI_PI_RUNTIME_ROOT: root }, stdio: ["ignore", "ignore", "pipe"],
+      env: { ...process.env, RESEARCH_AGENT_PI_RUNTIME_ROOT: root }, stdio: ["ignore", "ignore", "pipe"],
     });
     let stderr = "";
     child.stderr.on("data", chunk => { stderr += chunk; });
@@ -64,7 +64,7 @@ test("terminal model flags reach creation and resumption as one identity", { tim
 
 for (const arguments_ of [["-r"], ["--resume"], ["--", "--resume"]]) {
   test(`terminal client rejects unsupported startup resume flag: ${arguments_.join(" ")}`, () => {
-    const result = spawnSync(process.execPath, ["apps/app-server/tspi-terminal-client.mjs", ...arguments_], {
+    const result = spawnSync(process.execPath, ["apps/agent/terminal/main.mjs", ...arguments_], {
       cwd: process.cwd(),
       encoding: "utf8",
     });

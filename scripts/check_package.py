@@ -19,17 +19,17 @@ try:
         REQUIRED_TARBALL_FILES,
         SKILL_ENTRIES,
         SKILL_ENTRY_FILES,
-        RETIRED_RUNTIME_PATHS,
+        RETIRED_RUNTIME_PATHS, release_files,
     )
 except ImportError:
-    from package_inventory import PACKAGE_FILES, REQUIRED_TARBALL_FILES, SKILL_ENTRIES, SKILL_ENTRY_FILES, RETIRED_RUNTIME_PATHS
+    from package_inventory import PACKAGE_FILES, REQUIRED_TARBALL_FILES, SKILL_ENTRIES, SKILL_ENTRY_FILES, RETIRED_RUNTIME_PATHS, release_files
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_NAME = "@iawnix/tspi"
+PACKAGE_NAME = "@iawnix/research-agent"
 PACKAGE_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 PROJECT_LICENSE = "Apache-2.0"
-THEME_ENTRIES = ["./packages/agent-ui/themes/ts-theme.json"]
+THEME_ENTRIES = ["./apps/agent/terminal/themes/research-agent.json"]
 EXTENSION_ENTRIES: list[str] = []
 REMOVED_PREFIXES = (
     "agent-core/",
@@ -52,6 +52,7 @@ REMOVED_PREFIXES = (
     "workspace/",
 )
 FORBIDDEN_PARTS = {
+    "local_debug",
     ".agents",
     ".git",
     ".npm-cache",
@@ -69,7 +70,7 @@ FORBIDDEN_RUNTIME_FILES = {
     "scripts/check_package.py",
     "scripts/test_source.py",
 }
-REQUIRED_EXECUTABLE_FILES = {"ResearchAgent", "apps/agent-cli/research_web_bridge.py"}
+REQUIRED_EXECUTABLE_FILES = {"research-agent", "libexec/research-agent-host", "apps/agent-cli/research_web_bridge.py"}
 
 
 class PackageCheckError(RuntimeError):
@@ -89,9 +90,9 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     if manifest.get("license") != PROJECT_LICENSE:
         errors.append(f"package license must be {PROJECT_LICENSE}")
     if not isinstance(manifest.get("version"), str) or not re.fullmatch(
-        r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", manifest["version"]
+        r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-rc\.(?:0|[1-9][0-9]*))?", manifest["version"]
     ):
-        errors.append("package version must be a numeric major.minor.patch release")
+        errors.append("package version must be a stable or rc SemVer release")
     if manifest.get("private") is not True:
         errors.append("package must remain private until release is explicitly authorized")
     if manifest.get("files") != PACKAGE_FILES:
@@ -103,6 +104,7 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
         "@earendil-works/pi-agent-core",
         "@earendil-works/pi-ai",
         "@earendil-works/pi-coding-agent",
+        "@earendil-works/pi-durable",
         "@earendil-works/pi-tui",
         "typebox",
     }
@@ -123,8 +125,8 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
             errors.append("pi.extensions does not match the public extension inventory")
 
     for skill_entry in SKILL_ENTRIES:
-        skill_path = ROOT / skill_entry.removeprefix("./") / "SKILL.md"
-        if not skill_path.is_file():
+        skill_path = ROOT / skill_entry.removeprefix("./")
+        if not skill_path.is_dir() or not any(skill_path.rglob("SKILL.md")):
             errors.append(f"registered skill entry is missing SKILL.md: {skill_path.relative_to(ROOT)}")
     for skill_file in SKILL_ENTRY_FILES:
         if not (ROOT / skill_file).is_file():
@@ -144,59 +146,27 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
 
 
 def validate_python_project() -> None:
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    metadata = project.get("project")
-    setuptools = project.get("tool", {}).get("setuptools", {})
-    version_source = ROOT / "packages" / "tspi-runtime" / "tspi_runtime" / "_version.py"
-    namespace = ROOT / "packages" / "tspi-runtime" / "tspi_runtime" / "__init__.py"
-    errors: list[str] = []
-    if not isinstance(metadata, dict) or metadata.get("name") != "tspi-runtime":
-        errors.append("pyproject project.name must be tspi-runtime")
-    if not isinstance(metadata, dict) or metadata.get("license") != PROJECT_LICENSE:
-        errors.append(f"pyproject license must be {PROJECT_LICENSE}")
-    if not isinstance(metadata, dict) or metadata.get("dynamic") != ["version"]:
-        errors.append("pyproject version must be sourced from tspi_runtime._version")
-    expected_package_dir = {
-        "tspi_runtime": "packages/tspi-runtime/tspi_runtime",
-        "tspi_foundation": "packages/tspi-foundation/tspi_foundation",
-        "tspi_bootstrap": "packages/tspi-bootstrap/tspi_bootstrap",
-        "research_state": "packages/research-state/research_state",
-        "research_memory": "packages/research-memory/research_memory",
-        "artifact_store": "packages/artifact-store/artifact_store",
-        "job_runtime": "packages/job-runtime/job_runtime",
-    }
-    if setuptools.get("package-dir") != expected_package_dir:
-        errors.append("pyproject package-dir must declare the canonical TSPi namespaces")
-    if not version_source.is_file() or not namespace.is_file():
-        errors.append("Python tspi_runtime namespace or version source is missing")
-    else:
-        expected = f'__version__ = "{PACKAGE_VERSION}"'
-        if expected not in version_source.read_text(encoding="utf-8"):
-            errors.append("Python distribution version does not match package.json")
-    if errors:
-        raise PackageCheckError("\n".join(errors))
+    project = tomllib.loads((ROOT / "backend/pyproject.toml").read_text(encoding="utf-8"))
+    metadata = project["project"]
+    setuptools = project["tool"]["setuptools"]
+    if metadata["name"] != "research-agent" or metadata["license"] != PROJECT_LICENSE:
+        raise PackageCheckError("Python distribution identity does not match the product")
+    if metadata.get("dynamic") != ["version"] or setuptools["dynamic"]["version"] != {"attr": "research_agent._version.__version__"}:
+        raise PackageCheckError("Python version must come from the generated product version")
+    if setuptools.get("package-dir") != {"": "src"} or setuptools["packages"]["find"] != {"where": ["src"], "include": ["research_agent", "research_agent.*"]}:
+        raise PackageCheckError("Python distribution must use the single backend/src namespace")
+    if not (ROOT / "backend/src/research_agent/__init__.py").is_file():
+        raise PackageCheckError("Python namespace is missing")
 
 
 def validate_version_surfaces() -> None:
-    lock = json.loads((ROOT / "package-lock.json").read_text(encoding="utf-8"))
-    profile_text = (ROOT / "extensions" / "profile.ts").read_text(
-        encoding="utf-8"
-    )
-    profile_match = re.search(r'(?m)^\s*version:\s*"([^"]+)",\s*$', profile_text)
-    errors: list[str] = []
-    if lock.get("version") != PACKAGE_VERSION:
-        errors.append("package-lock version does not match the package release")
-    packages = lock.get("packages")
-    if not isinstance(packages, dict) or not isinstance(packages.get(""), dict):
-        errors.append("package-lock root package metadata is missing")
-    elif packages[""].get("version") != PACKAGE_VERSION:
-        errors.append("package-lock root package version does not match the package release")
-    elif packages[""].get("license") != PROJECT_LICENSE:
-        errors.append(f"package-lock root package license must be {PROJECT_LICENSE}")
-    if profile_match is None or profile_match.group(1) != PACKAGE_VERSION:
-        errors.append("package profile version does not match the package release")
-    if errors:
-        raise PackageCheckError("\n".join(errors))
+    # This build check uses the same generator as release preparation.
+    sys.path.insert(0, str(ROOT))
+    from tools.version import check
+    try:
+        check(ROOT)
+    except ValueError as error:
+        raise PackageCheckError(str(error)) from error
 
 
 def validate_runtime_entrypoints() -> None:
@@ -210,7 +180,7 @@ def validate_runtime_entrypoints() -> None:
 
 
 def npm_pack_files() -> set[str]:
-    with tempfile.TemporaryDirectory(prefix="tspi-npm-cache-") as cache:
+    with tempfile.TemporaryDirectory(prefix="research-agent-npm-cache-") as cache:
         env = dict(os.environ)
         env["npm_config_cache"] = cache
         completed = subprocess.run(
@@ -234,30 +204,7 @@ def npm_pack_files() -> set[str]:
 
 
 def expanded_allowlisted_files() -> set[str]:
-    files: set[str] = set()
-    for entry in PACKAGE_FILES:
-        if entry.endswith("/"):
-            directory = ROOT / entry.rstrip("/")
-            files.update(
-                path.relative_to(ROOT).as_posix()
-                for path in directory.rglob("*")
-                if path.is_file()
-            )
-            continue
-        if entry.endswith("/**"):
-            directory = ROOT / entry[:-3]
-            files.update(
-                path.relative_to(ROOT).as_posix()
-                for path in directory.rglob("*")
-                if path.is_file()
-            )
-            continue
-        files.update(
-            path.relative_to(ROOT).as_posix()
-            for path in ROOT.glob(entry)
-            if path.is_file()
-        )
-    return files
+    return release_files(ROOT)
 
 
 def validate_tarball(files: set[str]) -> None:

@@ -1,0 +1,528 @@
+"""Conda runtime discovery for the ResearchAgent package.
+
+The package code and its Python environment live in separate roots. Public
+scripts call ``ensure_runtime_python`` before importing heavier workflow
+modules.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import sys
+import tempfile
+from collections.abc import MutableMapping
+from pathlib import Path, PurePosixPath
+from typing import Any
+
+ENV_OVERRIDE = "RESEARCH_AGENT_PYTHON"
+DISABLE_REEXEC = "RESEARCH_AGENT_DISABLE_RUNTIME_REEXEC"
+ENV_ROOT_OVERRIDE = "RESEARCH_AGENT_ENV_ROOT"
+RUNTIME_HOME_OVERRIDE = "RESEARCH_AGENT_RUNTIME_HOME"
+RUNTIME_MANIFEST_OVERRIDE = "RESEARCH_AGENT_RUNTIME_MANIFEST"
+PACKAGE_ROOT_OVERRIDE = "RESEARCH_AGENT_PACKAGE_ROOT"
+WORKSPACE_ROOT_OVERRIDE = "RESEARCH_AGENT_WORKSPACE_ROOT"
+MANIFEST_VERSION = "agent-runtime/3"
+RUNTIME_PROBE_VERSION = "research-agent-runtime-probe/4"
+PACKAGE_NAMESPACE = "research-agent"
+BASE_ENV_DIRECTORY = "base"
+KERNEL_ENV_DIRECTORY = "kernels"
+PYTHON_DISTRIBUTION = "research-agent"
+PYTHON_SOURCE_ROOTS = {"research_agent": Path("backend/src/research_agent")}
+PYTHON_PACKAGE_NAMES = frozenset(PYTHON_SOURCE_ROOTS)
+PYTHON_PAYLOAD_SUFFIXES = frozenset({".css", ".html", ".js", ".json", ".py", ".svg", ".toml"})
+
+
+def source_python_paths(package_root: str | Path) -> tuple[Path, ...]:
+    """Return the single explicit search root used by source-only entrypoints."""
+    return (Path(package_root).expanduser().resolve() / "backend/src",)
+
+
+class RuntimeEnvironmentError(RuntimeError):
+    """The installation-owned Python runtime cannot be used safely."""
+
+
+def package_root_from_file(path: str | Path) -> Path:
+    """Return the package root for a file shipped by this Pi package."""
+
+    current = Path(path).resolve()
+    if current.is_file():
+        current = current.parent
+    for parent in [current, *current.parents]:
+        if (
+            (parent / "package.json").is_file()
+            and (parent / "scripts").is_dir()
+            and (parent / "config/identity.json").is_file()
+        ):
+            return parent
+    raise RuntimeEnvironmentError(f"cannot locate ResearchAgent package root from: {path}")
+
+
+def seed_installation_runtime(
+    installation_root: str | Path,
+    *,
+    environ: MutableMapping[str, str] | None = None,
+    authoritative: bool = False,
+) -> Path:
+    """Bind runtime paths owned by one ResearchAgent installation root."""
+
+    root = Path(installation_root).expanduser().resolve()
+    from .layout import paths
+    layout = paths(root)
+    runtime_home = layout.runtime_home
+    values = os.environ if environ is None else environ
+    bindings = {
+        RUNTIME_HOME_OVERRIDE: str(runtime_home),
+        RUNTIME_MANIFEST_OVERRIDE: str(runtime_home / "env.json"),
+        ENV_ROOT_OVERRIDE: str(layout.env_root),
+    }
+    for name, value in bindings.items():
+        if authoritative:
+            values[name] = value
+        else:
+            values.setdefault(name, value)
+    return root
+
+
+def seed_installation_runtime_from_entrypoint(
+    entrypoint: str | Path,
+    *,
+    environ: MutableMapping[str, str] | None = None,
+) -> Path | None:
+    """Bind runtime paths for a script invoked through an installed release."""
+
+    stable = Path(os.path.abspath(os.fspath(Path(entrypoint).expanduser())))
+    installation_root = _suite_installation_root(stable)
+    if installation_root is None:
+        return None
+    return seed_installation_runtime(installation_root, environ=environ)
+
+
+def _suite_installation_root(stable: Path) -> Path | None:
+    """Recognize a validated unified-suite Web or provider entrypoint."""
+
+    try:
+        resolved = stable.resolve(strict=True)
+    except OSError:
+        return None
+    for root in resolved.parents:
+        if not (root / "etc/installation.json").is_file(): continue
+        selected = (root / "current").resolve()
+        if resolved.is_relative_to(selected): return root
+    return None
+
+
+def environment_spec_path(package_root: str | Path | None = None) -> Path:
+    root = resolve_package_root(package_root)
+    return root / "environment.yml"
+
+
+def environment_lock_path(package_root: str | Path | None = None) -> Path:
+    root = resolve_package_root(package_root)
+    return root / "environment.lock.txt"
+
+
+def spec_sha256(package_root: str | Path | None = None) -> str:
+    environment_spec = environment_spec_path(package_root)
+    lock = environment_lock_path(package_root)
+    return payload_records_sha256(
+        [
+            (environment_spec.name, environment_spec.read_bytes()),
+            (lock.name, lock.read_bytes()),
+        ]
+    )
+
+
+def package_version(package_root: str | Path | None = None) -> str:
+    path = resolve_package_root(package_root) / "package.json"
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeEnvironmentError(f"cannot read package version from {path}") from exc
+    version = value.get("version") if isinstance(value, dict) else None
+    if not isinstance(version, str) or not version:
+        raise RuntimeEnvironmentError(f"package version is missing from {path}")
+    return version
+
+
+def python_payload_sha256(
+    package_root: str | Path | None = None,
+) -> str:
+    """Hash the source files that are installed into the Python distribution."""
+
+    package = resolve_package_root(package_root)
+    records = []
+    for package_name, relative_root in PYTHON_SOURCE_ROOTS.items():
+        root = package / relative_root
+        if not root.is_dir():
+            raise RuntimeEnvironmentError(f"Python source root is missing: {root}")
+        for path in sorted(root.rglob("*")):
+            if not path.is_file() or path.is_symlink():
+                continue
+            relative = PurePosixPath(package_name) / PurePosixPath(path.relative_to(root).as_posix())
+            if not _is_python_payload_path(relative):
+                continue
+            records.append((relative.as_posix(), path.read_bytes()))
+    if not records:
+        raise RuntimeEnvironmentError(f"Python source payload is empty: {root}")
+    return payload_records_sha256(records)
+
+
+def payload_records_sha256(records: list[tuple[str, bytes]]) -> str:
+    digest = hashlib.sha256()
+    for relative, content in sorted(records):
+        encoded = relative.encode("utf-8")
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+    return digest.hexdigest()
+
+
+def _is_python_payload_path(path: PurePosixPath) -> bool:
+    return (
+        bool(path.parts)
+        and path.parts[0] in PYTHON_PACKAGE_NAMES
+        and "__pycache__" not in path.parts
+        and not any(part.endswith(".egg-info") for part in path.parts)
+        and path.suffix in PYTHON_PAYLOAD_SUFFIXES
+    )
+
+
+def resolve_package_root(package_root: str | Path | None = None) -> Path:
+    """Resolve an explicit or process-bound Pi Package root."""
+
+    root = package_root or os.environ.get(PACKAGE_ROOT_OVERRIDE)
+    return Path(root).expanduser().resolve() if root else package_root_from_file(__file__)
+
+
+def _workspace_root(workspace_root: str | Path | None = None) -> Path | None:
+    root = workspace_root or os.environ.get(WORKSPACE_ROOT_OVERRIDE)
+    if not root:
+        return None
+    return Path(root).expanduser().resolve()
+
+
+def default_runtime_home(
+    package_root: str | Path | None = None,
+    workspace_root: str | Path | None = None,
+) -> Path:
+    override = os.environ.get(RUNTIME_HOME_OVERRIDE)
+    if override:
+        return Path(override).expanduser().resolve()
+
+    if workspace_root is not None:
+        from .layout import paths
+        return paths(workspace_root).runtime_home
+    if os.environ.get("RESEARCH_AGENT_INSTALL_ROOT"):
+        from .layout import paths
+        return paths(os.environ["RESEARCH_AGENT_INSTALL_ROOT"]).runtime_home
+    return resolve_package_root(package_root).parent / "var/state/installation/python"
+
+
+def runtime_manifest_path(
+    package_root: str | Path | None = None,
+    runtime_home: str | Path | None = None,
+    workspace_root: str | Path | None = None,
+    manifest_path: str | Path | None = None,
+) -> Path:
+    override = manifest_path or os.environ.get(RUNTIME_MANIFEST_OVERRIDE)
+    if override:
+        return Path(override).expanduser().resolve()
+    home = Path(runtime_home).expanduser().resolve() if runtime_home else default_runtime_home(package_root, workspace_root)
+    return home / "env.json"
+
+
+def default_env_store(
+    package_root: str | Path | None = None,
+    workspace_root: str | Path | None = None,
+) -> Path:
+    override = os.environ.get(ENV_ROOT_OVERRIDE)
+    if override:
+        return Path(override).expanduser().resolve()
+
+    if workspace_root is not None:
+        from .layout import paths
+        return paths(workspace_root).env_root
+    if os.environ.get("RESEARCH_AGENT_INSTALL_ROOT"):
+        from .layout import paths
+        return paths(os.environ["RESEARCH_AGENT_INSTALL_ROOT"]).env_root
+    return Path(os.environ["RESEARCH_AGENT_HOST_ENV_ROOT"]) if os.environ.get("RESEARCH_AGENT_HOST_ENV_ROOT") else resolve_package_root(package_root).parent / "host-envs"
+
+
+def default_env_prefix(
+    package_root: str | Path | None = None,
+    env_root: str | Path | None = None,
+    workspace_root: str | Path | None = None,
+) -> Path:
+    root = resolve_package_root(package_root)
+    store = Path(env_root).expanduser().resolve() if env_root else default_env_store(root, workspace_root)
+    return store / BASE_ENV_DIRECTORY / spec_sha256(root)[:12]
+
+
+def default_kernel_prefix(
+    package_root: str | Path | None = None,
+    env_root: str | Path | None = None,
+    workspace_root: str | Path | None = None,
+    payload_sha256: str | None = None,
+) -> Path:
+    """Bind the release overlay to its Python payload and control base."""
+
+    root = resolve_package_root(package_root)
+    store = Path(env_root).expanduser().resolve() if env_root else default_env_store(root, workspace_root)
+    digest = payload_sha256 or python_payload_sha256(root)
+    if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+        raise RuntimeEnvironmentError("Python payload digest is not a lowercase SHA-256 value")
+    identity = payload_records_sha256([
+        ("python_payload", digest.encode()), ("control_base", spec_sha256(root).encode()),
+    ])
+    return store / KERNEL_ENV_DIRECTORY / identity[:16]
+
+
+def env_python(env_prefix: str | Path) -> Path:
+    return Path(env_prefix).expanduser().resolve() / "bin" / "python"
+
+
+def seed_workspace_root_from_argv(argv: list[str] | None = None, *, option: str = "--root") -> None:
+    if os.environ.get(WORKSPACE_ROOT_OVERRIDE):
+        return
+    args = list(sys.argv[1:] if argv is None else argv)
+    root = _arg_value(args, option)
+    if root:
+        os.environ[WORKSPACE_ROOT_OVERRIDE] = root
+
+
+def _arg_value(args: list[str], option: str) -> str | None:
+    for index, arg in enumerate(args):
+        if arg == option and index + 1 < len(args):
+            return args[index + 1]
+        prefix = f"{option}="
+        if arg.startswith(prefix):
+            return arg[len(prefix) :]
+    return None
+
+
+def load_manifest(
+    package_root: str | Path | None = None,
+    runtime_home: str | Path | None = None,
+    workspace_root: str | Path | None = None,
+    manifest_path: str | Path | None = None,
+) -> dict[str, Any] | None:
+    path = runtime_manifest_path(package_root, runtime_home, workspace_root, manifest_path)
+    return _load_manifest_file(path)
+
+
+def _load_manifest_file(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    with path.open("r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    if not isinstance(data, dict) or data.get("schema_version") != MANIFEST_VERSION:
+        return None
+    return data
+
+
+def write_manifest(
+    package_root: str | Path,
+    manifest: dict[str, Any],
+    runtime_home: str | Path | None = None,
+    workspace_root: str | Path | None = None,
+    manifest_path: str | Path | None = None,
+) -> Path:
+    path = runtime_manifest_path(package_root, runtime_home, workspace_root, manifest_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(manifest, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    return path
+
+
+def configured_python(
+    package_root: str | Path | None = None,
+    runtime_home: str | Path | None = None,
+    workspace_root: str | Path | None = None,
+    manifest_path: str | Path | None = None,
+) -> Path | None:
+    override = os.environ.get(ENV_OVERRIDE)
+    if override:
+        return Path(override).expanduser().resolve()
+
+    manifest = load_manifest(package_root, runtime_home, workspace_root, manifest_path)
+    if not manifest:
+        return None
+    if not _manifest_matches_spec(package_root, manifest):
+        return None
+    python = manifest.get("python_executable")
+    if not python:
+        return None
+    path = Path(str(python)).expanduser().resolve()
+    return path if path.exists() else None
+
+
+def require_runtime_python(
+    package_root: str | Path | None = None,
+    runtime_home: str | Path | None = None,
+    workspace_root: str | Path | None = None,
+    manifest_path: str | Path | None = None,
+) -> Path:
+    """Return an executable managed Python or fail without a host fallback."""
+
+    python = configured_python(package_root, runtime_home, workspace_root, manifest_path)
+    if python is None:
+        manifest = runtime_manifest_path(package_root, runtime_home, workspace_root, manifest_path)
+        raise RuntimeEnvironmentError(
+            f"managed TS Python runtime is missing or stale: {manifest}; "
+            "reinstall the package runtime with scripts/install_env.py"
+        )
+    if not python.is_file() or not os.access(python, os.X_OK):
+        raise RuntimeEnvironmentError(f"managed TS Python is not executable: {python}")
+    return python
+
+
+def _manifest_matches_spec(package_root: str | Path | None, manifest: dict[str, Any]) -> bool:
+    expected = manifest.get("spec_sha256")
+    if not isinstance(expected, str) or not expected:
+        return False
+    spec = environment_spec_path(package_root)
+    lock = environment_lock_path(package_root)
+    if not spec.exists() or not lock.exists():
+        return False
+    source_payload = manifest.get("python_payload_sha256")
+    if not isinstance(source_payload, str) or not source_payload:
+        return False
+    try:
+        if expected != spec_sha256(package_root):
+            return False
+        if source_payload != python_payload_sha256(package_root):
+            return False
+        current_package_version = package_version(package_root)
+    except (OSError, RuntimeEnvironmentError):
+        return False
+    probe = manifest.get("runtime_probe")
+    if not isinstance(probe, dict):
+        return False
+    if probe.get("schema_version") != RUNTIME_PROBE_VERSION or probe.get("ok") is not True:
+        return False
+    capabilities = probe.get("capabilities")
+    required = ("json_schema_validation", "version_constraints")
+    if not isinstance(capabilities, dict) or not all(
+        capabilities.get(name) is True for name in required
+    ):
+        return False
+    env_prefix = manifest.get("env_prefix")
+    kernel_env_prefix = manifest.get("kernel_env_prefix")
+    base_python_executable = manifest.get("base_python_executable")
+    python_executable = manifest.get("python_executable")
+    probe_python = probe.get("python")
+    modules = probe.get("modules")
+    distribution = probe.get("distribution")
+    if not all(
+        isinstance(value, str) and value
+        for value in (
+            env_prefix,
+            kernel_env_prefix,
+            base_python_executable,
+            python_executable,
+        )
+    ):
+        return False
+    if not isinstance(probe_python, dict) or not isinstance(probe_python.get("executable"), str):
+        return False
+    prefix = Path(str(env_prefix)).expanduser().resolve()
+    kernel_prefix = Path(str(kernel_env_prefix)).expanduser().resolve()
+    base_python = Path(str(base_python_executable)).expanduser().resolve()
+    executable = Path(str(python_executable)).expanduser().resolve()
+    if Path(str(probe_python["executable"])).expanduser().resolve() != executable:
+        return False
+    if (
+        prefix == kernel_prefix
+        or kernel_prefix.is_relative_to(prefix)
+        or prefix.is_relative_to(kernel_prefix)
+        or not base_python.is_file()
+        or not base_python.is_relative_to(prefix)
+        or not executable.is_relative_to(kernel_prefix)
+        or not isinstance(modules, dict)
+        or not isinstance(distribution, dict)
+    ):
+        return False
+    if (
+        distribution.get("name") != PYTHON_DISTRIBUTION
+        or distribution.get("installed") is not True
+        or distribution.get("version") != current_package_version.replace("-rc.", "rc")
+        or distribution.get("payload_sha256") != source_payload
+    ):
+        return False
+    distribution_root = distribution.get("root")
+    if not isinstance(distribution_root, str):
+        return False
+    if not Path(distribution_root).expanduser().resolve().is_relative_to(kernel_prefix):
+        return False
+    for name in ("jsonschema", "packaging"):
+        module = modules.get(name)
+        if not isinstance(module, dict):
+            return False
+        version = module.get("version")
+        origin = module.get("origin")
+        if not isinstance(version, str) or not version or not isinstance(origin, str):
+            return False
+        module_path = Path(origin).expanduser().resolve()
+        if not module_path.is_file() or not module_path.is_relative_to(prefix):
+            return False
+    return True
+
+
+def ensure_runtime_python(
+    package_root: str | Path | None = None,
+    *,
+    required: bool = False,
+) -> Path | None:
+    """Re-exec with the configured runtime Python, optionally failing closed."""
+
+    try:
+        python = require_runtime_python(package_root) if required else configured_python(package_root)
+    except RuntimeEnvironmentError:
+        if required or os.environ.get("RESEARCH_AGENT_INSTALL_ROOT") or os.environ.get(RUNTIME_MANIFEST_OVERRIDE):
+            raise
+        return None
+    if python is None:
+        return None
+
+    if os.environ.get(DISABLE_REEXEC) == "1":
+        if required and Path(sys.executable).resolve() != python:
+            raise RuntimeEnvironmentError(
+                "managed TS Python is required but runtime re-exec is disabled"
+            )
+        return python
+
+    current = Path(sys.executable).resolve()
+    if current == python:
+        return python
+
+    os.execv(str(python), [str(python), *sys.argv])
+    return None
+
+
+def bind_runtime_process_environment(python: str | Path) -> None:
+    """Bind Python commands in the current process tree to the managed runtime."""
+
+    executable = Path(python).expanduser().resolve()
+    if not executable.is_file() or not os.access(executable, os.X_OK):
+        raise RuntimeEnvironmentError(f"managed TS Python is not executable: {executable}")
+    bin_directory = str(executable.parent)
+    existing = [item for item in os.environ.get("PATH", "").split(os.pathsep) if item]
+    os.environ["PATH"] = os.pathsep.join(
+        [bin_directory, *(item for item in existing if item != bin_directory)]
+    )
+    os.environ[ENV_OVERRIDE] = str(executable)
+    os.environ["PYTHONNOUSERSITE"] = "1"
+    os.environ.pop("PYTHONHOME", None)

@@ -15,7 +15,7 @@ import subprocess
 import sys
 import shutil
 
-contract_path = Path(__file__).resolve().parents[1] / "packages/job-runtime/job_runtime/config_contract.py"
+contract_path = Path(__file__).resolve().parents[1] / "backend/src/research_agent/jobs/config_contract.py"
 spec = importlib.util.spec_from_file_location("job_config_contract", contract_path)
 contract = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(contract)
@@ -53,7 +53,7 @@ def _install_locked(binding, *, adopt=False, package_cache=None, offline=False):
     probe_module.pip_packages(pip_lock)
     digest = "sha256:" + hashlib.sha256(content + b"\0" + pip_lock).hexdigest()
     prefix = Path(binding["prefix"])
-    receipt = prefix / "tspi-environment.json"
+    receipt = prefix / "research-agent-environment.json"
     previous = json.loads(receipt.read_text()) if receipt.is_file() else None
     if prefix.exists():
         if not adopt and (not previous or previous.get("lock_sha256") != digest
@@ -78,7 +78,7 @@ def _install_locked(binding, *, adopt=False, package_cache=None, offline=False):
     request = {"python": binding, "requirements": {}, "require_receipt": False}
     result = subprocess.run(python_command(binding) + ["-c", probe, json.dumps(request)],
                             capture_output=True, text=True, timeout=120)
-    rows = [line.removeprefix("TSPI_ENVIRONMENT=") for line in result.stdout.splitlines() if line.startswith("TSPI_ENVIRONMENT=")]
+    rows = [line.removeprefix("RESEARCH_AGENT_ENVIRONMENT=") for line in result.stdout.splitlines() if line.startswith("RESEARCH_AGENT_ENVIRONMENT=")]
     if result.returncode or len(rows) != 1:
         raise ValueError("environment verification failed: target prefix or package inventory does not match its lock")
     observed = json.loads(rows[0])

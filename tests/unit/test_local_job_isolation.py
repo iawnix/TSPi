@@ -7,8 +7,8 @@ import sys
 import time
 import uuid
 
-from job_runtime import JobSpec, JobState, LocalProcessPlatform
-from job_runtime.local import manager_environment
+from research_agent.jobs import JobSpec, JobState, LocalProcessPlatform
+from research_agent.jobs.local import manager_environment
 
 
 def manager(*args, check=False):
@@ -74,7 +74,7 @@ while not Path('release').exists():time.sleep(.02)
 
 
 def test_host_unit_stop_does_not_kill_its_separately_owned_job(tmp_path):
-    parent_unit = "tspi-test-host-" + uuid.uuid4().hex + ".service"
+    parent_unit = "research-agent-test-host-" + uuid.uuid4().hex + ".service"
     job_unit = None
     cwd = tmp_path / "job"
     cwd.mkdir()
@@ -88,7 +88,7 @@ Path('result.txt').write_text('survived host stop')
     parent_script.write_text(
         "import sys,json,time\nfrom pathlib import Path\n"
         + "sys.path[:0] = " + repr(sys.path) + "\n"
-        + "from job_runtime import LocalProcessPlatform,JobSpec\n"
+        + "from research_agent.jobs import LocalProcessPlatform,JobSpec\n"
         + "receipt=LocalProcessPlatform(supervisor='systemd').start(JobSpec(command=" + repr(tuple(child_command))
         + ",cwd=Path(" + repr(str(cwd)) + "),timeout_seconds=20))\n"
         + "Path(" + repr(str(tmp_path / "parent-receipt.json")) + ").write_text(json.dumps(receipt.__dict__))\n"

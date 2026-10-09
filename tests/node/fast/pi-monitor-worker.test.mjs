@@ -6,18 +6,18 @@ import { tmpdir } from "node:os";
 import {
   deliverMonitorEvent,
   parseMonitorArguments,
-} from "../../../apps/app-server/pi-monitor-worker.mjs";
-import { create_workspace_initializer } from "../../../packages/agent-core/workspace.mjs";
+} from "../../../apps/agent/host/monitor/worker.mjs";
+import { create_workspace_initializer } from "../../../apps/agent/host/workspace.mjs";
 
 async function fixture(t) {
-  const temporaryRoot = await mkdtemp(join(tmpdir(), "tspi-monitor-worker-test-"));
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "t-"));
   t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
   const workspace = join(temporaryRoot, "ts_001");
   const canonicalId = "ws_" + "a".repeat(24);
   const initializer = create_workspace_initializer();
   await initializer.initialize_workspace({ workspace_root: workspace, workspace_id: canonicalId, workspace_mode: "research" });
   await initializer.admit_workspace(workspace);
-  const event = { event_id: "evt_1", monitor_id: "mon_1", workspace_id: canonicalId, node_id: "node_1", job_id: "job_1", attempt_id: "attempt_1", state: "succeeded" };
+  const event = { event_id: "evt_1", monitor_id: "mon_1", workspace_id: canonicalId, node_id: "node_1", job_id: "job_1", node_revision: 1, state: "succeeded" };
   const delivery = { event_id: event.event_id, session_id: "existing-session", request_id: "monitor:evt_1" };
   const completed = new Set();
   const receipts = [];
@@ -65,11 +65,10 @@ test("an offline session leaves wake retryable", async (t) => {
   assert.deepEqual(state.receipts, [{ channel: "wake", delivered: false }]);
 });
 
-test("State-deferred wake remains undelivered without prompting or reporting a failure", async (t) => {
+test("busy wake remains undelivered and retryable without a research-state token", async (t) => {
   const state = await fixture(t);
   const errors = await deliverMonitorEvent({ ...state,
-    sendWake: async () => ({ accepted: false, error: { code: "monitor_deferred" },
-      assessments: [{ event_id: state.event.event_id, admitted: false, state_token: "3:checkpoint_user" }] }),
+    sendWake: async () => ({ accepted: false, error: { code: "busy" } }),
   });
   assert.deepEqual(errors, []);
   assert.deepEqual(state.receipts, [{ channel: "wake", delivered: false }]);

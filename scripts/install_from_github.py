@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and install TSPi directly from an immutable GitHub revision."""
+"""Build and install ResearchAgent directly from an immutable GitHub revision."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ except ImportError:
 
 FULL_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 TAG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$")
-PROGRESS_PREFIX = "@@tspi-progress@@"
+PROGRESS_PREFIX = "@@research-agent-progress@@"
 GIT_RETRY_ATTEMPTS = 3
 
 
@@ -133,9 +133,10 @@ def install_uninstaller(install_root: Path, source_root: Path) -> Path:
     for source, target, mode in (
         (source_root / "uninstall.sh", uninstaller, 0o755),
         (source_root / "scripts" / "uninstall.py", private / "uninstall.py", 0o700),
+        (source_root / "scripts" / "uninstall_link_relay.py", private / "uninstall_link_relay.py", 0o700),
         (source_root / "scripts" / "_terminal_ui.py", private / "_terminal_ui.py", 0o600),
         (source_root / "scripts" / "_installation_metadata.py", private / "_installation_metadata.py", 0o600),
-        (source_root / "packages/tspi-foundation/tspi_foundation/layout.py", private / "app_layout.py", 0o600),
+        (source_root / "backend/src/research_agent/foundation/layout.py", private / "app_layout.py", 0o600),
     ):
         descriptor, temporary_name = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
         os.close(descriptor)
@@ -174,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.resolved_commit:
             validate_commit(args.resolved_commit)
         validate_repo(args.repo)
-        with tempfile.TemporaryDirectory(prefix="tspi-github-") as temp:
+        with tempfile.TemporaryDirectory(prefix="research-agent-github-") as temp:
             if args.source_root:
                 source_root = Path(args.source_root).expanduser()
                 if source_root.is_symlink() or not source_root.is_dir():
@@ -185,20 +186,20 @@ def main(argv: list[str] | None = None) -> int:
                     raise ValueError("--source-root must be the top level of its Git checkout")
                 commit = run(["git", "rev-parse", "--verify", "HEAD"], cwd=checkout)
                 validate_commit(commit)
-                emit_progress(args.progress, "Using the locked TSPi source checkout")
+                emit_progress(args.progress, "Using the locked ResearchAgent source checkout")
             else:
-                checkout = Path(temp) / "tspi"
+                checkout = Path(temp) / "research-agent"
                 progress_message = (
-                    "Checking out the locked TSPi revision"
+                    "Checking out the locked ResearchAgent revision"
                     if args.resolved_commit
-                    else "Resolving the selected TSPi revision"
+                    else "Resolving the selected ResearchAgent revision"
                 )
                 emit_progress(args.progress, progress_message)
                 checkout_ref = args.resolved_commit or args.ref
                 commit = checkout_github(args.repo, checkout_ref, checkout)
             if args.resolved_commit and commit.lower() != args.resolved_commit.lower():
                 raise ValueError(
-                    f"locked TSPi commit mismatch: expected {args.resolved_commit}, checked out {commit}"
+                    f"locked ResearchAgent commit mismatch: expected {args.resolved_commit}, checked out {commit}"
                 )
             digest = tree_digest(checkout)
             output = Path(temp) / "package"
@@ -207,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
                 build.append("--without-web")
             if args.allow_dirty:
                 build.append("--allow-dirty")
-            emit_progress(args.progress, "Building the validated TSPi package")
+            emit_progress(args.progress, "Building the validated ResearchAgent package")
             built = json.loads(run(build, cwd=checkout))
             install = [sys.executable, "scripts/install_package.py", "--manifest", built["manifest"], "--archive", built["archive"], "--install-root", args.install_root, "--json"]
             if args.allow_dirty:
@@ -222,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
             installed = json.loads(run(install, cwd=checkout))
             provenance = Path(args.install_root).expanduser().resolve() / "var/state/installation/source-provenance.json"
             provenance.parent.mkdir(parents=True, exist_ok=True)
-            provenance.write_text(json.dumps({"schema_version": "tspi-source-provenance/1", "repo": args.repo, "ref": args.ref, "commit": commit, "tree_digest": digest, "installed_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            provenance.write_text(json.dumps({"schema_version": "research-agent-source-provenance/1", "repo": args.repo, "ref": args.ref, "commit": commit, "tree_digest": digest, "installed_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             result = {
                 "commit": commit,
                 "tree_digest": digest,

@@ -1,4 +1,4 @@
-"""Thin client for the TSPi JSON-lines ResearchMap provider."""
+"""Thin client for the ResearchAgent JSON-lines Research memory provider."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ class ProviderClientError(RuntimeError):
 
 
 class ProviderClient:
-    """Call the core provider without importing any TSPi private module."""
+    """Call the core provider without importing any ResearchAgent private module."""
 
     def __init__(
         self,
@@ -46,7 +46,7 @@ class ProviderClient:
         query: dict[str, str] | None = None,
     ) -> Any:
         request = {
-            "schema_version": "research-map-provider/1",
+            "schema_version": "research-memory-provider/1",
             "request_id": uuid.uuid4().hex,
             "operation": operation,
             "workspace_id": workspace_id,
@@ -67,26 +67,26 @@ class ProviderClient:
                 env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
             )
         except subprocess.TimeoutExpired as error:
-            raise ProviderClientError("ResearchMap provider timed out", retryable=True) from error
+            raise ProviderClientError("Research memory provider timed out", retryable=True) from error
         except OSError as error:
-            raise ProviderClientError("ResearchMap provider is unavailable", retryable=True) from error
+            raise ProviderClientError("Research memory provider is unavailable", retryable=True) from error
         if completed.returncode != 0:
-            raise ProviderClientError("ResearchMap provider failed", retryable=True)
+            raise ProviderClientError("Research memory provider failed", retryable=True)
         lines = [line for line in completed.stdout.splitlines() if line.strip()]
         if len(lines) != 1:
-            raise ProviderClientError("ResearchMap provider returned an invalid response", retryable=True)
+            raise ProviderClientError("Research memory provider returned an invalid response", retryable=True)
         try:
             response = json.loads(lines[0])
         except json.JSONDecodeError as error:
-            raise ProviderClientError("ResearchMap provider returned invalid JSON", retryable=True) from error
-        if not isinstance(response, dict) or response.get("schema_version") != "research-map-provider/1":
-            raise ProviderClientError("ResearchMap provider protocol version is incompatible")
+            raise ProviderClientError("Research memory provider returned invalid JSON", retryable=True) from error
+        if not isinstance(response, dict) or response.get("schema_version") != "research-memory-provider/1":
+            raise ProviderClientError("Research memory provider protocol version is incompatible")
         if response.get("request_id") != request["request_id"]:
-            raise ProviderClientError("ResearchMap provider response identity is invalid")
+            raise ProviderClientError("Research memory provider response identity is invalid")
         if response.get("ok") is True:
             return response.get("payload")
         error = response.get("error") if isinstance(response.get("error"), dict) else {}
-        message = error.get("error") if isinstance(error.get("error"), str) else "ResearchMap provider rejected the request"
+        message = error.get("error") if isinstance(error.get("error"), str) else "Research memory provider rejected the request"
         raise ProviderClientError(message, retryable=error.get("retryable") is True)
 
     def register(self, source_roots: Sequence[str | Path], labels: Sequence[str] | None = None) -> Any:
@@ -101,13 +101,13 @@ class ProviderClient:
         try:
             completed = subprocess.run(command, capture_output=True, text=True, timeout=self.timeout, check=False)
         except (OSError, subprocess.TimeoutExpired) as error:
-            raise ProviderClientError("ResearchMap provider registration is unavailable", retryable=True) from error
+            raise ProviderClientError("Research memory provider registration is unavailable", retryable=True) from error
         if completed.returncode != 0:
-            raise ProviderClientError("ResearchMap provider registration failed")
+            raise ProviderClientError("Research memory provider registration failed")
         try:
             return json.loads(completed.stdout)
         except json.JSONDecodeError as error:
-            raise ProviderClientError("ResearchMap provider registration returned invalid JSON") from error
+            raise ProviderClientError("Research memory provider registration returned invalid JSON") from error
 
 
 def _command(value: str | Path | Sequence[str]) -> list[str]:

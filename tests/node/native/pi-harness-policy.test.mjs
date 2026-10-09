@@ -3,22 +3,12 @@ import { mkdtemp, mkdir, symlink, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createPackageSourceReadGuard } from "../../../apps/app-server/pi-harness-policy.mjs";
-import { createSkillPathResolver } from "../../../apps/app-server/skill-paths.mjs";
-
-test("registered Skill names resolve without assuming a common directory", () => {
-  const resolve = createSkillPathResolver([{ name: "email", filePath: "/package/extensions/email/SKILL.md" }]);
-  assert.equal(resolve({ path: "skill:email" }).path, "/package/extensions/email/SKILL.md");
-  assert.equal(resolve({ path: "skill:email/references/email_delivery.md" }).path, "/package/extensions/email/references/email_delivery.md");
-  assert.throws(() => resolve({ path: "skill:unknown" }), /Unknown registered/);
-  assert.throws(() => resolve({ path: "skill:email/../private.py" }), /remain inside/);
-});
-
+import { createPackageSourceReadGuard } from "../../../apps/agent/pi/policy.mjs";
 test("Harness package-source guard blocks private package reads but allows public skills", async () => {
-  const root = await mkdtemp(join(tmpdir(), "tspi-harness-policy-"));
+  const root = await mkdtemp(join(tmpdir(), "t-"));
   const packageRoot = join(root, "package");
   const workspace = join(root, "workspace");
-  const skillRoot = join(packageRoot, "extensions", "chemical", "skills", "demo");
+  const skillRoot = join(packageRoot, "domains", "chemical", "skills", "demo");
   await mkdir(skillRoot, { recursive: true });
   await mkdir(join(packageRoot, "src"), { recursive: true });
   await mkdir(workspace, { recursive: true });
@@ -28,11 +18,11 @@ test("Harness package-source guard blocks private package reads but allows publi
   try {
     assert.equal(guard({ toolName: "read", args: { path: join(packageRoot, "src", "private.mjs") } }).block !== undefined, true);
     assert.equal(guard({ toolName: "read", args: { path: join(skillRoot, "SKILL.md") } }), undefined);
-    const missing = guard({ toolName: "read", args: { path: join(packageRoot, "extensions/other/skills/demo/SKILL.md") } });
+    const missing = guard({ toolName: "read", args: { path: join(packageRoot, "domains/other/skills/demo/SKILL.md") } });
     const recovery = JSON.parse(missing.block.reason);
     assert.equal(recovery.code, "skill_resource_not_found");
     assert.deepEqual(recovery.skill_locations, [join(skillRoot, "SKILL.md")]);
-    const rejectedJob = guard({ toolName: "job_start", args: { command: ["python", join(packageRoot, "extensions/other/skills/demo/run.py")] } });
+    const rejectedJob = guard({ toolName: "job_start", args: { command: ["python", join(packageRoot, "domains/other/skills/demo/run.py")] } });
     assert.equal(JSON.parse(rejectedJob.block.reason).code, "skill_resource_not_found");
     assert.equal(guard({ toolName: "job_start", args: { command: ["python", "skills/demo/run.py"] } }), undefined);
     assert.equal(guard({ toolName: "job_start", args: { command: ["python", "/remote/python/script.py"] } }), undefined);
@@ -46,7 +36,7 @@ test("Harness package-source guard blocks private package reads but allows publi
 });
 
 test("Harness package-source guard canonicalizes symlinked private files", async () => {
-  const root = await mkdtemp(join(tmpdir(), "tspi-harness-policy-link-"));
+  const root = await mkdtemp(join(tmpdir(), "t-"));
   const packageRoot = join(root, "package");
   const outside = join(root, "outside");
   await mkdir(join(packageRoot, "src"), { recursive: true });

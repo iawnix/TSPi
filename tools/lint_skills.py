@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 import unicodedata
@@ -100,12 +101,9 @@ def _reachable_references(entry: Path, skill_root: Path) -> set[Path]:
 def validate_skills(root: Path = ROOT) -> list[str]:
     errors: list[str] = []
     skill_roots: list[Path] = []
-    for extension_root in (root / "extensions").iterdir():
-        if not extension_root.is_dir() or extension_root.name == "server":
-            continue
-        skill_roots.extend(path for path in extension_root.rglob("*") if path.is_dir() and (path / "SKILL.md").is_file())
-        if (extension_root / "SKILL.md").is_file():
-            skill_roots.append(extension_root)
+    package = json.loads((root / "package.json").read_text())
+    for relative in package["pi"]["skills"]:
+        skill_roots.extend(path.parent for path in (root / relative).rglob("SKILL.md"))
     seen_names: dict[str, Path] = {}
     for skill_root in sorted(skill_roots):
         if (skill_root / "SKILL.md").is_file():
@@ -176,7 +174,7 @@ def main() -> int:
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
-    count = sum(1 for extension_root in (ROOT / "extensions").iterdir() if extension_root.is_dir() for path in extension_root.rglob("SKILL.md"))
+    count = sum(1 for relative in json.loads((ROOT / "package.json").read_text())["pi"]["skills"] for path in (ROOT / relative).rglob("SKILL.md"))
     print(f"skill contract check passed: {count} skills")
     return 0
 

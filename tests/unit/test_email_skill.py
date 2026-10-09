@@ -10,7 +10,7 @@ def test_email_cli_starts_in_a_fresh_interpreter(tmp_path):
     import subprocess
     import sys
 
-    script = Path(__file__).resolve().parents[2] / 'extensions/email/scripts/email_cli.py'
+    script = Path(__file__).resolve().parents[2] / 'skills/email/scripts/email_cli.py'
     env = dict(os.environ)
     env.pop('PYTHONPATH', None)
     result = subprocess.run(
@@ -22,8 +22,10 @@ def test_email_cli_starts_in_a_fresh_interpreter(tmp_path):
 
 
 def fixture(root,monkeypatch):
-    (root/'workspace_manifest.json').write_text(json.dumps({'workspace_id':'ws_email','research_state':{'revision':1}}))
-    report=root/'reports/result.md';report.parent.mkdir();report.write_text('Evidence report')
+    from research_agent.research.workspace import initialize_workspace, admit_research_workspace
+    initialize_workspace(root, 'ws_email', 'research')
+    admit_research_workspace(root)
+    report=root/'reports/result.md';report.parent.mkdir(exist_ok=True);report.write_text('Evidence report')
     cfg=delivery.EmailNotificationConfig(source=root/'notifications.toml',enabled=True,recipient='reader@example.test',digest='config1',provider='smtp',from_address='sender@example.test')
     monkeypatch.setattr(delivery,'load_notification_config',lambda *args:cfg)
     request={'schema_version':'ts-user-notification/2','notification_id':'study-complete-report-v1',
@@ -33,11 +35,14 @@ def fixture(root,monkeypatch):
     return path,cfg
 
 
-def test_retry_across_revision_and_password_rotation_does_not_resend(tmp_path,monkeypatch):
+def test_retry_across_progress_and_password_rotation_does_not_resend(tmp_path,monkeypatch):
     request,cfg=fixture(tmp_path,monkeypatch);calls=[]
     monkeypatch.setattr(delivery,'_run_transport',lambda *args, **kwargs:calls.append(kwargs) or 'accepted')
     assert delivery.notify_user(tmp_path,request)['state']=='sent'
-    (tmp_path/'workspace_manifest.json').write_text(json.dumps({'workspace_id':'ws_email','research_state':{'revision':99}}))
+    from research_agent.research.nodes import create, update
+    created = create(tmp_path, {"goal": "Track authorized report delivery"})
+    update(tmp_path, {"node_id": created["node"]["id"], "note": "Progress changed",
+        "progress": "Updated delivery explanation", "read_basis": created["read_basis"]})
     monkeypatch.setattr(delivery,'load_notification_config',lambda *args:replace(cfg,digest='rotated'))
     assert delivery.notify_user(tmp_path,request)['state']=='already_sent'
     assert len(calls)==1
@@ -52,36 +57,6 @@ def test_v1_requests_cannot_start_delivery(tmp_path, monkeypatch):
         delivery.notify_user(tmp_path, request)
     assert not (tmp_path / delivery.DELIVERY_DIR_REF).exists()
 
-
-@pytest.mark.parametrize('state', ['sent', 'unknown', 'sending'])
-def test_historical_v2_digest_is_reconciled_without_rewrite_or_resend(tmp_path, monkeypatch, state):
-    request, cfg = fixture(tmp_path, monkeypatch)
-    value = json.loads(request.read_text())
-    normalized = {'schema_version': 'ts-user-notification/1', 'event': value['event'],
-                  'subject': value['subject'], 'summary': value['summary'] + '\n', 'workspace_id': 'ws_email',
-                  'report_artifacts': value['attachments'], 'notification_id': value['notification_id'],
-                  'recipient': cfg.recipient}
-    digest = delivery.sha256_json(normalized)
-    directory = tmp_path / delivery.DELIVERY_DIR_REF; directory.mkdir(parents=True)
-    path = directory / (digest.removeprefix('sha256:') + '.json')
-    receipt = {'schema_version': delivery.RECEIPT_SCHEMA, 'state': state,
-               'notification_digest': digest, 'notification_id': value['notification_id']}
-    path.write_text(json.dumps(receipt)); original = path.read_bytes()
-    monkeypatch.setattr(delivery, '_run_transport', lambda *a, **kw: pytest.fail('historical transport restarted'))
-    if state == 'sent':
-        assert delivery.notify_user(tmp_path, request)['state'] == 'already_sent'
-    elif state == 'sending':
-        with pytest.raises(delivery.NotificationError) as caught:
-            delivery.notify_user(tmp_path, request)
-        assert caught.value.state == 'unknown'
-        current = json.loads(path.read_text())
-        assert current['notification_digest'] == digest
-        assert current['state'] == 'unknown'
-        return
-    else:
-        with pytest.raises(ValueError, match='unknown|sending'):
-            delivery.notify_user(tmp_path, request)
-    assert path.read_bytes() == original
 
 
 def test_unknown_delivery_and_changed_attachment_do_not_send(tmp_path,monkeypatch):
@@ -156,3 +131,104 @@ def test_clawemail_cleanup_failure_after_process_is_ambiguous(tmp_path, monkeypa
     monkeypatch.setattr(delivery.subprocess, 'run', lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout='accepted'))
     with pytest.raises(delivery._DeliveryAmbiguous):
         delivery._run_clawemail(tmp_path/'manager', recipient='reader@example.test', subject='Report', body='Result', attachments=[])
+
+
+def load_cli():
+    import importlib.util
+    path = Path(__file__).resolve().parents[2] / 'skills/email/scripts/email_cli.py'
+    spec = importlib.util.spec_from_file_location('email_cli_fixture', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_journal_failure_after_send_never_resends(tmp_path, monkeypatch):
+    import sys
+    from research_agent.research import records as memory_records
+    from research_agent.research.retrieval import search
+    request, _ = fixture(tmp_path, monkeypatch)
+    calls = []
+    monkeypatch.setattr(delivery, '_run_transport', lambda *a, **kw: calls.append(1) or 'accepted')
+    cli = load_cli()
+    output = tmp_path / 'email-output.json'
+    monkeypatch.setattr(sys, 'argv', ['email_cli', 'send', '--root', str(tmp_path),
+        '--request-file', str(request), '--output', str(output)])
+    original = memory_records.record_event
+    def unavailable(*args, **kwargs):
+        raise OSError('journal temporarily unavailable')
+    monkeypatch.setattr(memory_records, 'record_event', unavailable)
+    assert cli.main() == 0
+    sent = json.loads(output.read_text())
+    assert sent['state'] == 'sent' and 'journal_error' in sent
+    assert len(list((tmp_path / 'operations/events').glob('*.json'))) == 1
+    monkeypatch.setattr(memory_records, 'record_event', original)
+    from research_agent.application.memory_context import read
+    assert read(tmp_path)['projection']['pending'] == 0
+    records = search(tmp_path, origin='runtime')['records']
+    assert [row['kind'] for row in records] == ['delivery']
+    assert calls == [1]  # Context recovery never calls the email transport.
+    assert cli.main() == 0
+    assert json.loads(output.read_text())['state'] == 'already_sent'
+    assert calls == [1]
+    assert search(tmp_path, origin='runtime')['total'] == 1
+
+
+def test_rejected_email_is_recorded_without_transport(tmp_path, monkeypatch):
+    import sys
+    from research_agent.research.retrieval import search
+    request, _ = fixture(tmp_path, monkeypatch)
+    value = json.loads(request.read_text()); value['event'] = 'invalid'
+    request.write_text(json.dumps(value))
+    monkeypatch.setattr(delivery, '_run_transport', lambda *a, **kw: pytest.fail('transport started'))
+    output = tmp_path / 'rejected.json'
+    monkeypatch.setattr(sys, 'argv', ['email_cli', 'prepare', '--root', str(tmp_path),
+        '--request-file', str(request), '--output', str(output)])
+    assert load_cli().main() == 2
+    assert json.loads(output.read_text())['state'] == 'rejected'
+    assert search(tmp_path, origin='runtime', query='rejected')['total'] == 1
+
+
+def test_prepare_projection_failure_does_not_corrupt_send_request(tmp_path, monkeypatch, capsys):
+    import sys
+    from research_agent.research import records
+    request, _ = fixture(tmp_path, monkeypatch)
+    calls = []
+    monkeypatch.setattr(delivery, '_run_transport', lambda *a, **kw: calls.append(1) or 'accepted')
+    def unavailable(*args, **kwargs):
+        raise OSError('journal unavailable')
+    monkeypatch.setattr(records, 'record_event', unavailable)
+    prepared = tmp_path / 'prepared.json'
+    monkeypatch.setattr(sys, 'argv', ['email_cli', 'prepare', '--root', str(tmp_path),
+        '--request-file', str(request), '--output', str(prepared)])
+    assert load_cli().main() == 0
+    assert 'journal_error' in json.loads(capsys.readouterr().out)
+    assert 'journal_error' not in json.loads(prepared.read_text())
+    assert delivery.notify_user(tmp_path, prepared)['state'] == 'sent'
+    assert delivery.notify_user(tmp_path, prepared)['state'] == 'already_sent'
+    assert calls == [1]
+
+
+def test_event_persistence_failure_keeps_send_receipt_and_safe_retry(tmp_path, monkeypatch):
+    import sys
+    from research_agent.application import job_state
+    from research_agent.research.retrieval import search
+    request, _ = fixture(tmp_path, monkeypatch)
+    calls = []
+    monkeypatch.setattr(delivery, '_run_transport', lambda *a, **kw: calls.append(1) or 'accepted')
+    persist = job_state.persist_event
+    def unavailable(*args, **kwargs):
+        raise OSError('event store unavailable')
+    monkeypatch.setattr(job_state, 'persist_event', unavailable)
+    output = tmp_path / 'send.json'
+    monkeypatch.setattr(sys, 'argv', ['email_cli', 'send', '--root', str(tmp_path),
+        '--request-file', str(request), '--output', str(output)])
+    cli = load_cli()
+    assert cli.main() == 0
+    sent = json.loads(output.read_text())
+    assert sent['state'] == 'sent' and sent['journal_error'] == 'event store unavailable'
+    assert json.loads((tmp_path / sent['receipt_ref']).read_text())['state'] == 'sent'
+    monkeypatch.setattr(job_state, 'persist_event', persist)
+    assert cli.main() == 0
+    assert json.loads(output.read_text())['state'] == 'already_sent'
+    assert calls == [1]
+    assert search(tmp_path, origin='runtime')['total'] == 1

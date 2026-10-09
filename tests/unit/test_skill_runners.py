@@ -6,7 +6,7 @@ import sys
 import os
 import pytest
 
-SKILLS=Path(__file__).resolve().parents[2]/'extensions/chemical/skills'
+SKILLS=Path(__file__).resolve().parents[2]/'domains/chemical/skills'
 
 
 def test_xtb_failure_does_not_start_single_point(tmp_path):

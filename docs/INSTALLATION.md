@@ -2,14 +2,15 @@
 
 [English](INSTALLATION.md) | [简体中文](INSTALLATION.zh-CN.md)
 
-This guide installs the TSPi Agent package, its optional TS Web browser, and,
-when requested, the public TSPi Link Relay. TS Phone is a separate Flutter
+This guide installs the ResearchAgent Agent package, its optional TS Web browser, and,
+when requested, the public ResearchAgent Link Relay. TS Phone is a separate Flutter
 application. The Relay remains an independent service and installation root,
 but the main installer can provision it and enroll the Host in one run.
 
 ## Prerequisites
 
 - Linux with Git and Node.js 22.19+.
+- `rg` (ripgrep) and `fd` (or `fdfind`) on the Host service PATH. The installer reports their resolved paths and versions; the Worker checks them before registering the seven native tools. Install system software under `/home/iaw/soft` on this machine and keep test installations under `local_debug/`.
 - Python 3.11+, Conda/Mamba, and a writable user installation directory.
 - A prepared Pi source checkout at the pinned revision (the installer can
   download and patch it automatically).
@@ -23,12 +24,12 @@ private GitHub SSH checkout when passed explicitly; it does not need the TS Phon
 repository:
 
 ```bash
-./install.sh --tspi-repo git@github.com:your-org/TSPi.git
+./install.sh --research-agent-repo git@github.com:your-org/ResearchAgent.git
 ```
 
 ## Install Or Select A Release
 
-Run `./install.sh` and confirm the installation directory, TSPi revision,
+Run `./install.sh` and confirm the installation directory, ResearchAgent revision,
 workspace root, Conda root, optional TS Web component, and service policy. Core
 Agent and its control runtime are always installed. Scientific computation,
 validation, and rendering depend on separately configured execution environments.
@@ -37,15 +38,15 @@ validation, and rendering depend on separately configured execution environments
 non-interactive installation, creates a one-time enrollment code, and enrolls
 the Host automatically. The default Relay origin is
 `https://tsphone.iawnix.xyz`. To reuse a Relay owned elsewhere, set
-`TSPI_WITH_LINK_RELAY=false` and provide `TSPI_LINK_ENROLLMENT_CODE`. The
-Relay-specific settings include `TSPI_LINK_RELAY_ROOT`,
-`TSPI_LINK_RELAY_STATE_DIR`, `TSPI_LINK_RELAY_LISTEN`,
-`TSPI_LINK_RELAY_PORT`, `TSPI_LINK_RELAY_SERVICE_SCOPE`, and
-`TSPI_LINK_RELAY_SERVICE_USER`.
+`RESEARCH_AGENT_WITH_LINK_RELAY=false` and provide `RESEARCH_AGENT_LINK_ENROLLMENT_CODE`. The
+Relay-specific settings include `RESEARCH_AGENT_LINK_RELAY_ROOT`,
+`RESEARCH_AGENT_LINK_RELAY_STATE_DIR`, `RESEARCH_AGENT_LINK_RELAY_LISTEN`,
+`RESEARCH_AGENT_LINK_RELAY_PORT`, `RESEARCH_AGENT_LINK_RELAY_SERVICE_SCOPE`, and
+`RESEARCH_AGENT_LINK_RELAY_SERVICE_USER`.
 The local Relay is used through `127.0.0.1:8788` while redeeming the
 enrollment code; the Host manifest still stores the public origin, so the
 public reverse proxy need not be ready during installation. Override this with
-`TSPI_LINK_ENROLLMENT_URL` when needed.
+`RESEARCH_AGENT_LINK_ENROLLMENT_URL` when needed.
 
 For non-interactive installation, `--workspace-root /absolute/path` selects the
 directory containing named projects. The default is `<install>/workspaces`.
@@ -63,36 +64,36 @@ The package is selected atomically through:
 <install>/current -> releases/<release-id>
 ```
 
-Only the selected release is exposed by the `TSPi` launcher. The installer
+Only the selected release is exposed by the `ResearchAgent` launcher. The installer
 records checksums and never executes source outside that release.
 
 ### Optional model icon font
 
-The installer can add the small TSPi Model Icons font for branded model icons
+The installer can add the small ResearchAgent Model Icons font for branded model icons
 in the terminal status bar. Interactive installs ask this question (default
 yes); non-interactive installs keep the font disabled unless explicitly
 requested:
 
 ```bash
 ./install.sh --non-interactive --yes --with-model-icons \
-  --install-root "$HOME/.local/share/tspi"
+  --install-root "$HOME/.local/share/research-agent"
 ```
 
 Use `--without-model-icons` to leave the optional component disabled. The font
-is installed under the user data directory (`$XDG_DATA_HOME/fonts/tspi`, or
-`$HOME/.local/share/fonts/tspi`) and the selected release records a private
+is installed under the user data directory (`$XDG_DATA_HOME/fonts/research-agent`, or
+`$HOME/.local/share/fonts/research-agent`) and the selected release records a private
 marker at `<install>/etc/model-icons.json`. It is not necessary to install
-Nerd Font: TSPi falls back to the existing Nerd Font glyphs for other icons and
-to ordinary Unicode when `TSPI_ICON_STYLE=unicode` is set. An explicit
-`TSPI_ICON_STYLE=nerd` or `unicode` always overrides the installer choice.
+Nerd Font: ResearchAgent falls back to the existing Nerd Font glyphs for other icons and
+to ordinary Unicode when `RESEARCH_AGENT_ICON_STYLE=unicode` is set. An explicit
+`RESEARCH_AGENT_ICON_STYLE=nerd` or `unicode` always overrides the installer choice.
 Model glyphs use the supplementary private-use range so glyphs already present
-in a terminal's primary Nerd Font cannot shadow the TSPi font.
+in a terminal's primary Nerd Font cannot shadow the ResearchAgent font.
 The installer refreshes the fontconfig cache when `fc-cache` is available;
 already-open terminals may need to be restarted to reload their fallback fonts.
 
 ## Managed Python Runtime
 
-Host Python environments default to `~/soft/tspi/host-envs/<installation-id>` and its
+Host Python environments default to `~/soft/research-agent/host-envs/<installation-id>` and its
 metadata below `<install>/var/state/installation/python`. Runtime caches are private
 under `<install>/var/cache`; they can be removed and recreated without
 touching workspace data.
@@ -106,9 +107,9 @@ remote `job.toml` targets. The pinned Pi source runtime
 also needs hydrated model data and built workspace dependencies;
 `scripts/prepare_pi_source.py --install` prepares both when missing. See
 [scientific operations](SCIENTIFIC_CAPABILITIES_OPERATIONS.md) for capability
-discovery, Node pause/resume, and opt-in remote/model smoke commands.
+discovery, Job cancellation and recovery, and opt-in remote/model smoke commands.
 
-The same step verifies the pinned Pi runtime and its documented TSPi patch set.
+The same step verifies the pinned Pi runtime and its documented ResearchAgent patch set.
 The runtime uses the new workspace-scoped SQLite session layout described below.
 
 ## Configure execution targets
@@ -121,12 +122,12 @@ Job's `platform` field. No implicit local fallback or remote alias is added.
 Copy `config/compute.example.toml`, edit target paths and bindings, and pass it
 with `--job-config /absolute/path/job.toml`. The installation keeps its private
 copy at `<install>/etc/job.toml`. SSH credentials remain in SSH configuration.
-TSPi does not install site-managed Gaussian or xTB binaries.
+ResearchAgent does not install site-managed Gaussian or xTB binaries.
 
 The chemical extension ships fixed wrapper, structure/validation, CF22D and
 rendering environment locks. Provision the needed targets with
 `scripts/install_job_environment.py` before installing or updating the Host;
-see the [target environment instructions](../extensions/chemical/environments/README.md).
+see the [target environment instructions](../domains/chemical/environments/README.md).
 The sample paths are placeholders, and remote locks must match the remote OS
 and CPU. A native execution entry does not require Python.
 
@@ -134,7 +135,7 @@ Installation checks the common configuration contract and then probes every
 configured execution entry on its actual target. For a maintenance check, use:
 
 ```bash
-"$TSPI_PYTHON" -m tspi_runtime.environment_check --config "$TS_JOB_CONFIG"
+"$RESEARCH_AGENT_PYTHON" -m research_agent.application.environment_check --config "$RESEARCH_AGENT_JOB_CONFIG"
 ```
 
 The report distinguishes verified and unconfigured entries. A configured but
@@ -167,12 +168,12 @@ non-interactive install, the same configuration can be supplied explicitly:
 
 ```bash
 ./install.sh \
-  --install-root "$HOME/.local/share/tspi" \
+  --install-root "$HOME/.local/share/research-agent" \
   --non-interactive --yes --service-scope user \
   --email-binding smtp --email-preset qq \
   --email-recipient receiver@example.com \
   --email-address sender@qq.com \
-  --email-password-file "$HOME/.config/tspi/qq-smtp-password"
+  --email-password-file "$HOME/.config/research-agent/qq-smtp-password"
 ```
 
 The password file must already exist and have mode `0600` for a
@@ -188,7 +189,7 @@ provider = "smtp"
 preset = "qq"                 # "163", "qq", or "custom"
 recipient = "receiver@example.com"
 username = "sender@qq.com"
-password_env = "TSPI_EMAIL_PASSWORD"
+password_env = "RESEARCH_AGENT_EMAIL_PASSWORD"
 ```
 
 The SMTP presets use `smtp.163.com` or `smtp.qq.com` on port 465 with implicit
@@ -198,27 +199,27 @@ TLS by default. A different SMTP server can be configured with
 creates a private systemd `EnvironmentFile` when NAME is present in the install
 environment; otherwise create `<install>/etc/secrets/service.env` before starting
 the Host. A private 0600 `password_file` avoids service-environment setup.
-POP3 and IMAP are not required for TSPi notifications because this capability
+POP3 and IMAP are not required for ResearchAgent notifications because this capability
 only sends mail.
 
 ## Start The Installation Host
 
-The installation owns one TSPi Host for all validated workspaces below the
+The installation owns one ResearchAgent Host for all validated workspaces below the
 installation workspace root. The Host is a control plane and the installation
 Pi App Server owns one pinned `SessionWorker`/`durable Harness` lane per active
 session. The installer enables and starts the Host before reporting success;
 the normal terminal launch then attaches to that service:
 
 ```bash
-./ResearchAgent --workspace reaction-a
+./research-agent --workspace reaction-a
 ```
 
-Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for a
+Use `systemctl --user stop|restart|status ts-app-server-research-agent.service` for a
 user-scoped installation, or omit `--user` for a system-scoped installation.
 The Host is required by the terminal, Phone, and background Monitor. Service
 scope `none` is reserved for low-level package staging or tests and leaves
-normal workspace entrypoints unavailable. The generated unit invokes TSPi's
-internal service entrypoint; ordinary users do not run `ResearchAgent --host`.
+normal workspace entrypoints unavailable. The generated unit invokes ResearchAgent's
+internal service entrypoint; ordinary users do not run `research-agent --host`.
 
 The default and recommended scope is a systemd user unit. A system unit must be
 given an explicit `--service-user`; the installer sets `HOME`, `PI_CODING_AGENT_DIR`,
@@ -233,28 +234,28 @@ The service list depends on the selected scopes and optional components:
 
 | Component | Unit | Created when |
 | --- | --- | --- |
-| TSPi Host | `ts-app-server-tspi.service` | `--service-scope user` or `system` |
-| TS Web | `ts-web-tspi.service` | `--with-web` and a Host service scope |
-| Link Relay | `tspi-link-relay.service` | `--with-link-relay` and `--relay-service-scope user` or `system` |
+| ResearchAgent Host | `ts-app-server-research-agent.service` | `--service-scope user` or `system` |
+| TS Web | `ts-web-research-agent.service` | `--with-web` and a Host service scope |
+| Link Relay | `research-agent-relay.service` | `--with-link-relay` and `--relay-service-scope user` or `system` |
 
 `--*-service-scope none` installs files and configuration without registering
 that component's systemd unit. Host Monitor and session workers are managed by
 the Host; they are not additional permanent units. TS Phone is a separate
 Flutter client and does not create a service on the installation host.
 
-## ResearchAgent And The Internal App Server
+## research-agent And The Internal App Server
 
-`ResearchAgent` opens a terminal connected to the installation Agent Server.
+`research-agent` opens a terminal connected to the installation Agent Server.
 Manage that server through systemd:
 
 ```bash
-systemctl --user start ts-app-server-tspi.service
+systemctl --user start ts-app-server-research-agent.service
 ```
 
 The generated unit invokes the private `current/agent/libexec/research-agent-host`
-entrypoint with an explicit installation root. There is no public `ResearchAgentServer` command. Host API, Pi SDK Harness, Monitor,
+entrypoint with an explicit installation root. There is no public `research-agentServer` command. Host API, Pi SDK Harness, Monitor,
 and session workers belong to this one Agent Server. Pi owns the Agent loop,
-model/tool calls and durable transcripts; TSPi supplies research policy and tools.
+model/tool calls and durable transcripts; ResearchAgent supplies Research Memory context and tools.
 
 The fixed Pi checkout lives at `<install>/runtimes/pi/<commit>`.
 Session storage is installation-owned; separate runtime injection, HTTP session
@@ -263,8 +264,8 @@ stores and `.pi/research-agent/server.json` configuration have been removed.
 Create a new conversation or continue the latest conversation in a project:
 
 ```bash
-./ResearchAgent --workspace reaction-a
-./ResearchAgent --workspace reaction-a -c
+./research-agent --workspace reaction-a
+./research-agent --workspace reaction-a -c
 ```
 
 The Host identity is `<install>/var/state/host/server-id`; request receipts,
@@ -278,8 +279,8 @@ local descriptor returned by Host. It does not require tmux or PTY scraping.
 Host restart preserves SQLite durable transcript, operation/queue IDs, receipts, and
 Monitor outbox state; reconnecting clients resume from a Host epoch/cursor.
 
-TS Phone connects to this Host through TSPi Link. During installation, enable
-Phone access and provide the HTTPS TSPi Link Relay origin plus a single-use Host
+TS Phone connects to this Host through ResearchAgent Link. During installation, enable
+Phone access and provide the HTTPS ResearchAgent Link Relay origin plus a single-use Host
 enrollment code created by the Link Relay administrator. Interactive installs
 ask for this short-lived code after the long runtime installation, immediately
 before writing the Phone manifest, so it cannot expire mid-install. Non-interactive
@@ -288,10 +289,10 @@ installs still provide it with `--link-enrollment-code`. The installer writes
 `var/state/host/host.token`. The Host then maintains an outbound WSS
 connection; no App Server port is exposed to the Relay or Internet.
 
-When a Relay is already installed locally, set `TSPI_WITH_LINK_RELAY=false`.
-The installer discovers known roots (including `/home/iaw/soft/tspi-link`) and
-reads its `tspi-link-relay.service` to prefill the Relay origin. Use
-`--link-relay-root /path/to/tspi-link` to select another installation. The
+When a Relay is already installed locally, set `RESEARCH_AGENT_WITH_LINK_RELAY=false`.
+The installer discovers known roots (including `/home/iaw/soft/research-agent-link`) and
+reads its `research-agent-relay.service` to prefill the Relay origin. Use
+`--link-relay-root /path/to/research-agent-link` to select another installation. The
 Relay remains a separate service; when provisioned by the unified installer its
 lifecycle is tracked by an ownership marker.
 
@@ -305,41 +306,41 @@ all wrapper configuration has been explicitly supplied.
 After the Host is online, create and manage Phone authorization with:
 
 ```bash
-./ResearchAgent phone pair
-./ResearchAgent phone devices
-./ResearchAgent phone revoke <device-id>
+./research-agent phone pair
+./research-agent phone devices
+./research-agent phone revoke <device-id>
 ```
 
 An internal client can use the SSH transport to reach a remote Host. The remote
-installation must include `apps/app-server/tspi-host-proxy.mjs`; the client
+installation must include `apps/agent/transport/ssh.mjs`; the client
 starts that proxy over SSH for both Host and Pi sockets, without opening a
-public TCP listener. OpenSSH performs host-key verification while TSPi still
-performs `tspi-host/2` protocol negotiation. Use `--ssh-option` for repeatable
+public TCP listener. OpenSSH performs host-key verification while ResearchAgent still
+performs `research-agent-host/2` protocol negotiation. Use `--ssh-option` for repeatable
 OpenSSH options such as `-i`.
 
-The installer can persist this profile for later `ResearchAgent --workspace`
+The installer can persist this profile for later `research-agent --workspace`
 invocations:
 
 ```bash
 ./scripts/install_wizard.py --non-interactive --yes \
-  --install-root /home/iaw/ResearchAgent \
+  --install-root /home/iaw/research-agent \
   --remote-host pi.example \
-  --remote-host-socket /run/user/1000/tspi/host.sock \
-  --remote-proxy-path /opt/tspi/apps/app-server/tspi-host-proxy.mjs \
+  --remote-host-socket /run/user/1000/research-agent/host.sock \
+  --remote-proxy-path /opt/research-agent/apps/agent/transport/ssh.mjs \
   --ssh-config /home/user/.ssh/config \
   --ssh-option=-i --ssh-option=/home/user/.ssh/id_ed25519
 ```
 
 It writes the owner-only `etc/remote-host.json` profile. Command-line
-values supplied to `ResearchAgent` override that profile for one launch.
+values supplied to `research-agent` override that profile for one launch.
 
-`phone pair` prints the configured TSPi Link Relay URL and an eight-character code that
+`phone pair` prints the configured ResearchAgent Link Relay URL and an eight-character code that
 expires after five minutes and can be used once. TS Phone redeems it for a
 revocable device credential held in platform secure storage. Phone credentials
 and the Host token are unrelated to the TS Web HTTP token.
 
 Phone is a normal interactive Pi client. Its prompts run through the same Pi
-Harness lane and use the same `read`, `write`, `bash`, and TSPi tools as the terminal;
+Harness lane and use the same `read`, `write`, `bash`, and ResearchAgent tools as the terminal;
 TS Web is the read-only client in this architecture.
 
 ## Monitor operations
@@ -347,14 +348,11 @@ TS Web is the read-only client in this architecture.
 The Host starts one Monitor worker for the configured workspace root. It polls
 durable Compute status and writes registrations, events, and delivery receipts
 inside each workspace. `monitor/list`, `monitor/status`, `monitor/enable`, and
-`monitor/disable` expose health and backlog. Wake and notification channels have
-separate leases, retries, and receipts. A wake means that Pi accepted a prompt;
-it does not mean that the agent turn completed. The Root Agent must reread
-`research_read` and inspect the calculation before changing ResearchMap.
+`monitor/disable` expose health and backlog. `next_run` persists authenticated execution events until the original session can accept them. Busy or paused sessions leave events pending. Delivery and Pi consumption identities recover retries independently of Memory revision; an accepted input does not mean the science was interpreted. The Agent reads the associated Node and actual Job receipts before recording a conclusion.
 
 The canonical `workspace_manifest.json` identity is verified before Monitor
 maps events to the Host route. Its `workspace_id` is the same value used by
-Research State, local runs, and remote calculation intents; there is no separate
+Research Memory, local runs, and remote calculation intents; there is no separate
 `workspace.json` identity or alias layer.
 
 ## Session history
@@ -366,10 +364,8 @@ second session format.
 
 ## Workspace Bootstrap
 
-The first `./ResearchAgent --workspace <name>` invocation creates a 0700 workspace and
-the canonical `workspace_manifest.json`, `research_map/context.json`,
-`lifecycle/liveness.json`, and `memory/index.json` documents when the named
-project does not exist. The Host's WorkspaceDirectory exposes the same
+The first `./research-agent --workspace <name>` invocation creates a 0700 workspace and
+the canonical `workspace_manifest.json` (`research_workspace/2`) and Research Memory storage when the named project does not exist. Nodes are created on demand under `research/nodes/`; there is no global progress or lifecycle document. The Host's WorkspaceDirectory exposes the same
 operation to TS Phone. The Host itself does not create unnamed projects, and
 bootstrap validates the canonical protocol and refuses legacy or partial state
 rather than rewriting it.
@@ -381,7 +377,7 @@ If TS Web was selected, start it with:
 ```bash
 ./TSWeb serve \
   --state-dir var/state/web \
-  --auth-token-file "$HOME/.local/share/tspi/etc/web/auth.token" \
+  --auth-token-file "$HOME/.local/share/research-agent/etc/web/auth.token" \
   --source-root /configured/workspace-root/reaction-a \
   --label "Reaction A" --host 127.0.0.1 --port 8766
 ```
@@ -389,7 +385,7 @@ If TS Web was selected, start it with:
 Use `--web-host 0.0.0.0 --allow-remote` only with an authenticated token file;
 the installer rejects a non-loopback bind without both explicit settings. TS
 Web is read-only and does not own Pi sessions. Its bearer token is separate
-from TSPi Link Host and device credentials.
+from ResearchAgent Link Host and device credentials.
 
 The installer generates a random TS Web token when the token file is missing.
 For a selected token, pass `--web-auth-token` (8-100 URL-safe characters) or
@@ -400,7 +396,7 @@ with `--web-auth-token-file` is preferred for production use.
 ## Configure Models
 
 Model selection and authentication are provided by the pinned Pi runtime, not
-by a separate TSPi provider registry. Built-in and conditional support for GPT,
+by a separate ResearchAgent provider registry. Built-in and conditional support for GPT,
 Gemini, DeepSeek, GLM/Zhipu, Kimi, custom OpenAI-compatible endpoints, and the
 non-support boundary for SeedDance/Seedream are listed in
 [Model Compatibility](MODEL_COMPATIBILITY.md).
@@ -410,7 +406,7 @@ During installation, the installer copies any missing `models.json` and
 installation state at `<install>/etc/pi/`. Existing installation-local files
 are preserved on upgrades. If no files are available, configure provider
 credentials through Pi or provider environment variables before creating a
-TSPi session.
+ResearchAgent session.
 
 ## Upgrade
 
@@ -452,8 +448,8 @@ Inspect the latest installer log under `<install>/var/log/` and verify with the
 scope selected during installation:
 
 ```bash
-systemctl --user status ts-app-server-tspi.service  # user scope
-systemctl status ts-app-server-tspi.service         # system scope
+systemctl --user status ts-app-server-research-agent.service  # user scope
+systemctl status ts-app-server-research-agent.service         # system scope
 ```
 
 ## Uninstall
@@ -470,6 +466,6 @@ is removed even when its code path no longer exists.
 
 The installation uses `<install>/etc/job.toml`. Keep the reinstall source synchronized after binding maintenance. Before installation, the shared contract checks configuration. After installing the control runtime and extensions, the installer probes every configured local and SSH target using the declared executor and validator requirements: explicit locks, installation receipts, package versions, module imports, activation files, and program digests. Environment-level Python bindings may be overridden per backend; native executors need no Python binding.
 
-The summary separates configuration import from `configuration_validated`, `verified`, and `not_configured` entry states. Missing capabilities do not prevent research requirement registration. A configured target that fails verification fails installation. `var/state/installation/job-readiness.json` records per-target, per-entry readiness and configuration digests. These probes do not submit calculations; validate execution with a bounded scientific Job. A healthy Host does not imply that molecular rendering or any solver is available.
+The summary separates configuration import from `configuration_validated`, `verified`, and `not_configured` entry states. Missing capabilities do not prevent recording research questions. A configured target that fails verification fails installation. `var/state/installation/job-readiness.json` records per-target, per-entry readiness and configuration digests. These probes do not submit calculations; validate execution with a bounded scientific Job. A healthy Host does not imply that molecular rendering or any solver is available.
 
 Reports and email check/prepare/send/status run through native bash; job_* manages scientific computation. Email retains installation credentials and durable delivery receipts.

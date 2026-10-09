@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-"""Create a canonical Research Agent workspace for Host/Pi integrations.
+"""Create and admit a canonical research workspace for Host/Pi integrations.
 
-This command is deliberately separate from ``workspace.py``.  The latter
-owns the retired ResearchMap storage tooling and must not be used as a
-workspace producer by the Native Pi Host.  This entrypoint writes only the
-``workspace_manifest.json`` protocol and its mode-owned directories.
+Workspace diagnostics and projection repair are exposed by workspace.py.
 """
 
 from __future__ import annotations
@@ -13,7 +10,6 @@ import argparse
 import json
 import sys
 from pathlib import Path
-import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -21,7 +17,7 @@ from _bootstrap import bootstrap_python_package
 
 bootstrap_python_package(ROOT, workspace_from_argv=True)
 
-from research_state.workspace import (  # noqa: E402
+from research_agent.research.workspace import (  # noqa: E402
     WorkspaceModeError,
     admit_research_workspace,
     initialize_workspace,

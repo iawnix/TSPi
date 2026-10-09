@@ -25,7 +25,7 @@ try:
         build_wheel,
         source_payload_sha256,
     )
-    from ._extension_validation import validate_extensions
+    from ._resources import validate_resources
 except ImportError:
     from _source_capture import SourceCaptureError, capture_source_tree
     from _wheel import (
@@ -36,11 +36,11 @@ except ImportError:
         build_wheel,
         source_payload_sha256,
     )
-    from _extension_validation import validate_extensions
+    from _resources import validate_resources
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST_NAME = "tspi-release.json"
+MANIFEST_NAME = "research-agent-release.json"
 SCHEMA_VERSION = RELEASE_SCHEMA_VERSION
 
 
@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir = (ROOT / output_dir).resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        with tempfile.TemporaryDirectory(prefix="tspi-pack-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="research-agent-pack-") as temporary:
             temporary_dir = Path(temporary)
             captured = capture_source_tree(
                 ROOT,
@@ -66,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             source_root = captured.root
             validate_package(source_root)
-            validate_extensions(source_root)
+            validate_resources(source_root)
             package = json.loads((source_root / "package.json").read_text(encoding="utf-8"))
             package_name = require_string(package.get("name"), "package name")
             package_version = require_string(package.get("version"), "package version")
@@ -108,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
             digest = sha256_file(packed_path)
             size_bytes = packed_path.stat().st_size
             release_id = f"{package_version}-sha256-{digest[:16]}-{captured.git_commit[:12]}"
-            archive_name = f"tspi-{release_id}.tgz"
+            archive_name = f"research-agent-{release_id}.tgz"
             archive_path = output_dir / archive_name
             if archive_path.exists():
                 if sha256_file(archive_path) != digest:

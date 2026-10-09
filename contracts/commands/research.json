@@ -1,0 +1,464 @@
+{
+  "schema_version": "research-agent-command-source/1",
+  "commands": [
+    {
+      "id": "research.read",
+      "domain": "research",
+      "effect": "read",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "focus_node_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "field": {
+            "anyOf": [
+              {
+                "$ref": "shared.json#/tools/state/properties/field"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "examples": [
+        {}
+      ],
+      "result": {
+        "$ref": "results.json#/commands/research.read"
+      }
+    },
+    {
+      "id": "research.search",
+      "domain": "research",
+      "effect": "read",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "shared.json#/tools/search/properties/origin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "after_sequence": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "examples": [
+        {}
+      ],
+      "result": {
+        "$ref": "results.json#/commands/research.search"
+      }
+    },
+    {
+      "id": "research.create",
+      "domain": "research",
+      "effect": "write",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "goal": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proposal": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plan": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "input_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "relations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "read_basis": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "goal"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "goal": "Determine the reaction pathway"
+        }
+      ],
+      "result": {
+        "$ref": "results.json#/commands/research.create"
+      }
+    },
+    {
+      "id": "research.update",
+      "domain": "research",
+      "effect": "write",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proposal": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plan": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "progress": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "shared.json#/tools/update/properties/status"
+          },
+          "assessment_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "add_relations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "remove_relations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "read_basis": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "node_id",
+          "note"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "node_id": "node_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "note": "A new observation"
+        }
+      ],
+      "result": {
+        "$ref": "results.json#/commands/research.update"
+      }
+    },
+    {
+      "id": "research.result",
+      "domain": "research",
+      "effect": "write",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "conclusion": {
+            "type": "string"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limitations": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "supersedes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "as_assessment": {
+            "type": "boolean"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "read_basis": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "node_id",
+          "conclusion"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "node_id": "node_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "conclusion": "The calculation supports this candidate"
+        }
+      ],
+      "result": {
+        "$ref": "results.json#/commands/research.result"
+      }
+    },
+    {
+      "id": "research.source",
+      "domain": "research",
+      "effect": "write",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "message_id",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "session_id": "fixture-session",
+          "message_id": "fixture-message",
+          "text": "Investigate this question"
+        }
+      ],
+      "result": {
+        "$ref": "results.json#/commands/research.source"
+      }
+    },
+    {
+      "id": "research.observe",
+      "domain": "research",
+      "effect": "write",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "read_basis": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "read_basis"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "read_basis": "read_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "result": {
+        "$ref": "results.json#/commands/research.observe"
+      }
+    }
+  ]
+}

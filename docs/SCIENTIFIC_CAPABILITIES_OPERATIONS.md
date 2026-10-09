@@ -2,13 +2,13 @@
 
 [简体中文](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)
 
-The extension manifest declares executable methods and validators. Skills explain method selection, scientific limitations and interpretation. Research State records requirements and evidence; adding an executor does not require a method-specific State change.
+The extension manifest declares executable methods and validators. Skills explain method selection, scientific limitations and interpretation. Research Memory records original requirements, research questions and results; adding an executor does not require method-specific research fields.
 
 ## Prepare and execute
 
-List installed entries with `"$TSPI_PYTHON" -m tspi_runtime.executors --list`. Select an executor id/version and a named environment from installation-owned `etc/job.toml`. The descriptor supplies its backend key, pinned scripts, pure CLI parser, input roles and output declarations. Native entries need no Python binding; Python entries use the selected target's configured interpreter.
+List installed entries with `"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --list`. Select an executor id/version and a named environment from installation-owned `etc/job.toml`. The descriptor supplies its backend key, pinned scripts, pure CLI parser, input roles and output declarations. Native entries need no Python binding; Python entries use the selected target's configured interpreter.
 
-The preparation command writes a request and returns `request_file` and `request_sha256`. Submit these with `node_id` to `job_start`. Runtime checks the file and inputs, applies State admission, and registers `prepared_ref`, Attempt and dispatch intent together. Preparation alone creates no Attempt and proves no scientific outcome.
+The preparation command writes a request and returns `request_file` and `request_sha256`. Submit these with `node_id` to `job_start`. Runtime checks the file and inputs and fixes the Node association, inspected plan revision, `prepared_ref` and dispatch intent. Preparation alone dispatches no Job and proves no scientific outcome.
 
 A task-specific Python method can use `--script <file.py> --backend <binding>` instead of executor/version. Declare staged dependencies and collected outputs. For registered input evidence, pass `--input-artifact <id-or-ref>` so Runtime verifies its actual staged bytes and preserves lineage.
 
@@ -20,11 +20,11 @@ The selected job.toml backend provides the command, Python binding, activation a
 
 Preparation probes the selected local or SSH target: interpreter prefix, explicit Conda lock, pinned pip versions, installation receipt, package inventory, executable and activation file digests. This observation contributes to request identity. New submissions recheck it, and the staged, digest-pinned guard checks again when execution begins. Activation is verified before sourcing. Drift prevents execution; retries of an existing Job still return its original identity. Environment agreement does not itself prove a scientific method works.
 
-Installation receipts now include `inventory_sha256`. Reverify an existing environment using `scripts/install_job_environment.py --config … --environment … --backend … --adopt` before publishing a new receipt; do not hand-fill a digest. The installer first validates configuration structure, then uses the installed control runtime and extension catalog to run `"$TSPI_PYTHON" -m tspi_runtime.environment_check --config "$TS_JOB_CONFIG"` for all configured entries, including remote targets. `job_probe` continues to describe platform availability only.
+Installation receipts now include `inventory_sha256`. Reverify an existing environment using `scripts/install_job_environment.py --config … --environment … --backend … --adopt` before publishing a new receipt; do not hand-fill a digest. The installer first validates configuration structure, then uses the installed control runtime and extension catalog to run `"$RESEARCH_AGENT_PYTHON" -m research_agent.application.environment_check --config "$RESEARCH_AGENT_JOB_CONFIG"` for all configured entries, including remote targets. `job_probe` continues to describe platform availability only.
 
 Application-submitted local Jobs run in independent transient systemd user services. They survive Host restarts, receive a minimal environment plus explicit Job variables, and use CPUQuota/MemoryMax when resources are requested. Runtime creates a private scratch directory inside the Job or below the configured scratch_root; explicit environment values can reference `{scratch}`. Receipts remain in the workspace after a transient unit is removed.
 
-Resource defaults merge once at preparation or submission, in target, backend, then explicit-request order. Prepared entries keep their resolved resources; submission cannot override them. The Attempt and execution fingerprint record the actual values. `allowed_queues` is a permission boundary, not a default for `submission.queue`. Local targets reject queue fields. Torque translates cpus/memory_mb to nodes/ppn and mem; PBS uses select (which cannot be combined with cpus/memory_mb). When both walltime and program timeout_seconds are present, the shorter limit applies.
+Resource defaults merge once at preparation or submission, in target, backend, then explicit-request order. Prepared entries keep their resolved resources; submission cannot override them. The Job receipt and execution fingerprint record the actual values. `allowed_queues` is a permission boundary, not a default for `submission.queue`. Local targets reject queue fields. Torque translates cpus/memory_mb to nodes/ppn and mem; PBS uses select (which cannot be combined with cpus/memory_mb). When both walltime and program timeout_seconds are present, the shorter limit applies.
 
 Remote Jobs use the configured SSH/PBS target and share the local minimal process environment, thread defaults and scratch rules. They do not inherit scientific settings from the login shell: required paths and activation scripts belong in the binding. Remote directory names include a digest of the local Job path, keeping same-name Jobs in different workspaces separate. Recovery uses the saved actual directory and scheduler.id; historical directories are used only to recover their original tasks.
 
@@ -34,7 +34,7 @@ Submission disables scheduler mail and automatic reruns; the research workflow o
 
 ## Evidence and support boundaries
 
-Job files live below `runs/jobs/<job_id>`. Collection registers declared files as Artifacts belonging to their producing Attempt, including all files in an explicitly declared recursive output directory. Findings interpret that evidence. Requirements and scientific validators decide whether it supports the requested result; exit zero or a formatted report alone does not establish success.
+Job files live below `runs/jobs/<job_id>`. Collection registers declared files as Artifacts belonging to their producing Job, including all files in an explicitly declared recursive output directory. The Agent applies domain methods, records interpretation in the corresponding Node and publishes useful Results. Exit zero or a formatted report alone does not establish scientific success.
 
 Bundled executable entries cover CF22D, xTB, Gaussian inputs, structure/graph preparation, mapped DA candidates, IRC-input preparation and CF22D readiness. Gaussian's explicit-input runner also handles supported TS/Freq/IRC routes. CREST/QBICS guidance and NEB discussion do not imply a bundled callable runner: use a verified installed program or an explicitly bound task script and describe its actual scope.
 

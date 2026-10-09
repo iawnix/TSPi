@@ -11,25 +11,27 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from job_runtime.config_contract import load_job_config, resolve_binding
-from job_runtime.environment import guarded_command, probe_binding
-from job_runtime.worker import supervisor_environment
-from research_state.agent_workspace import read_context
-from research_state.transactions import TransactionCoordinator
-from tspi_runtime.api import execute
-from tspi_runtime.executors import prepare_script
+from research_agent.jobs.config_contract import load_job_config, resolve_binding
+from research_agent.jobs.environment import guarded_command, probe_binding
+from research_agent.jobs.worker import supervisor_environment
+from research_agent.application.memory_context import read
+from research_agent.artifacts.registry import manifests
+from research_agent.application.job_state import execution
+from research_agent.foundation.transactions import TransactionCoordinator
+from research_agent.application.api import execute
+from research_agent.application.executors import prepare_script
 from tests.unit.test_job_recovery import workspace
 
 
 def target():
-    settings = load_job_config(os.environ['TS_JOB_CONFIG'])
+    settings = load_job_config(os.environ['RESEARCH_AGENT_JOB_CONFIG'])
     return settings, resolve_binding(settings, 'local', 'validation', runtime='python')
 
 
 def request(tmp_path):
     script = tmp_path / 'science.py'
     script.write_text("from pathlib import Path\nPath('result.txt').write_text('computed once')\n")
-    return prepare_script(os.environ['TS_JOB_CONFIG'], 'local', 'validation', script, collect=['result.txt'])
+    return prepare_script(os.environ['RESEARCH_AGENT_JOB_CONFIG'], 'local', 'validation', script, collect=['result.txt'])
 
 
 def stage(tmp_path, request):
@@ -57,7 +59,7 @@ def test_actual_python_environment_matches_receipt_and_declared_dependencies():
     with pytest.raises(ValueError, match='dependency_version_mismatch'):
         probe_binding(settings, selected, {'packages': {'rdkit': '>=9999'}})
     with pytest.raises(ValueError, match='environment_import_failed'):
-        probe_binding(settings, selected, {'imports': ['tspi_nonexistent_dependency']})
+        probe_binding(settings, selected, {'imports': ['research_agent_nonexistent_dependency']})
 
 
 def test_target_conda_package_hash_must_match_the_declared_lock(tmp_path):
@@ -81,7 +83,7 @@ def test_target_changes_are_detected_without_trusting_runner_self_reports(change
     if changed == 'lock':
         Path(python['lock_ref']).write_text('@EXPLICIT\nhttps://fixture.invalid/changed.conda\n')
     elif changed == 'receipt':
-        (Path(python['prefix']) / 'tspi-environment.json').unlink()
+        (Path(python['prefix']) / 'research-agent-environment.json').unlink()
     elif changed == 'inventory':
         site = next(Path(python['prefix']).glob('lib/python*/site-packages'))
         package = site / 'unlocked-1.0.dist-info'
@@ -97,12 +99,12 @@ def test_queued_python_job_rechecks_receipt_and_guard_code_before_script(tmp_pat
     prepared = request(tmp_path)
     cwd = stage(tmp_path, prepared)
     selected = prepared['metadata']['execution_binding']
-    receipt = Path(selected['python']['prefix']) / 'tspi-environment.json'
+    receipt = Path(selected['python']['prefix']) / 'research-agent-environment.json'
     receipt.write_text(receipt.read_text() + '\n')
     result = run_guard(cwd, prepared['command'])
     assert result.returncode == 125 and 'execution_environment_changed' in result.stderr
     assert not (cwd / 'result.txt').exists()
-    (cwd / '.tspi/environment_probe.py').write_text("raise SystemExit(0)\n")
+    (cwd / '.research-agent/environment_probe.py').write_text("raise SystemExit(0)\n")
     assert run_guard(cwd, prepared['command']).returncode == 125
     assert not (cwd / 'result.txt').exists()
 
@@ -135,14 +137,14 @@ def test_submission_rejects_drift_before_attempt_but_replay_returns_original_rec
     root.mkdir()
     workspace(root)
     prepared = request(tmp_path)
-    params = {**prepared, 'node_id': 'node_1'}
+    params = {**prepared}
     selected = prepared['metadata']['execution_binding']
-    receipt = Path(selected['python']['prefix']) / 'tspi-environment.json'
+    receipt = Path(selected['python']['prefix']) / 'research-agent-environment.json'
     original = receipt.read_bytes()
     receipt.write_bytes(original + b'\n')
     with pytest.raises(ValueError, match='execution_environment_changed'):
         execute('job.start', root, params)
-    assert not read_context(root)['attempts']
+    assert not list((root/'operations/executions').glob('*.json'))
     assert not (root / 'runs/jobs').exists()
     receipt.write_bytes(original)
     started = execute('job.start', root, params)
@@ -154,8 +156,8 @@ def test_submission_rejects_drift_before_attempt_but_replay_returns_original_rec
     assert status['state'] == 'succeeded'
     receipt.unlink()
     replay = execute('job.start', root, params)
-    assert replay['job_id'] == started['job_id'] and replay['attempt_id'] == started['attempt_id']
-    assert len(read_context(root)['attempts']) == 1
+    assert replay['job_id'] == started['job_id']
+    assert len(list((root/'operations/executions').glob('*.json'))) == 1
 
 
 def test_target_probe_does_not_hold_state_lock(tmp_path, monkeypatch):
@@ -163,7 +165,7 @@ def test_target_probe_does_not_hold_state_lock(tmp_path, monkeypatch):
     root.mkdir()
     workspace(root)
     prepared = request(tmp_path)
-    from tspi_runtime import execution_environment
+    from research_agent.application import execution_environment
     original = execution_environment.probe_binding
     entered, release = threading.Event(), threading.Event()
     def slow_probe(*args):
@@ -173,9 +175,9 @@ def test_target_probe_does_not_hold_state_lock(tmp_path, monkeypatch):
     monkeypatch.setattr(execution_environment, 'probe_binding', slow_probe)
     def read_while_probing():
         with TransactionCoordinator(root).locked():
-            return read_context(root)['workspace_id']
+            return read(root)['workspace_id']
     with ThreadPoolExecutor(max_workers=2) as pool:
-        submit = pool.submit(execute, 'job.start', root, {**prepared, 'node_id': 'node_1'})
+        submit = pool.submit(execute, 'job.start', root, {**prepared})
         try:
             assert entered.wait(5)
             assert pool.submit(read_while_probing).result(timeout=3)
@@ -191,7 +193,7 @@ def test_target_probe_does_not_hold_state_lock(tmp_path, monkeypatch):
 
 
 def test_execution_binding_cannot_be_a_claim_without_the_guard(tmp_path):
-    from tspi_runtime.execution_environment import check_binding
+    from research_agent.application.execution_environment import check_binding
     prepared = request(tmp_path)
     prepared['command'] = ['/bin/true']
     with pytest.raises(ValueError, match='execution_guard_required'):
@@ -199,9 +201,9 @@ def test_execution_binding_cannot_be_a_claim_without_the_guard(tmp_path):
 
 
 def test_identical_guard_copy_can_cross_wheel_and_source_submission(tmp_path):
-    from tspi_runtime.execution_environment import check_binding
+    from research_agent.application.execution_environment import check_binding
     prepared = request(tmp_path)
-    guard = next(row for row in prepared['inputs'] if row['destination'] == '.tspi/environment_probe.py')
+    guard = next(row for row in prepared['inputs'] if row['destination'] == '.research-agent/environment_probe.py')
     other_installation_copy = tmp_path / 'wheel-environment-probe.py'
     shutil.copyfile(guard['source'], other_installation_copy)
     guard['source'] = str(other_installation_copy)
@@ -214,7 +216,7 @@ def test_identical_guard_copy_can_cross_wheel_and_source_submission(tmp_path):
 
 @pytest.mark.parametrize('field,value', [('queue', 'extra'), ('queue_wait_seconds', 30), ('resources', {'cpus': 99})])
 def test_prepared_submission_rejects_added_or_changed_resource_fields(tmp_path, field, value):
-    from tspi_runtime.execution_environment import check_configuration
+    from research_agent.application.execution_environment import check_configuration
     prepared = request(tmp_path)
     prepared['metadata'][field] = value
     with pytest.raises(ValueError, match='execution_binding_submission_mismatch'):
@@ -222,7 +224,7 @@ def test_prepared_submission_rejects_added_or_changed_resource_fields(tmp_path, 
 
 
 def test_guard_cannot_be_reused_for_a_different_script(tmp_path):
-    from tspi_runtime.execution_environment import check_binding
+    from research_agent.application.execution_environment import check_binding
     prepared = request(tmp_path)
     metadata = prepared['metadata']
     metadata['execution_argv'] = ['other.py']
@@ -237,23 +239,23 @@ def test_ssh_probe_runs_target_checks_and_cleans_remote_scratch(tmp_path, monkey
     target_settings.update(kind='remote', ssh_host='fixture.invalid', remote_root=str(tmp_path / 'new-remote-root'),
                            ssh_config=str(tmp_path / 'ssh-config'), submission={'queue': 'science'})
     activation = tmp_path / 'activate.sh'
-    activation.write_text('test -z "${TSPI_FIXTURE_PROVIDER_SECRET:-}"\nexport REMOTE_TEST_READY=1\n')
+    activation.write_text('test -z "${RESEARCH_AGENT_FIXTURE_PROVIDER_SECRET:-}"\nexport REMOTE_TEST_READY=1\n')
     target_settings['backends']['validation']['activation_script'] = str(activation)
     selected = resolve_binding(settings, 'local', 'validation', runtime='python')
-    monkeypatch.setenv('TSPI_FIXTURE_PROVIDER_SECRET', 'test-only-secret')
-    from job_runtime import environment
+    monkeypatch.setenv('RESEARCH_AGENT_FIXTURE_PROVIDER_SECRET', 'test-only-secret')
+    from research_agent.jobs import environment
     original, calls = environment._capture, []
     def ssh_transport(command, **kwargs):
         assert command[0] == 'ssh'
         calls.append(command)
         return original(['bash', '-c', command[-1]], **kwargs)
-    monkeypatch.setattr('job_runtime.environment._capture', ssh_transport)
+    monkeypatch.setattr('research_agent.jobs.environment._capture', ssh_transport)
     result = probe_binding(settings, selected, {'python': '>=3.11'})
     assert result['observation']['python']['prefix'] == selected['python']['prefix']
     assert calls and 'fixture.invalid' in calls[0] and '-F' in calls[0]
     assert (tmp_path / 'new-remote-root').is_dir()
     assert not list((tmp_path / 'new-remote-root').glob('.environment-*'))
-    receipt = Path(selected['python']['prefix']) / 'tspi-environment.json'
+    receipt = Path(selected['python']['prefix']) / 'research-agent-environment.json'
     receipt.unlink()
     with pytest.raises(ValueError, match='environment_receipt_missing'):
         probe_binding(settings, selected, {'python': '>=3.11'})
@@ -262,7 +264,7 @@ def test_ssh_probe_runs_target_checks_and_cleans_remote_scratch(tmp_path, monkey
 
 
 def test_probe_timeout_terminates_its_child_process_group(tmp_path):
-    from job_runtime.environment import _capture
+    from research_agent.jobs.environment import _capture
     child = tmp_path / 'child.pid'
     with pytest.raises(subprocess.TimeoutExpired):
         _capture(['bash', '-c', 'sleep 30 & echo $! > "$1"; wait', 'probe-fixture', str(child)], timeout=.2)

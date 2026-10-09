@@ -1,7 +1,7 @@
 # Changelog
 
 This file records user-visible changes. Detailed architectural decisions live
-in `docs/adr/`.
+in `docs/archive/adr/`.
 
 ## Unreleased
 

@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
-import { withJobQueryRecovery } from "../../../apps/app-server/job-query-recovery.mjs";
+import { withJobQueryRecovery } from "../../../apps/agent/tools/jobs/query-recovery.mjs";
 
 test("invalid IDs are cached until their Job catalog changes", async () => {
-  const root = await mkdtemp(join(process.env.TSPI_TEST_ROOT || "/home/iaw/debug/tspi-test-env", "query-"));
+  const root = await mkdtemp(join(process.env.RESEARCH_AGENT_TEST_ROOT || "/home/iaw/project/TSPi/local_debug", "query-"));
   let calls = 0;
   const invoke = async () => { calls++; throw new Error("job_not_found: job_bad"); };
   try {

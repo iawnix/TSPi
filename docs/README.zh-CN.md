@@ -1,27 +1,20 @@
-# TSPi 文档
+# ResearchAgent 文档
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+[English](README.md) | 简体中文
 
-按问题选择最小的规范文档。根目录 [README](../README.zh-CN.md) 是安装总览；以下文档描述
-运行时和研究合同。
+Research Memory 重构已通过本地验收；[架构](ARCHITECTURE.zh-CN.md)说明当前边界，[实施计划](RESEARCH_MEMORY_DESIGN_AND_IMPLEMENTATION_PLAN.zh-CN.md)保留设计分解，[验收记录](RESEARCH_MEMORY_VALIDATION.zh-CN.md)列出测试证据及范围。
 
 | 需求 | 文档 |
 | --- | --- |
-| 安装、配置、升级、恢复 | [安装与运维](INSTALLATION.zh-CN.md) |
-| 理解 Agent、Research State、Host、Monitor、Memory 和 Compute 边界 | [架构](ARCHITECTURE.zh-CN.md) |
-| 规划 Root Agent、连接适配器和原子事务 | [Root Agent 原子事务计划](ROOT_AGENT_ATOMIC_TRANSACTION_PLAN.zh-CN.md) |
-| 查看 t003 可靠性改造及验收边界 | [修复规划](T003_RELIABILITY_REPAIR_PLAN.zh-CN.md) · [实现与验证](T003_RELIABILITY_VALIDATION.zh-CN.md) |
-| 理解 ResearchMap 对象与 turn checkpoint | [ResearchMap 设计](RESEARCH_MAP_DESIGN.zh-CN.md) 与 [ADR 0006](adr/0006-unified-research-harness-lifecycle.zh-CN.md) |
-| 选择并执行科学方法 | [科学执行与运维](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md) |
-| 使用终端、Phone、浏览器或 Monitor | [终端](TERMINAL.zh-CN.md)、[TSPi Link](TSPi_LINK.zh-CN.md) |
-| 维护、测试、打包和发布 | [维护者指南](MAINTAINER_GUIDE.zh-CN.md) 与 [参与开发](../CONTRIBUTING.zh-CN.md) |
-| 理解模型/provider 支持边界 | [模型兼容性](MODEL_COMPATIBILITY.zh-CN.md) |
-| 查看历史设计决策 | [架构决策记录](adr/) |
+| 安装、配置、升级与恢复 | [安装与运维](INSTALLATION.zh-CN.md) |
+| Workspace、Node、Result、Agent Server 与 Monitor | [架构](ARCHITECTURE.zh-CN.md) |
+| 研究模型、目录、工具、并发与 next_run | [Research Memory 实施计划](RESEARCH_MEMORY_DESIGN_AND_IMPLEMENTATION_PLAN.zh-CN.md) |
+| 科学计算方法与执行 | [科学能力运维](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md) |
+| 终端、Phone、浏览器 | [终端](TERMINAL.zh-CN.md)、[ResearchAgent Link](RESEARCH_AGENT_LINK.zh-CN.md) |
+| 维护、测试、打包 | [维护指南](MAINTAINER_GUIDE.zh-CN.md)、[贡献指南](../CONTRIBUTING.md) |
+| research-agent 命名与代码结构重构（设计提案，尚未实施） | [详细重构方案](RESEARCH_AGENT_REFACTOR_PLAN.zh-CN.md) |
+| 测试环境清理、分层测试、并行与每次修改的检查流程（设计提案） | [测试重构方案](RESEARCH_AGENT_TEST_REFACTOR_PLAN.zh-CN.md) |
+| 模型与提供方 | [模型兼容性](MODEL_COMPATIBILITY.zh-CN.md) |
+| 旧设计和一次性验证记录 | [历史归档](archive/README.md) |
 
-## 权威性与状态
-
-代码和版本化 schema 是行为权威。文档说明公开 contract，代码变化时必须同步更新。历史
-ADR 不构成当前兼容性承诺；当前 Native-only 运行时和最新已接受 ADR 定义受支持行为。
-
-项目拥有的源码采用 [Apache License 2.0](../LICENSE) 授权。第三方依赖、固定版本的 Pi 源码、
-本地化学程序和随附资源可能适用各自的许可证；重新分发时必须保留相应声明。
+当前源码和版本化 schema 是行为依据。历史文件不是兼容承诺，不用于证明当前验收已完成。项目源码采用 [Apache License 2.0](../LICENSE)；第三方程序、固定 Pi 源码和素材保留各自许可证。

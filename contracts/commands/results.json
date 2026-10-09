@@ -1,0 +1,2078 @@
+{
+  "schema_version": "research-agent-command-results/1",
+  "definitions": {
+    "Author": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "additionalProperties": false
+    },
+    "ResearchNode": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "research-node/1"
+        },
+        "id": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "goal": {
+          "type": "string"
+        },
+        "proposal": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "plan": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "progress": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "open",
+            "paused",
+            "closed"
+          ]
+        },
+        "assessment_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "input_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "author": {
+          "$ref": "results.json#/definitions/Author"
+        }
+      },
+      "required": [
+        "schema_version",
+        "id",
+        "workspace_id",
+        "title",
+        "goal",
+        "proposal",
+        "plan",
+        "progress",
+        "status",
+        "assessment_ref",
+        "source_refs",
+        "input_refs",
+        "revision",
+        "created_at",
+        "updated_at",
+        "author"
+      ],
+      "additionalProperties": false
+    },
+    "ResearchRelation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "origin": {
+          "type": "string"
+        },
+        "basis_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "created_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "target",
+        "kind",
+        "reason",
+        "origin",
+        "basis_refs",
+        "active",
+        "created_at"
+      ],
+      "additionalProperties": false
+    },
+    "ResearchResult": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "research-result/1"
+        },
+        "id": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "summary_is_excerpt": {
+          "type": "boolean"
+        },
+        "observation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "conclusion": {
+          "type": "string"
+        },
+        "limitations": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "purpose": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "artifact_ref": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "artifact_ref"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "supersedes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authored_node_revision": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "basis_refs": {
+          "type": "array",
+          "items": {
+            "x-typescript-type": "JsonValue"
+          }
+        },
+        "author": {
+          "$ref": "results.json#/definitions/Author"
+        },
+        "created_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "id",
+        "workspace_id",
+        "node_id",
+        "summary",
+        "summary_is_excerpt",
+        "observation",
+        "conclusion",
+        "limitations",
+        "inputs",
+        "evidence_refs",
+        "files",
+        "supersedes",
+        "authored_node_revision",
+        "basis_refs",
+        "author",
+        "created_at"
+      ],
+      "additionalProperties": false
+    },
+    "ResearchMutation": {
+      "type": "object",
+      "properties": {
+        "accepted": {
+          "const": true
+        },
+        "node": {
+          "$ref": "results.json#/definitions/ResearchNode"
+        },
+        "relations": {
+          "type": "array",
+          "items": {
+            "$ref": "results.json#/definitions/ResearchRelation"
+          }
+        },
+        "read_basis": {
+          "type": "string"
+        },
+        "view_error": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accepted",
+        "node",
+        "relations",
+        "read_basis",
+        "ref"
+      ],
+      "additionalProperties": false
+    },
+    "ResearchPublication": {
+      "type": "object",
+      "properties": {
+        "accepted": {
+          "const": true
+        },
+        "node": {
+          "$ref": "results.json#/definitions/ResearchNode"
+        },
+        "relations": {
+          "type": "array",
+          "items": {
+            "$ref": "results.json#/definitions/ResearchRelation"
+          }
+        },
+        "read_basis": {
+          "type": "string"
+        },
+        "view_error": {
+          "type": "string"
+        },
+        "result": {
+          "$ref": "results.json#/definitions/ResearchResult"
+        },
+        "result_saved": {
+          "const": true
+        },
+        "assessment_selected": {
+          "type": "boolean"
+        },
+        "conflict": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "accepted",
+        "node",
+        "relations",
+        "read_basis",
+        "result",
+        "result_saved",
+        "assessment_selected",
+        "conflict"
+      ],
+      "additionalProperties": false
+    },
+    "ResearchSnapshot": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "research-snapshot/2"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "sequence": {
+          "type": "integer"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "results.json#/definitions/ResearchNodeCard"
+          }
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "x-typescript-type": "JsonValue"
+          }
+        },
+        "new_records": {
+          "type": "array",
+          "items": {
+            "x-typescript-type": "JsonValue"
+          }
+        },
+        "running_jobs": {
+          "type": "array",
+          "items": {
+            "x-typescript-type": "JsonValue"
+          }
+        },
+        "uncollected_jobs": {
+          "type": "array",
+          "items": {
+            "x-typescript-type": "JsonValue"
+          }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "x-typescript-type": "JsonValue"
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "x-typescript-type": "JsonValue"
+          }
+        },
+        "wake_events": {
+          "type": "object",
+          "properties": {
+            "requested": {
+              "type": "integer"
+            },
+            "included": {
+              "type": "integer"
+            },
+            "omitted": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "requested",
+            "included",
+            "omitted"
+          ],
+          "additionalProperties": false
+        },
+        "projection": {
+          "type": "object",
+          "properties": {
+            "pending": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "pending"
+          ],
+          "additionalProperties": true
+        },
+        "bounds": {
+          "type": "object",
+          "properties": {
+            "max_bytes": {
+              "type": "integer"
+            },
+            "omitted": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer"
+              }
+            }
+          },
+          "required": [
+            "max_bytes",
+            "omitted"
+          ],
+          "additionalProperties": false
+        },
+        "read_more": {
+          "x-typescript-type": "JsonValue"
+        },
+        "guidance": {
+          "type": "string"
+        },
+        "read_basis": {
+          "type": "string"
+        },
+        "snapshot_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "workspace_id",
+        "sequence",
+        "nodes",
+        "tasks",
+        "new_records",
+        "running_jobs",
+        "uncollected_jobs",
+        "diagnostics",
+        "events",
+        "wake_events",
+        "projection",
+        "bounds",
+        "read_more",
+        "guidance",
+        "read_basis",
+        "snapshot_id"
+      ],
+      "additionalProperties": false
+    },
+    "ResearchRead": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "research-read/2"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "offset_unit": {
+          "const": "unicode_characters"
+        },
+        "total_characters": {
+          "type": "integer"
+        },
+        "next_offset": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "node_revision": {
+          "type": "integer"
+        },
+        "field": {
+          "type": "string"
+        },
+        "value": {
+          "x-typescript-type": "JsonValue"
+        },
+        "read_basis": {
+          "type": "string"
+        },
+        "node": {
+          "$ref": "results.json#/definitions/ResearchNode"
+        },
+        "relations": {
+          "type": "array",
+          "items": {
+            "$ref": "results.json#/definitions/ResearchRelation"
+          }
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "results.json#/definitions/ResearchResultSummary"
+          }
+        },
+        "assessment": {
+          "x-typescript-type": "JsonValue"
+        },
+        "result": {
+          "$ref": "results.json#/definitions/ResearchResult"
+        },
+        "record": {
+          "x-typescript-type": "JsonValue"
+        }
+      },
+      "required": [
+        "schema_version",
+        "ref",
+        "text",
+        "offset",
+        "offset_unit",
+        "total_characters",
+        "next_offset"
+      ],
+      "additionalProperties": true
+    },
+    "ResearchSearch": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "research-search/2"
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "type": "string"
+              },
+              "sequence": {
+                "type": "integer"
+              },
+              "origin": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "node_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "excerpt": {
+                "type": "string"
+              },
+              "created_at": {
+                "type": "string"
+              },
+              "read": {
+                "type": "object",
+                "properties": {
+                  "ref": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "ref"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "ref",
+              "sequence",
+              "origin",
+              "kind",
+              "node_id",
+              "title",
+              "excerpt",
+              "created_at",
+              "read"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "total": {
+          "type": "integer"
+        },
+        "next_offset": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "index_sequence": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "records",
+        "total",
+        "next_offset",
+        "index_sequence"
+      ],
+      "additionalProperties": false
+    },
+    "ArtifactReceipt": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "size_bytes": {
+          "type": "integer"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "artifact_ref": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "location",
+        "sha256",
+        "size_bytes",
+        "media_type",
+        "artifact_ref"
+      ],
+      "additionalProperties": false
+    },
+    "ArtifactWrite": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "size_bytes": {
+          "type": "integer"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "artifact_ref": {
+          "type": "string"
+        },
+        "provenance": {
+          "type": "object",
+          "properties": {
+            "job_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "node_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "node_revision": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source_path": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "derivation_executed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "job_id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "artifact_id",
+        "location",
+        "sha256",
+        "size_bytes",
+        "media_type",
+        "artifact_ref",
+        "provenance"
+      ],
+      "additionalProperties": false
+    },
+    "ArtifactRead": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "size_bytes": {
+          "type": "integer"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "artifact_ref": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "next_offset": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "artifact_id",
+        "location",
+        "sha256",
+        "size_bytes",
+        "media_type",
+        "artifact_ref",
+        "content",
+        "next_offset"
+      ],
+      "additionalProperties": false
+    },
+    "JobOutput": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "media_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "min_bytes": {
+          "type": "integer"
+        },
+        "recursive": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "required",
+        "media_type",
+        "min_bytes",
+        "recursive"
+      ],
+      "additionalProperties": false
+    },
+    "JobStatus": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "created",
+            "submitted",
+            "running",
+            "queued",
+            "held",
+            "succeeded",
+            "failed",
+            "timed_out",
+            "cancelled",
+            "unknown",
+            "collected"
+          ]
+        },
+        "platform": {
+          "type": "string"
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "results.json#/definitions/JobOutput"
+          }
+        },
+        "diagnostics": {
+          "type": "object",
+          "additionalProperties": {
+            "x-typescript-type": "JsonValue"
+          }
+        },
+        "execution_conflict": {
+          "x-typescript-type": "JsonValue"
+        }
+      },
+      "required": [
+        "job_id",
+        "state",
+        "platform"
+      ],
+      "additionalProperties": false
+    },
+    "JobReceipt": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "submitted_at": {
+          "type": "string"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "x-typescript-type": "JsonValue"
+          }
+        },
+        "workspace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prepared_ref": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id",
+        "platform",
+        "submitted_at",
+        "command",
+        "cwd",
+        "pid",
+        "metadata",
+        "workspace_id"
+      ],
+      "additionalProperties": false
+    },
+    "JobStartUnknown": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string"
+        },
+        "state": {
+          "const": "unknown"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id",
+        "state",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "JobDuplicate": {
+      "type": "object",
+      "properties": {
+        "accepted": {
+          "const": false
+        },
+        "code": {
+          "const": "duplicate_execution"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "execution_fingerprint": {
+          "type": "string"
+        },
+        "recovery": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accepted",
+        "code",
+        "job_id",
+        "execution_fingerprint",
+        "recovery"
+      ],
+      "additionalProperties": false
+    },
+    "JobResultReceipt": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "job-result/2"
+        },
+        "receipt_id": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "node_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "node_revision": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "execution_state": {
+          "type": "string"
+        },
+        "execution_observation": {
+          "$ref": "results.json#/definitions/ExecutionObservation"
+        },
+        "execution_observation_ref": {
+          "type": "string"
+        },
+        "collection_state": {
+          "enum": [
+            "complete",
+            "partial"
+          ]
+        },
+        "artifact_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "output_manifest_digest": {
+          "type": "string"
+        },
+        "validator_result": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": {
+                "x-typescript-type": "JsonValue"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "receipt_id",
+        "workspace_id",
+        "job_id",
+        "node_id",
+        "node_revision",
+        "execution_state",
+        "execution_observation",
+        "execution_observation_ref",
+        "collection_state",
+        "artifact_refs",
+        "output_manifest_digest",
+        "validator_result"
+      ],
+      "additionalProperties": false
+    },
+    "JobCollection": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "results.json#/definitions/JobStatus"
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "results.json#/definitions/CollectedOutput"
+          }
+        },
+        "output_validation": {
+          "$ref": "results.json#/definitions/OutputValidation"
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "results.json#/definitions/ArtifactWrite"
+          }
+        },
+        "result_receipt": {
+          "$ref": "results.json#/definitions/JobResultReceipt"
+        },
+        "execution_conflict": {
+          "x-typescript-type": "JsonValue"
+        }
+      },
+      "required": [
+        "job_id",
+        "status",
+        "outputs",
+        "output_validation",
+        "stdout",
+        "stderr",
+        "artifacts",
+        "result_receipt"
+      ],
+      "additionalProperties": false
+    },
+    "JobLocalProbe": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "cwd_exists": {
+          "type": "boolean"
+        },
+        "inputs_present": {
+          "type": "boolean"
+        },
+        "missing_inputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "platform",
+        "cwd_exists",
+        "inputs_present",
+        "missing_inputs",
+        "command"
+      ],
+      "additionalProperties": false
+    },
+    "JobRemoteProbe": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "ssh_host": {
+          "type": "string"
+        },
+        "scheduler": {
+          "type": "string"
+        },
+        "remote_root": {
+          "type": "string"
+        },
+        "cwd_exists": {
+          "type": "boolean"
+        },
+        "inputs_present": {
+          "type": "boolean"
+        },
+        "missing_inputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "platform",
+        "available",
+        "ssh_host",
+        "scheduler",
+        "remote_root",
+        "cwd_exists",
+        "inputs_present",
+        "missing_inputs",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "JobUnavailableProbe": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "available": {
+          "const": false
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "platform",
+        "available",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "PreparedRegistration": {
+      "type": "object",
+      "properties": {
+        "prepared_ref": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "work_id": {
+          "type": "string"
+        },
+        "request_sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "prepared_ref",
+        "request_id",
+        "work_id",
+        "request_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "PreparedRequest": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cwd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              },
+              "destination": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "source",
+              "sha256"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "environment": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          ]
+        },
+        "env": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "timeout_seconds": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "metadata": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "work_id": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "execution_target": {
+          "type": "object"
+        },
+        "session_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "validator_id": {
+          "type": "string"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "repeat": {
+          "$ref": "shared.json#/tools/jobStart/properties/repeat"
+        },
+        "prepared_ref": {
+          "type": "string"
+        },
+        "validator_version": {
+          "type": "string"
+        },
+        "request_file": {
+          "type": "string"
+        },
+        "request_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "node_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "work_id",
+        "command",
+        "inputs"
+      ],
+      "additionalProperties": false
+    },
+    "MonitorAssessment": {
+      "type": "object",
+      "properties": {
+        "event_id": {
+          "type": "string"
+        },
+        "event": {
+          "type": "object",
+          "properties": {
+            "event_id": {
+              "type": "string"
+            },
+            "job_id": {
+              "type": "string"
+            },
+            "node_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "node_revision": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "workspace_id": {
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "job_id",
+            "node_id",
+            "node_revision",
+            "workspace_id",
+            "session_id",
+            "state"
+          ],
+          "additionalProperties": true
+        },
+        "obsolete": {
+          "type": "boolean"
+        },
+        "admitted": {
+          "type": "boolean"
+        },
+        "reason": {
+          "enum": [
+            "already_delivered",
+            "attention_required",
+            "paused"
+          ]
+        },
+        "delivery_token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "event",
+        "obsolete",
+        "admitted",
+        "reason",
+        "delivery_token"
+      ],
+      "additionalProperties": false
+    },
+    "CollectedOutput": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "exists": {
+          "type": "boolean"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "required",
+        "exists"
+      ],
+      "additionalProperties": false
+    },
+    "OutputValidation": {
+      "type": "object",
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "error"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "complete",
+        "errors"
+      ],
+      "additionalProperties": false
+    },
+    "ExecutionObservation": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "execution-observation/1"
+        },
+        "observation_id": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "source": {
+          "const": "job_runtime"
+        },
+        "state": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "observation_id",
+        "workspace_id",
+        "job_id",
+        "source",
+        "state",
+        "exit_code",
+        "started_at",
+        "finished_at",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "ResearchNodeCard": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "research-node/1"
+        },
+        "id": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "goal": {
+          "type": "string"
+        },
+        "proposal": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "plan": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "progress": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "open",
+            "paused",
+            "closed"
+          ]
+        },
+        "assessment_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "input_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "author": {
+          "$ref": "results.json#/definitions/Author"
+        },
+        "read": {
+          "type": "object",
+          "properties": {
+            "ref": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ref"
+          ],
+          "additionalProperties": false
+        },
+        "content_omitted": {
+          "type": "boolean"
+        },
+        "ranking_reason": {
+          "type": "string"
+        },
+        "recent_results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "content_omitted": {
+                "type": "boolean"
+              },
+              "read": {
+                "type": "object",
+                "properties": {
+                  "ref": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "ref"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "id",
+              "summary",
+              "content_omitted",
+              "read"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "status",
+        "assessment_ref",
+        "title",
+        "goal",
+        "progress",
+        "read"
+      ],
+      "additionalProperties": false
+    },
+    "ResearchResultSummary": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "supersedes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "content_digest": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "node_id",
+        "summary",
+        "created_at",
+        "supersedes",
+        "content_digest"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "commands": {
+    "research.read": {
+      "anyOf": [
+        {
+          "$ref": "results.json#/definitions/ResearchSnapshot"
+        },
+        {
+          "$ref": "results.json#/definitions/ResearchRead"
+        }
+      ]
+    },
+    "research.search": {
+      "$ref": "results.json#/definitions/ResearchSearch"
+    },
+    "research.create": {
+      "$ref": "results.json#/definitions/ResearchMutation"
+    },
+    "research.update": {
+      "$ref": "results.json#/definitions/ResearchMutation"
+    },
+    "research.result": {
+      "$ref": "results.json#/definitions/ResearchPublication"
+    },
+    "research.source": {
+      "type": "object",
+      "properties": {
+        "source_ref": {
+          "type": "string"
+        },
+        "recorded": {
+          "const": true
+        }
+      },
+      "required": [
+        "source_ref",
+        "recorded"
+      ],
+      "additionalProperties": false
+    },
+    "research.observe": {
+      "type": "object",
+      "properties": {
+        "recorded": {
+          "const": true
+        }
+      },
+      "required": [
+        "recorded"
+      ],
+      "additionalProperties": false
+    },
+    "job.start": {
+      "anyOf": [
+        {
+          "$ref": "results.json#/definitions/JobReceipt"
+        },
+        {
+          "$ref": "results.json#/definitions/JobStartUnknown"
+        },
+        {
+          "$ref": "results.json#/definitions/JobDuplicate"
+        }
+      ]
+    },
+    "job.status": {
+      "$ref": "results.json#/definitions/JobStatus"
+    },
+    "job.cancel": {
+      "$ref": "results.json#/definitions/JobStatus"
+    },
+    "job.reconcile": {
+      "$ref": "results.json#/definitions/JobStatus"
+    },
+    "job.collect": {
+      "$ref": "results.json#/definitions/JobCollection"
+    },
+    "job.probe": {
+      "anyOf": [
+        {
+          "$ref": "results.json#/definitions/JobLocalProbe"
+        },
+        {
+          "$ref": "results.json#/definitions/JobRemoteProbe"
+        },
+        {
+          "$ref": "results.json#/definitions/JobUnavailableProbe"
+        }
+      ]
+    },
+    "job.prepare": {
+      "$ref": "results.json#/definitions/PreparedRegistration"
+    },
+    "job.resolve_prepared": {
+      "$ref": "results.json#/definitions/PreparedRequest"
+    },
+    "job.monitor_assess": {
+      "$ref": "results.json#/definitions/MonitorAssessment"
+    },
+    "artifact.create": {
+      "$ref": "results.json#/definitions/ArtifactWrite"
+    },
+    "artifact.register": {
+      "$ref": "results.json#/definitions/ArtifactWrite"
+    },
+    "artifact.read": {
+      "$ref": "results.json#/definitions/ArtifactRead"
+    }
+  }
+}

@@ -11,10 +11,10 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_configured_dry_run_redacts_secret_arguments() -> None:
     environment = {
         **os.environ,
-        "TSPI_WEB_AUTH_TOKEN": "web-secret-for-test",
-        "TSPI_PHONE_ACCESS": "link",
-        "TSPI_LINK_URL": "https://relay.example",
-        "TSPI_LINK_ENROLLMENT_CODE": "enrollment-secret-for-test",
+        "RESEARCH_AGENT_WEB_AUTH_TOKEN": "web-secret-for-test",
+        "RESEARCH_AGENT_PHONE_ACCESS": "link",
+        "RESEARCH_AGENT_LINK_URL": "https://relay.example",
+        "RESEARCH_AGENT_LINK_ENROLLMENT_CODE": "enrollment-secret-for-test",
     }
     completed = subprocess.run(
         [str(ROOT / "install-configured.sh"), "--dry-run"],

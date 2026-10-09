@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-agent.iawnix.xyz/contracts/monitor/2/delivery.schema.json",
+  "title": "ResearchAgent Job Monitor Delivery",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "session_id",
+    "request_id",
+    "delivered"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "research-agent-job-monitor-delivery/2"
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^event_[a-f0-9]{32}$"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "delivered": {
+      "type": "boolean"
+    },
+    "batch_event_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^event_[a-f0-9]{32}$"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "claim_token": {
+      "type": "string",
+      "minLength": 1
+    },
+    "lease_until": {
+      "type": "number",
+      "minimum": 0
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

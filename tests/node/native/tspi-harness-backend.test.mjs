@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { failureSummary, normalizeOperationFailure } from "../../../apps/app-server/tspi-harness-backend.mjs";
+import { failureSummary, normalizeOperationFailure } from "../../../apps/agent/pi/backend.mjs";
 
 test("normalizes auth_unavailable failures with an HTTP status and operation id", () => {
   const detail = "503 auth_unavailable: no auth available providers=codex, model=gpt-5.6-sol\nlast upstream error: server_error: Our servers are currently overloaded";
@@ -51,7 +51,7 @@ test("preserves provider failure fields when the result is already terminal", ()
 });
 
 test("input status is a projection of Pi submission, including durable failure", async () => {
-  const { submissionReceipt } = await import("../../../apps/app-server/tspi-harness-backend.mjs");
+  const { submissionReceipt } = await import("../../../apps/agent/pi/backend.mjs");
   const record = { id: 4, type: "input", status: "unanswered", reason: "faulted", detail: "worker failed" };
   const receipt = submissionReceipt(record, "business-input");
   assert.equal(receipt.accepted, true);

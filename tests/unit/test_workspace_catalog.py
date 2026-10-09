@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from research_state import workspace_catalog as module
-from research_state.workspace import initialize_workspace, admit_research_workspace
-from research_state.workspace_catalog import WorkspaceCatalog, WorkspaceCatalogError, catalog_for_web
+from research_agent.research import workspace_catalog as module
+from research_agent.research.workspace import initialize_workspace, admit_research_workspace
+from research_agent.research.workspace_catalog import WorkspaceCatalog, WorkspaceCatalogError, catalog_for_web
 
 
 def create(root, identity):
@@ -16,7 +16,7 @@ def test_catalog_lists_manifests_but_attachment_checks_state(tmp_path, monkeypat
     root = tmp_path / "workspaces"
     create(root / "a", "a")
     create(root / "b", "b")
-    (root / "b/research_map/context.json").write_text("broken state")
+    (root / "b/research/journal.json").write_text("broken state")
     catalog = WorkspaceCatalog(root)
     assert [row["workspace_id"] for row in catalog.list()] == ["a", "b"]
     with pytest.raises(WorkspaceCatalogError):

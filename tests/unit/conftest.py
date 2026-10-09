@@ -18,7 +18,7 @@ def execution_platform_fixture(tmp_path, monkeypatch):
     prefix = tmp_path / "target-python"
     venv.EnvBuilder(with_pip=False, symlinks=True).create(prefix)
     site = next(prefix.glob('lib/python*/site-packages'))
-    # Wheel tests import scientific dependencies from the base and TSPi from
+    # Wheel tests import scientific dependencies from the base and ResearchAgent from
     # the overlay. Keep both installed package directories in this test target.
     packages = [path for path in sys.path if Path(path).name in {'site-packages', 'dist-packages'}]
     (site / 'fixture-packages.pth').write_text('\n'.join(packages) + '\n')
@@ -34,6 +34,7 @@ def execution_platform_fixture(tmp_path, monkeypatch):
 
 [environments.local]
 kind = \"local\"
+supervisor = \"process\"
 
 [environments.local.backends.validation]
 [environments.local.backends.validation.python]
@@ -63,16 +64,16 @@ command = \"xtb\"
         .replace("LOCK_PATH", json.dumps(str(tmp_path / "fixture.lock"))),
         encoding="utf-8",
     )
-    monkeypatch.setenv("TS_JOB_CONFIG", str(config))
+    monkeypatch.setenv("RESEARCH_AGENT_JOB_CONFIG", str(config))
 
 
 @pytest.fixture
 def mock_environment_probe(monkeypatch):
     """Routing-only tests use nonexistent hosts; guard behavior has real tests."""
-    from job_runtime.config_contract import binding_digest
+    from research_agent.jobs.config_contract import binding_digest
     def probe(settings, selected, requirements):
         observation = {"files": {}, "python": {"fixture": "routing-only"}}
         return {"schema_version": "job-environment/1", "requirements": requirements,
                 "observation": observation, "sha256": binding_digest(observation)}
-    monkeypatch.setattr('job_runtime.environment.probe_binding', probe)
-    monkeypatch.setattr('tspi_runtime.executors.probe_binding', probe)
+    monkeypatch.setattr('research_agent.jobs.environment.probe_binding', probe)
+    monkeypatch.setattr('research_agent.application.executors.probe_binding', probe)

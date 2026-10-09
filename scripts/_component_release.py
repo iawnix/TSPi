@@ -1,4 +1,4 @@
-"""Validate and extract the Agent component embedded in a TSPi package.
+"""Validate and extract the Agent component embedded in a ResearchAgent package.
 
 This module is intentionally private.  A component archive is an internal
 build artifact consumed by :mod:`install_package`; it is not an independent
@@ -41,10 +41,10 @@ except ImportError:
 
 
 SCHEMA_VERSION = RELEASE_SCHEMA_VERSION
-PACKAGE_NAME = "@iawnix/tspi"
+PACKAGE_NAME = "@iawnix/research-agent"
 RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
-FORBIDDEN_PARTS = {".git", ".pytest_cache", "__pycache__", "build", "node_modules", "tests"}
+FORBIDDEN_PARTS = {".git", ".pytest_cache", "__pycache__", "build", "node_modules", "tests", "local_debug"}
 FORBIDDEN_RUNTIME_FILES = {
     "scripts/_source_capture.py",
     "scripts/build_package.py",
@@ -87,7 +87,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
         raise ComponentArchiveError(f"release package name must be {PACKAGE_NAME}")
     version = require_string(package.get("version"), "package.version")
     distribution = validate_descriptor(value.get("python_distribution"))
-    if distribution["version"] != version:
+    if distribution["version"] != version.replace("-rc.", "rc"):
         raise ComponentArchiveError("Python distribution version does not match package.version")
     archive = require_object(value.get("archive"), "archive", {"filename", "sha256", "size_bytes"})
     filename = require_string(archive.get("filename"), "archive.filename")
@@ -106,7 +106,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
     release_suffix = release_id.removeprefix(expected_release_id).removeprefix("-")
     if release_id != expected_release_id and not re.fullmatch(r"[0-9a-f]{12,40}", release_suffix):
         raise ComponentArchiveError("release_id does not match package version and archive SHA-256")
-    if filename != f"tspi-{release_id}.tgz":
+    if filename != f"research-agent-{release_id}.tgz":
         raise ComponentArchiveError("archive.filename does not match release_id")
     source = require_object(value.get("source"), "source", {"git_commit", "dirty"})
     if source.get("git_commit") is not None:
@@ -182,23 +182,12 @@ def validate_extracted_package(
     expected = manifest["package"]
     if package.get("name") != expected["name"] or package.get("version") != expected["version"]:
         raise ComponentArchiveError("extracted package identity does not match release manifest")
-    launcher = root / "ResearchAgent"
+    launcher = root / "research-agent"
     if not launcher.is_file() or not os.access(launcher, os.X_OK):
-        raise ComponentArchiveError("extracted ResearchAgent launcher is not executable")
+        raise ComponentArchiveError("extracted research-agent launcher is not executable")
     research_launcher = root / "libexec/research-agent-host"
-    if research_launcher.exists():
-        if not research_launcher.is_file():
-            raise ComponentArchiveError("extracted libexec/research-agent-host launcher is not a regular file")
-        # Source fixtures used by older release tests may carry a placeholder
-        # entrypoint without executable mode. A real launcher has a shebang,
-        # and that production artifact must remain executable.
-        try:
-            with research_launcher.open("rb") as handle:
-                has_shebang = handle.read(2) == b"#!"
-        except OSError as error:
-            raise ComponentArchiveError("could not inspect extracted libexec/research-agent-host launcher") from error
-        if has_shebang and not os.access(research_launcher, os.X_OK):
-            raise ComponentArchiveError("extracted libexec/research-agent-host launcher is not executable")
+    if not research_launcher.is_file() or not os.access(research_launcher, os.X_OK):
+        raise ComponentArchiveError("extracted libexec/research-agent-host launcher is not executable")
     expected_distribution = manifest["python_distribution"]
     wheel = root.joinpath(*PurePosixPath(expected_distribution["path"]).parts)
     actual_distribution = inspect_wheel(wheel)

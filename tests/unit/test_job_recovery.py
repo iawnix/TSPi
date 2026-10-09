@@ -3,10 +3,12 @@ import json
 import sys
 import time
 import pytest
-from job_runtime import JobSpec, JobOutput, LocalProcessPlatform, JobState
-from tspi_runtime.execution import dispatch
-from research_state.agent_workspace import admit_workspace, apply_change, read_context
-from research_state.workspace import initialize_workspace
+from research_agent.jobs import JobSpec, JobOutput, LocalProcessPlatform, JobState
+from research_agent.application.execution import dispatch
+from research_agent.research.workspace import admit_research_workspace
+from research_agent.application.job_state import execution
+from research_agent.artifacts.registry import manifests
+from research_agent.research.workspace import initialize_workspace
 
 
 def wait_reaped(receipt):
@@ -66,52 +68,36 @@ def test_same_job_name_in_distinct_directories_does_not_reuse_a_terminal_observa
 
 
 def workspace(root):
-    initialize_workspace(root,'ws_jobs','research');admit_workspace(root,{'authority':'host'})
-    apply_change(root,{'principal':'root_agent','authority':'kernel_write','operations':[
-        {'type':'create_claim','id':'claim_1','statement':'water energy'},
-        {'type':'create_node','id':'node_1','title':'Calculation','objective':'water energy','claim_ids':['claim_1']},
-        {'type':'set_focus','claim_ids':['claim_1'],'node_ids':['node_1']},
-        {'type':'create_strategy_plan','id':'strategy_1','claim_id':'claim_1','node_id':'node_1','objective':'Run','rationale':'Need evidence'}]})
+    initialize_workspace(root, 'ws_jobs', 'research')
+    admit_research_workspace(root)
 
 
 def test_job_attempt_collection_and_repeated_request_are_durable(tmp_path):
     workspace(tmp_path)
     source=tmp_path/'in.txt';source.write_text('input')
-    request={'root':str(tmp_path),'job_id':'job_test','node_id':'node_1','command':[sys.executable,'-c',"from pathlib import Path;Path('result').write_text(Path('data/source').read_text())"],
+    request={'root':str(tmp_path),'job_id':'job_test','command':[sys.executable,'-c',"from pathlib import Path;Path('result').write_text(Path('data/source').read_text())"],
         'inputs':[{'source':str(source),'destination':'data/source'}], 'outputs':[{'path':'result','required':True,'min_bytes':1}]}
     receipt=dispatch('start',request)
-    assert receipt['attempt_id']
     assert dispatch('start',request)['job_id']==receipt['job_id']
     for _ in range(100):
         if dispatch('status',{'root':str(tmp_path),'job_id':'job_test'})['state']!='running':break
         time.sleep(.02)
     result=dispatch('collect',{'root':str(tmp_path),'job_id':'job_test'})
-    ctx=read_context(tmp_path)
-    assert len(ctx['attempts'])==1 and ctx['attempts'][0]['state']=='succeeded'
+    materials=list(manifests(tmp_path))
+    assert execution(tmp_path, receipt['job_id'])['state']=='succeeded'
     assert result['output_validation']['complete']
-    assert len(ctx['artifacts'])>=2
-    assert all(a['producer_attempt_id']==receipt['attempt_id'] for a in ctx['artifacts'])
+    assert len(materials)>=2
+    assert all(a['provenance']['job_id']==receipt['job_id'] for a in materials)
     again=dispatch('collect',{'root':str(tmp_path),'job_id':'job_test'})
-    assert len(read_context(tmp_path)['artifacts'])==len(ctx['artifacts'])
+    assert len(list(manifests(tmp_path)))==len(materials)
     with pytest.raises(ValueError,match='different parameters'):
         dispatch('start',{**request,'command':[sys.executable,'-c','pass']})
-
-
-def test_collected_artifact_link_is_persisted(tmp_path):
-    workspace(tmp_path)
-    from tspi_runtime.evidence import dispatch as artifact
-    created=artifact('create',{'root':str(tmp_path),'content':'raw evidence','node_id':'node_1'})
-    link=artifact('link',{'root':str(tmp_path),'artifact_id':created['artifact_id'],'subject_id':'claim_1','relation':'documents'})
-    assert read_context(tmp_path)['evidence_links'][0]['id']==link['id']
-    artifact('link',{'root':str(tmp_path),'artifact_id':created['artifact_id'],'subject_id':'claim_1','relation':'documents'})
-    assert len(read_context(tmp_path)['evidence_links'])==1
 
 
 def test_caller_request_id_replays_without_submitting_again(tmp_path):
     workspace(tmp_path)
     request = {
         'root': str(tmp_path), 'request_id': 'skill_stable_submission',
-        'node_id': 'node_1',
         'command': [sys.executable, '-c', "from pathlib import Path; p=Path('count'); p.write_text(str(int(p.read_text())+1) if p.exists() else '1')"],
     }
     first = dispatch('start', request)
@@ -121,14 +107,13 @@ def test_caller_request_id_replays_without_submitting_again(tmp_path):
         time.sleep(.02)
     second = dispatch('start', request)
     assert second['job_id'] == first['job_id']
-    assert second['attempt_id'] == first['attempt_id']
     assert (Path(first['cwd']) / 'count').read_text() == '1'
-    assert len(read_context(tmp_path)['attempts']) == 1
+    assert len(list((tmp_path/'operations/executions').glob('*.json'))) == 1
 
 
 def test_terminal_receipt_arrives_during_supervisor_liveness_check(tmp_path, monkeypatch):
-    from job_runtime import JobReceipt
-    from job_runtime import local
+    from research_agent.jobs import JobReceipt
+    from research_agent.jobs import local
     receipt=JobReceipt('job_race','local','now',('true',),str(tmp_path),123,
                        {'supervised':True,'supervisor_start':'original'})
     def process_disappeared(pid):

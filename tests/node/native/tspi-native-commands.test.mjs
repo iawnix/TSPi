@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createTerminalCommands } from "../../../apps/app-server/tspi-native-client-facet.mjs";
-import { createClientQueries } from "../../../apps/app-server/tspi-client-queries.mjs";
-import { createTerminalSession, runTerminalSessions } from "../../../apps/app-server/tspi-terminal-session.mjs";
-import { parseSlashCommand, SLASH_COMMAND_NAMES } from "../../../packages/agent-runtime/host-api/commands.mjs";
+import { createTerminalCommands } from "../../../apps/agent/terminal/commands/facet.mjs";
+import { createClientQueries } from "../../../apps/agent/pi/services/queries.mjs";
+import { createTerminalSession, runTerminalSessions } from "../../../apps/agent/terminal/session.mjs";
+import { parseSlashCommand, SLASH_COMMAND_NAMES } from "../../../apps/agent/tools/commands.mjs";
 
 const row = (id, workspace = "remote") => ({ session_id: id, workspace_id: workspace });
 
@@ -13,10 +13,10 @@ test("worker queries bind identity and admit only read-only research arguments",
   const queries = createClientQueries({ workspaceId: "remote", sessionId: "one", promptManifest: prompt,
     commandBridge: { async execute_command(...args) { calls.push(args); return { root: "/remote/workspace" }; } },
   });
-  assert.deepEqual(await queries.research("detail claim claim-1"), {
+  assert.deepEqual(await queries.research("read note_123"), {
     workspace_id: "remote", session_id: "one", result: { root: "/remote/workspace" },
   });
-  assert.deepEqual(calls, [["research.detail", { kind: "claim", id: "claim-1" }]]);
+  assert.deepEqual(calls, [["research.read", { ref: "note_123" }]]);
   for (const input of ["change x", "storage bootstrap", "summary --root /local", { root: "/local" }]) {
     assert.ok((await queries.research(input)).error);
   }

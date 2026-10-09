@@ -17,7 +17,7 @@ GIT_OBJECT_ID_LENGTHS = {40, 64}
 REQUIRED_SOURCE_PATHS = {
     b"README.md",
     b"package.json",
-    b"pyproject.toml",
+    b"backend/pyproject.toml",
     b"scripts/build_release.py",
     b"scripts/check_package.py",
     b"scripts/package_inventory.py",
@@ -45,8 +45,11 @@ class CapturedSource:
 def capture_source_tree(root: Path, destination: Path, *, allow_dirty: bool) -> CapturedSource:
     repository = root.expanduser().resolve()
     target = destination.expanduser().resolve()
-    if target.is_relative_to(repository):
-        raise SourceCaptureError("captured source destination must be outside the source repository")
+    private_root = repository / "local_debug"
+    if target.is_relative_to(repository) and not (
+        not private_root.is_symlink() and target.is_relative_to(private_root) and target != private_root
+    ):
+        raise SourceCaptureError("captured source destination must be outside the source repository or under local_debug")
     commit, dirty, names, digest = inspect_source(repository)
     if dirty and not allow_dirty:
         raise SourceCaptureError(
@@ -68,7 +71,7 @@ def capture_source_tree(root: Path, destination: Path, *, allow_dirty: bool) -> 
 def inspect_source(root: Path) -> tuple[str, bool, list[bytes], str]:
     top_level = run_git(root, ["rev-parse", "--show-toplevel"], "locate source repository")
     if Path(os.fsdecode(top_level).strip()).resolve() != root:
-        raise SourceCaptureError("source root must be the top level of the TSPi Git repository")
+        raise SourceCaptureError("source root must be the top level of the ResearchAgent Git repository")
     revision = run_git(root, ["rev-parse", "--verify", "HEAD"], "read source commit")
     commit = revision.decode("ascii", errors="strict").strip()
     if len(commit) not in GIT_OBJECT_ID_LENGTHS or any(character not in "0123456789abcdef" for character in commit):
@@ -83,6 +86,8 @@ def inspect_source(root: Path) -> tuple[str, bool, list[bytes], str]:
         "list source files",
     )
     names = sorted({name for name in listed.split(b"\0") if name})
+    if any(name == b"local_debug" or name.startswith(b"local_debug/") for name in names):
+        raise SourceCaptureError("private local_debug data must be ignored and untracked before capturing release source")
     missing = sorted(REQUIRED_SOURCE_PATHS.difference(names))
     if missing:
         detail = ", ".join(os.fsdecode(name) for name in missing)
@@ -97,7 +102,7 @@ def inspect_source(root: Path) -> tuple[str, bool, list[bytes], str]:
 
 def source_tree_sha256(root: Path, relative_names: Iterable[bytes]) -> str:
     digest = hashlib.sha256()
-    digest.update(b"tspi-release-source/1\0")
+    digest.update(b"research-agent-release-source/1\0")
     for raw_name in relative_names:
         relative = safe_relative(os.fsdecode(raw_name))
         source = root.joinpath(*relative.parts)

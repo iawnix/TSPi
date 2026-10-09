@@ -6,12 +6,12 @@ from typing import Any
 
 import pytest
 
-from tspi_bootstrap import link
+from research_agent.bootstrap import link
 
 
 HOST_ID = "123e4567-e89b-42d3-a456-426614174000"
 DEVICE_ID = "223e4567-e89b-42d3-a456-426614174000"
-HOST_TOKEN = "tsph_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
+HOST_TOKEN = "rah_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
 
 
 def _write_link_config(root: Path, *, relay_url: str = "https://link.example.test") -> None:
@@ -22,8 +22,8 @@ def _write_link_config(root: Path, *, relay_url: str = "https://link.example.tes
     manifest.write_text(
         json.dumps(
             {
-                "schema_version": "tspi-link/1",
-                "protocol": "tspi-link.v1",
+                "schema_version": "research-agent-link/1",
+                "protocol": "research-agent-link.v1",
                 "relay_url": relay_url,
                 "host_id": HOST_ID,
             }

@@ -1,1 +1,3 @@
 *.patch -whitespace
+/local_debug export-ignore
+/local_debug/** export-ignore

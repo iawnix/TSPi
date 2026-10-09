@@ -1,0 +1,10 @@
+{
+  "name": "@iawnix/research-agent-chemical",
+  "version": "0.18.0",
+  "private": true,
+  "pi": {
+    "skills": [
+      "./skills"
+    ]
+  }
+}

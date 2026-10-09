@@ -4,11 +4,11 @@ import json
 import subprocess
 from pathlib import Path
 
-from research_state.workspace import initialize_workspace, validate_workspace_manifest
+from research_agent.research.workspace import initialize_workspace, validate_workspace_manifest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKSPACE_MODULE = ROOT / "packages" / "agent-core" / "workspace.mjs"
+WORKSPACE_MODULE = ROOT / "apps" / "agent" / "host" / "workspace.mjs"
 
 
 def _node_create(root: Path, workspace_id: str) -> dict[str, object]:
@@ -50,7 +50,7 @@ def test_js_created_workspace_is_accepted_by_python_authority(tmp_path: Path) ->
     root = tmp_path / "js-created"
     manifest = _node_create(root, "workspace_js_contract")
     accepted = validate_workspace_manifest(manifest, root)
-    assert accepted["schema_version"] == "research_state_workspace_2"
+    assert accepted["schema_version"] == "research_workspace/2"
     assert accepted["workspace_id"] == "workspace_js_contract"
 
 
@@ -60,4 +60,4 @@ def test_python_created_workspace_is_accepted_by_js_transport(tmp_path: Path) ->
     attached = _node_attach(root)
     assert attached["schema_version"] == manifest["schema_version"]
     assert attached["workspace_id"] == "workspace_python_contract"
-    assert attached["research_state"]["revision"] == manifest["research_state"]["revision"]
+    assert attached["research_memory"] == manifest["research_memory"]

@@ -14,7 +14,7 @@ def test_server_launcher_uses_canonical_host_path(tmp_path: Path) -> None:
     package.mkdir()
     (package / "libexec").mkdir()
     shutil.copy2(ROOT / "libexec/research-agent-host", package / "libexec/research-agent-host")
-    launcher = package / "apps/agent-cli/tspi_launcher.py"
+    launcher = package / "apps/agent-cli/launcher.py"
     launcher.parent.mkdir(parents=True)
     launcher.write_text("# canonical launcher\n")
     binaries = tmp_path / "bin"
@@ -22,7 +22,7 @@ def test_server_launcher_uses_canonical_host_path(tmp_path: Path) -> None:
     python = binaries / "python3"
     python.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\"\n")
     python.chmod(0o755)
-    env = {**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}", "TSPI_INSTALL_ROOT": str(tmp_path / "install")}
+    env = {**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}", "RESEARCH_AGENT_INSTALL_ROOT": str(tmp_path / "install")}
     result = subprocess.run([str(package / "libexec/research-agent-host")], env=env, text=True, capture_output=True, check=True)
     assert result.stdout.splitlines() == [
         str(launcher), "--install-root", str(tmp_path / "install"), "--", "--service-host",

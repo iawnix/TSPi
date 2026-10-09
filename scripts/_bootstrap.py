@@ -12,17 +12,16 @@ from types import ModuleType
 
 def load_runtime_environment(package_root: str | Path) -> ModuleType:
     root = Path(package_root).expanduser().resolve()
-    sys.path.insert(0, str(root / "packages/tspi-foundation"))
-    source = root / "packages" / "tspi-foundation" / "tspi_foundation" / "env.py"
+    source = root / "backend/src/research_agent/foundation/env.py"
     if not source.is_file():
-        raise RuntimeError(f"TS Agent runtime bootstrap module is missing: {source}")
-    name = f"_tspi_runtime_runtime_env_{hashlib.sha256(str(source).encode()).hexdigest()[:12]}"
+        raise RuntimeError(f"ResearchAgent runtime bootstrap module is missing: {source}")
+    name = f"_research_agent_runtime_runtime_env_{hashlib.sha256(str(source).encode()).hexdigest()[:12]}"
     cached = sys.modules.get(name)
     if cached is not None:
         return cached
-    spec = importlib.util.spec_from_file_location(name, source)
+    spec = importlib.util.spec_from_file_location(name, source, submodule_search_locations=[str(source.parent)])
     if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load TS Agent runtime bootstrap module: {source}")
+        raise RuntimeError(f"cannot load ResearchAgent runtime bootstrap module: {source}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)
@@ -49,10 +48,20 @@ def bootstrap_python_package(
     if install_root is not None:
         runtime.seed_installation_runtime(install_root, authoritative=True)
     python = runtime.ensure_runtime_python(root, required=required)
-    for source_root in runtime.source_python_paths(root):
-        value = str(source_root)
-        if value not in sys.path:
-            sys.path.insert(0, value)
+    if (root / ".research-agent-release.json").is_file() or install_root is not None:
+        if python is None:
+            raise runtime.RuntimeEnvironmentError("installed commands require the managed Python wheel")
+        source = root / "backend/src"
+        sys.path[:] = [item for item in sys.path if Path(item).resolve() != source]
+        for name, module in list(sys.modules.items()):
+            origin = getattr(module, "__file__", None)
+            if origin and name.split(".")[0] == "research_agent" and Path(origin).resolve().is_relative_to(source):
+                del sys.modules[name]
+        import research_agent
+        if not Path(research_agent.__file__).resolve().is_relative_to(Path(sys.prefix).resolve()):
+            raise runtime.RuntimeEnvironmentError("installed commands must import the managed Python wheel")
+    else:
+        activate_source_package(root)
     return runtime
 
 

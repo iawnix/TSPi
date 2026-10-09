@@ -1,30 +1,11 @@
-# Execution and evidence boundaries
+# Execution and research boundaries
 
-Scientific and email capabilities belong to Skills: instructions, executable scripts,
-input templates, parsers and validation. The installed chemical Skills provide
-CF22D, GFN2-xTB and Gaussian opt/SP runners. Skills can use ordinary shared libraries;
-there is no scientific capability registry or Provider dispatch in their execution path.
+Research Memory stores local problem Nodes, immutable Results, explicit relations and original requirements. It does not own Job state, Artifact bytes, scientific validation or email transport. The [architecture](ARCHITECTURE.md) specifies the current contract and implementation status.
 
-Agent-facing job_* tools manage scientific computation. Report formatting and email
-use native bash and preserve files/receipts as Artifacts, without calculation Attempts.
-Job Runtime executes arbitrary argv locally or through SSH/PBS. It owns durable
-process/scheduler identity, logs, timeout/cancellation, status and file collection.
-The local supervisor writes terminal receipts even when the Host is not polling.
-A process exit code, required-output completeness, and scientific validity are
-separate facts. Runtime never interprets a method or energy.
+Skills contain methods, executable scripts, templates and parsers. Generic Job Runtime executes explicit argv locally or through SSH/PBS and owns dispatch, status, cancellation and collection. The ResearchAgent adapter fixes actual inputs and optional Node/revision association. The platform launcher does not import Memory or infer a scientific plan.
 
-The TSPi adapter snapshots inputs in an isolated Job directory and binds research
-Jobs to real Attempts through the Research State transaction writer. Collected
-files are registered in Artifact Store and associated with the producing Attempt.
-The Agent interprets scientific evidence and registers Findings. A plan is not an
-Attempt; a Job ID is not an Attempt ID; storing a payload is not a scientific claim.
+Collection registers materials with producing Job and input provenance. ResearchResult references fixed materials and recorded executions; the Agent distinguishes observations, scientific judgments and limitations. Process success and required-file completeness do not prove a hypothesis.
 
-Monitor maintains a durable wake outbox for the owning session. It does not send
-email. The email Skill runs check/prepare/send/status through native bash with
-installation credentials and stable delivery identities; unknown delivery outcomes require reconciliation rather than blind retry.
+Monitor next_run owns durable event delivery to the original session, independently of Memory sequence. Host/Pi owns admission and input consumption. No research checkpoint is required at turn end; Memory changes neither grant tool access nor initiate model turns.
 
-Extension manifests declare digest-verified Skills, executors, validators and optional
-acceptance profiles. JavaScript and Python consume the same validated catalog.
-Generic preparation resolves a declared executor into explicit argv, staged inputs,
-outputs, environment bindings and resource requests; Runtime owns process control.
-No provider metadata or legacy dispatch registry is part of this contract.
+Email uses its own preparation, send identity, receipt and uncertain-outcome recovery. A failed research projection cannot cause another send. Extension manifests pin executable resources; validators run as ordinary Jobs and do not impose generic scientific lifecycle transitions.

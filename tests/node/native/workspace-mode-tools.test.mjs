@@ -6,11 +6,11 @@ import test from "node:test";
 
 import {
   readWorkspaceMode,
-} from "../../../apps/app-server/workspace-mode-tools.mjs";
-import { create_workspace_initializer } from "../../../packages/agent-core/workspace.mjs";
+} from "../../../apps/agent/host/workspace-modes.mjs";
+import { create_workspace_initializer } from "../../../apps/agent/host/workspace.mjs";
 
 test("workspace mode reader requires the canonical manifest and honors immutable manifests", async () => {
-  const root = await mkdtemp(join(tmpdir(), "tspi-workspace-mode-"));
+  const root = await mkdtemp(join(tmpdir(), "t-"));
   try {
     await assert.rejects(readWorkspaceMode(root), /workspace_manifest_unavailable/);
     await create_workspace_initializer().initialize_workspace({
@@ -20,7 +20,7 @@ test("workspace mode reader requires the canonical manifest and honors immutable
     });
     await assert.rejects(readWorkspaceMode(root), /workspace_admission_required/);
 
-    const researchRoot = await mkdtemp(join(tmpdir(), "tspi-workspace-mode-research-"));
+    const researchRoot = await mkdtemp(join(tmpdir(), "t-"));
     try {
       await create_workspace_initializer().initialize_workspace({
         workspace_root: researchRoot,
@@ -37,8 +37,8 @@ test("workspace mode reader requires the canonical manifest and honors immutable
 });
 
 test("workspace mode reader rejects a manifest symlink", async () => {
-  const root = await mkdtemp(join(tmpdir(), "tspi-workspace-mode-link-"));
-  const target = await mkdtemp(join(tmpdir(), "tspi-workspace-mode-target-"));
+  const root = await mkdtemp(join(tmpdir(), "t-"));
+  const target = await mkdtemp(join(tmpdir(), "t-"));
   try {
     await writeFile(join(target, "manifest.json"), JSON.stringify({ workspace_mode: "research" }));
     await symlink(join(target, "manifest.json"), join(root, "workspace_manifest.json"));

@@ -15,21 +15,13 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 
-PYTHON_DISTRIBUTION = "tspi-runtime"
-PI_PACKAGE = "@iawnix/tspi"
-PYTHON_PACKAGE_NAME = "tspi_runtime"
-PYTHON_PACKAGE_NAMES = (
-    "tspi_runtime",
-    "tspi_foundation",
-    "tspi_bootstrap",
-    "research_state",
-    "research_memory",
-    "artifact_store",
-    "job_runtime",
-)
+PYTHON_DISTRIBUTION = "research-agent"
+PI_PACKAGE = "@iawnix/research-agent"
+PYTHON_PACKAGE_NAME = "research_agent"
+PYTHON_PACKAGE_NAMES = ("research_agent",)
 PYTHON_PAYLOAD_SUFFIXES = frozenset({".css", ".html", ".js", ".json", ".py", ".svg", ".toml"})
-RELEASE_MANIFEST = ".tspi-release.json"
-RELEASE_SCHEMA_VERSION = "tspi-release/1"
+RELEASE_MANIFEST = ".research-agent-release.json"
+RELEASE_SCHEMA_VERSION = "research-agent-release/1"
 WHEEL_DIRECTORY = "python-dist"
 SOURCE_DATE_EPOCH = "315532800"
 
@@ -53,37 +45,13 @@ def build_wheel(
     if existing:
         raise WheelContractError(f"wheel output directory is not empty: {', '.join(existing)}")
 
-    with tempfile.TemporaryDirectory(prefix="tspi-wheel-source-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="research-agent-wheel-source-") as temporary:
         source = Path(temporary) / "source"
         source.mkdir()
-        for name in ("pyproject.toml", "README.md"):
-            path = root / name
-            if not path.is_file() or path.is_symlink():
-                raise WheelContractError(f"wheel source file is missing or unsafe: {path}")
-            shutil.copy2(path, source / name)
-        source_roots = {
-            "tspi_runtime": root / "packages" / "tspi-runtime" / "tspi_runtime",
-            "tspi_foundation": root / "packages" / "tspi-foundation" / "tspi_foundation",
-            "tspi_bootstrap": root / "packages" / "tspi-bootstrap" / "tspi_bootstrap",
-            "research_state": root / "packages" / "research-state" / "research_state",
-            "research_memory": root / "packages" / "research-memory" / "research_memory",
-            "artifact_store": root / "packages" / "artifact-store" / "artifact_store",
-            "job_runtime": root / "packages" / "job-runtime" / "job_runtime",
-        }
-        destinations = {
-            "tspi_runtime": source / "packages" / "tspi-runtime" / "tspi_runtime",
-            "tspi_foundation": source / "packages" / "tspi-foundation" / "tspi_foundation",
-            "tspi_bootstrap": source / "packages" / "tspi-bootstrap" / "tspi_bootstrap",
-            "research_state": source / "packages" / "research-state" / "research_state",
-            "research_memory": source / "packages" / "research-memory" / "research_memory",
-            "artifact_store": source / "packages" / "artifact-store" / "artifact_store",
-            "job_runtime": source / "packages" / "job-runtime" / "job_runtime",
-        }
-        for package_name, package_source in source_roots.items():
-            if not package_source.is_dir() or package_source.is_symlink():
-                raise WheelContractError(f"Python package source is missing or unsafe: {package_source}")
-            shutil.copytree(package_source, destinations[package_name],
-                            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", "*.egg-info"))
+        project = root / "backend"
+        shutil.copy2(project / "pyproject.toml", source / "pyproject.toml")
+        shutil.copytree(project / "src", source / "src",
+                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", "*.egg-info"))
 
         environment = dict(os.environ)
         environment.pop("PYTHONHOME", None)
@@ -122,7 +90,7 @@ def build_wheel(
         raise WheelContractError(f"wheel build must create exactly one artifact; found: {names}")
     descriptor = inspect_wheel(created[0])
     package = package_identity(root)
-    if descriptor["name"] != PYTHON_DISTRIBUTION or descriptor["version"] != package["version"]:
+    if descriptor["name"] != PYTHON_DISTRIBUTION or descriptor["version"] != package["version"].replace("-rc.", "rc"):
         raise WheelContractError("wheel identity does not match package.json")
     source_digest = source_payload_sha256(root, package_names=_wheel_package_names(created[0]))
     if descriptor["payload_sha256"] != source_digest:
@@ -206,7 +174,7 @@ def release_wheel(
     if manifest.get("package") != package:
         raise WheelContractError("installed release package identity does not match package.json")
     expected = validate_descriptor(manifest.get("python_distribution"))
-    if expected["version"] != package["version"]:
+    if expected["version"] != package["version"].replace("-rc.", "rc"):
         raise WheelContractError("bundled wheel version does not match the release package")
     relative = PurePosixPath(str(expected["path"]))
     wheel = root.joinpath(*relative.parts)
@@ -236,7 +204,7 @@ def validate_descriptor(value: object) -> dict[str, Any]:
         or not relative.name.endswith(".whl")
     ):
         raise WheelContractError("python_distribution.path must name one wheel under python-dist/")
-    if not relative.name.startswith(f"tspi_runtime-{value['version']}-"):
+    if not relative.name.startswith(f"research_agent-{value['version']}-"):
         raise WheelContractError("Python wheel filename does not match the distribution version")
     if len(value["sha256"]) != 64 or any(character not in "0123456789abcdef" for character in value["sha256"]):
         raise WheelContractError("python_distribution.sha256 must be a lowercase SHA-256 digest")
@@ -264,33 +232,16 @@ def source_payload_sha256(
     package_names: set[str] | None = None,
 ) -> str:
     package_root = Path(package_root).expanduser().resolve()
-    roots = {
-        "tspi_runtime": package_root / "packages" / "tspi-runtime" / "tspi_runtime",
-        "tspi_foundation": package_root / "packages" / "tspi-foundation" / "tspi_foundation",
-        "tspi_bootstrap": package_root / "packages" / "tspi-bootstrap" / "tspi_bootstrap",
-        "research_state": package_root / "packages" / "research-state" / "research_state",
-        "research_memory": package_root / "packages" / "research-memory" / "research_memory",
-        "artifact_store": package_root / "packages" / "artifact-store" / "artifact_store",
-        "job_runtime": package_root / "packages" / "job-runtime" / "job_runtime",
-    }
+    root = package_root / "backend/src/research_agent"
+    if not root.is_dir():
+        raise WheelContractError(f"Python source root is missing: {root}")
     records: list[tuple[str, bytes]] = []
-    for name, root in roots.items():
-        if package_names is not None and name not in package_names:
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.is_symlink():
             continue
-        # Minimal installer fixtures may contain only the canonical runtime
-        # namespace. Real release builds include every namespace declared in
-        # pyproject.toml; optional roots are included in the digest whenever
-        # they are present.
-        if not root.is_dir():
-            if name == "tspi_runtime":
-                raise WheelContractError(f"Python source root is missing: {root}")
-            continue
-        for path in sorted(root.rglob("*")):
-            if not path.is_file() or path.is_symlink(): continue
-            relative = PurePosixPath(name) / PurePosixPath(path.relative_to(root).as_posix())
-            if is_python_payload_path(relative): records.append((relative.as_posix(), path.read_bytes()))
-    if not records:
-        raise WheelContractError(f"Python source payload is empty: {root}")
+        relative = PurePosixPath("research_agent") / path.relative_to(root).as_posix()
+        if is_python_payload_path(relative):
+            records.append((relative.as_posix(), path.read_bytes()))
     return payload_records_sha256(records)
 
 

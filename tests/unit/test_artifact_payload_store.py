@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from artifact_store import ArtifactPayloadError, PayloadStore
+from research_agent.artifacts import ArtifactPayloadError, PayloadStore
 
 
 def test_put_bytes_is_idempotent_and_returns_verified_receipt(tmp_path: Path) -> None:

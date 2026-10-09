@@ -1,5 +1,5 @@
 from __future__ import annotations
-from tspi_foundation.layout import paths as layout_paths
+from research_agent.foundation.layout import paths as layout_paths
 
 import json
 import os
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from tspi_foundation.env import (
+from research_agent.foundation.env import (
     PACKAGE_ROOT_OVERRIDE,
     RUNTIME_PROBE_VERSION,
     RuntimeEnvironmentError,
@@ -32,12 +32,18 @@ from tspi_foundation.env import (
     spec_sha256,
     write_manifest,
 )
-import tspi_bootstrap.cli as runtime_cli
-from tspi_bootstrap.probe import probe_runtime_capabilities
+import research_agent.bootstrap.cli as runtime_cli
+from research_agent.bootstrap.probe import probe_runtime_capabilities
 from scripts import _runtime_install as runtime_install
 from scripts._bootstrap import bootstrap_python_package
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture(autouse=True)
+def explicit_runtime_selection(monkeypatch):
+    # This suite tests manifest selection independently of the runner's CLI override.
+    monkeypatch.delenv("RESEARCH_AGENT_PYTHON", raising=False)
 
 
 def _write_runtime_specs(package: Path) -> None:
@@ -56,23 +62,22 @@ def test_resolve_package_root_honors_process_binding(monkeypatch, tmp_path: Path
 
 
 def test_package_bootstrap_replaces_an_inherited_package_root(monkeypatch) -> None:
-    monkeypatch.setenv(PACKAGE_ROOT_OVERRIDE, "/tmp/other-tspi-release")
-    monkeypatch.setenv("TSPI_DISABLE_RUNTIME_REEXEC", "1")
+    monkeypatch.setenv(PACKAGE_ROOT_OVERRIDE, "/tmp/other-research-agent-release")
+    monkeypatch.setenv("RESEARCH_AGENT_DISABLE_RUNTIME_REEXEC", "1")
 
     bootstrap_python_package(ROOT)
 
     assert os.environ[PACKAGE_ROOT_OVERRIDE] == str(ROOT)
 
 
-def test_package_root_detection_uses_package_markers_with_nested_skill(tmp_path: Path) -> None:
+def test_package_root_detection_uses_identity_marker_without_skills(tmp_path: Path) -> None:
     package = tmp_path / "package"
     source_file = package / "packages" / "agent-runtime" / "agents" / "compute" / "runtime.ts"
     source_file.parent.mkdir(parents=True)
     source_file.write_text("export {};\n", encoding="utf-8")
     (package / "scripts").mkdir()
-    skill = package / "extensions/core/skills" / "research-state" / "SKILL.md"
-    skill.parent.mkdir(parents=True)
-    skill.write_text("---\nname: research-state\ndescription: test\n---\n", encoding="utf-8")
+    (package / "config").mkdir()
+    (package / "config/identity.json").write_text("{}\n")
     (package / "package.json").write_text("{}\n", encoding="utf-8")
 
     assert package_root_from_file(source_file) == package
@@ -105,7 +110,7 @@ def test_control_base_hash_covers_the_explicit_lock(tmp_path: Path) -> None:
 
 def test_control_installation_and_test_dependencies_have_separate_locks() -> None:
     import tomllib
-    dependencies = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["dependencies"]
+    dependencies = tomllib.loads((ROOT / "backend/pyproject.toml").read_text())["project"]["dependencies"]
     assert {item.split(">=")[0] for item in dependencies} == {"jsonschema", "packaging"}
     lock = (ROOT / "environment.lock.txt").read_text()
     assert "@EXPLICIT" in lock
@@ -126,21 +131,21 @@ def test_kernel_prefix_binds_payload_and_control_environment(tmp_path: Path) -> 
     (package / "environment.lock.txt").write_text("@EXPLICIT\nhttps://example.test/new-build.conda\n")
     updated = default_kernel_prefix(package, tmp_path / "envs")
     assert updated != prefix
-    (package / "packages/tspi-runtime/tspi_runtime/__init__.py").write_text("# changed payload\n")
+    (package / "backend/src/research_agent/application/__init__.py").write_text("# changed payload\n")
     assert default_kernel_prefix(package, tmp_path / "envs") != updated
 
 
 def test_default_env_store_is_package_relative_without_override(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("TSPI_ENV_ROOT", raising=False)
-    monkeypatch.delenv("TS_WORKSPACE_ROOT", raising=False)
+    monkeypatch.delenv("RESEARCH_AGENT_ENV_ROOT", raising=False)
+    monkeypatch.delenv("RESEARCH_AGENT_WORKSPACE_ROOT", raising=False)
     package = tmp_path / "skill"
     package.mkdir()
 
-    assert default_env_store(package) == Path(os.environ["TSPI_HOST_ENV_ROOT"])
+    assert default_env_store(package) == Path(os.environ["RESEARCH_AGENT_HOST_ENV_ROOT"])
 
 
 def test_installed_current_entrypoint_seeds_installation_owned_runtime_paths(tmp_path: Path) -> None:
-    installation = tmp_path / "tspi"
+    installation = tmp_path / "research-agent"
     layout_paths(installation).initialize()
     package_home = installation / "."
     release = package_home / "releases" / "release-a"
@@ -159,9 +164,9 @@ def test_installed_current_entrypoint_seeds_installation_owned_runtime_paths(tmp
     runtime_home = installation / "var/state/installation/python"
     assert resolved == installation
     assert environment == {
-        "TSPI_RUNTIME_HOME": str(runtime_home),
-        "TSPI_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
-        "TSPI_ENV_ROOT": str(
+        "RESEARCH_AGENT_RUNTIME_HOME": str(runtime_home),
+        "RESEARCH_AGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
+        "RESEARCH_AGENT_ENV_ROOT": str(
             layout_paths(installation).env_root
         ),
     }
@@ -172,7 +177,7 @@ def test_unified_suite_entrypoint_seeds_installation_owned_runtime_paths(
     tmp_path: Path,
     entrypoint_kind: str,
 ) -> None:
-    installation = tmp_path / "tspi"
+    installation = tmp_path / "research-agent"
     layout_paths(installation).initialize()
     package_home = installation / "."
     release = package_home / "releases" / "release-a"
@@ -198,9 +203,9 @@ def test_unified_suite_entrypoint_seeds_installation_owned_runtime_paths(
     runtime_home = installation / "var/state/installation/python"
     assert resolved == installation
     assert environment == {
-        "TSPI_RUNTIME_HOME": str(runtime_home),
-        "TSPI_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
-        "TSPI_ENV_ROOT": str(
+        "RESEARCH_AGENT_RUNTIME_HOME": str(runtime_home),
+        "RESEARCH_AGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
+        "RESEARCH_AGENT_ENV_ROOT": str(
             layout_paths(installation).env_root
         ),
     }
@@ -209,7 +214,7 @@ def test_unified_suite_entrypoint_seeds_installation_owned_runtime_paths(
 def test_unified_suite_entrypoint_rejects_target_outside_managed_releases(
     tmp_path: Path,
 ) -> None:
-    installation = tmp_path / "tspi"
+    installation = tmp_path / "research-agent"
     layout_paths(installation).initialize()
     authored = installation / "checkout" / "bin" / "ts-web"
     authored.parent.mkdir(parents=True)
@@ -228,7 +233,7 @@ def test_unified_suite_entrypoint_rejects_target_outside_managed_releases(
 def test_suite_web_launcher_seeds_installation_owned_runtime_paths(
     tmp_path: Path,
 ) -> None:
-    installation = tmp_path / "tspi"
+    installation = tmp_path / "research-agent"
     layout_paths(installation).initialize()
     package_home = installation / "."
     release = package_home / "releases" / "release-a"
@@ -249,9 +254,9 @@ def test_suite_web_launcher_seeds_installation_owned_runtime_paths(
     runtime_home = installation / "var/state/installation/python"
     assert resolved == installation
     assert environment == {
-        "TSPI_RUNTIME_HOME": str(runtime_home),
-        "TSPI_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
-        "TSPI_ENV_ROOT": str(layout_paths(installation).env_root),
+        "RESEARCH_AGENT_RUNTIME_HOME": str(runtime_home),
+        "RESEARCH_AGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
+        "RESEARCH_AGENT_ENV_ROOT": str(layout_paths(installation).env_root),
     }
 
 
@@ -259,9 +264,9 @@ def test_runtime_path_seed_preserves_explicit_configuration_and_ignores_authored
     tmp_path: Path,
 ) -> None:
     explicit = {
-        "TSPI_RUNTIME_HOME": "/configured/runtime",
-        "TSPI_RUNTIME_MANIFEST": "/configured/env.json",
-        "TSPI_ENV_ROOT": "/configured/envs",
+        "RESEARCH_AGENT_RUNTIME_HOME": "/configured/runtime",
+        "RESEARCH_AGENT_RUNTIME_MANIFEST": "/configured/env.json",
+        "RESEARCH_AGENT_ENV_ROOT": "/configured/envs",
     }
     stable = tmp_path / "." / "current" / "web" / "bin" / "ts-web"
     release = tmp_path / "." / "releases" / "release-a" / "web" / "bin"
@@ -273,9 +278,9 @@ def test_runtime_path_seed_preserves_explicit_configuration_and_ignores_authored
     layout_paths(tmp_path).initialize()
     assert seed_installation_runtime_from_entrypoint(stable, environ=explicit) == tmp_path
     assert explicit == {
-        "TSPI_RUNTIME_HOME": "/configured/runtime",
-        "TSPI_RUNTIME_MANIFEST": "/configured/env.json",
-        "TSPI_ENV_ROOT": "/configured/envs",
+        "RESEARCH_AGENT_RUNTIME_HOME": "/configured/runtime",
+        "RESEARCH_AGENT_RUNTIME_MANIFEST": "/configured/env.json",
+        "RESEARCH_AGENT_ENV_ROOT": "/configured/envs",
     }
 
     authored_environment: dict[str, str] = {}
@@ -289,26 +294,26 @@ def test_runtime_path_seed_preserves_explicit_configuration_and_ignores_authored
 
 def test_authoritative_installation_seed_replaces_stale_runtime_paths(tmp_path: Path) -> None:
     environment = {
-        "TSPI_RUNTIME_HOME": "/stale/runtime",
-        "TSPI_RUNTIME_MANIFEST": "/stale/env.json",
-        "TSPI_ENV_ROOT": "/stale/envs",
+        "RESEARCH_AGENT_RUNTIME_HOME": "/stale/runtime",
+        "RESEARCH_AGENT_RUNTIME_MANIFEST": "/stale/env.json",
+        "RESEARCH_AGENT_ENV_ROOT": "/stale/envs",
     }
 
     seed_installation_runtime(tmp_path, environ=environment, authoritative=True)
 
     runtime_home = tmp_path / "var/state/installation/python"
     assert environment == {
-        "TSPI_RUNTIME_HOME": str(runtime_home),
-        "TSPI_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
-        "TSPI_ENV_ROOT": str(layout_paths(tmp_path).env_root),
+        "RESEARCH_AGENT_RUNTIME_HOME": str(runtime_home),
+        "RESEARCH_AGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
+        "RESEARCH_AGENT_ENV_ROOT": str(layout_paths(tmp_path).env_root),
     }
 
 
 def test_workspace_root_owns_runtime_home_and_env_store(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("TSPI_ENV_ROOT", raising=False)
-    monkeypatch.delenv("TSPI_RUNTIME_HOME", raising=False)
+    monkeypatch.delenv("RESEARCH_AGENT_ENV_ROOT", raising=False)
+    monkeypatch.delenv("RESEARCH_AGENT_RUNTIME_HOME", raising=False)
     workspace = tmp_path / "workspace"
-    package = tmp_path / "pi" / "git" / "github.com" / "iawnix" / "TSPi"
+    package = tmp_path / "pi" / "git" / "github.com" / "iawnix" / "ResearchAgent"
     workspace.mkdir()
     package.mkdir(parents=True)
     _write_runtime_specs(package)
@@ -361,14 +366,14 @@ def test_configured_python_reads_runtime_manifest(tmp_path: Path) -> None:
 
 def test_seed_workspace_root_from_argv_sets_runtime_env(monkeypatch, tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
-    monkeypatch.delenv("TS_WORKSPACE_ROOT", raising=False)
+    monkeypatch.delenv("RESEARCH_AGENT_WORKSPACE_ROOT", raising=False)
 
     seed_workspace_root_from_argv(["report_workspace", "--root", str(workspace)])
 
     try:
-        assert os.environ["TS_WORKSPACE_ROOT"] == str(workspace)
+        assert os.environ["RESEARCH_AGENT_WORKSPACE_ROOT"] == str(workspace)
     finally:
-        os.environ.pop("TS_WORKSPACE_ROOT", None)
+        os.environ.pop("RESEARCH_AGENT_WORKSPACE_ROOT", None)
 
 
 def test_configured_python_ignores_stale_runtime_manifest(tmp_path: Path) -> None:
@@ -481,7 +486,7 @@ def test_runtime_process_binding_owns_python_commands(monkeypatch: pytest.Monkey
 
     bind_runtime_process_environment(executable)
 
-    assert os.environ["TSPI_PYTHON"] == str(executable)
+    assert os.environ["RESEARCH_AGENT_PYTHON"] == str(executable)
     assert os.environ["PATH"].split(os.pathsep)[0] == str(executable.parent)
     assert os.environ["PATH"].split(os.pathsep).count(str(executable.parent)) == 1
     assert os.environ["PYTHONNOUSERSITE"] == "1"
@@ -595,7 +600,7 @@ def test_damaged_control_base_requires_conda_for_repair(
 
 
 def test_install_env_dry_run_reports_hashed_prefix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("TS_WORKSPACE_ROOT", raising=False)
+    monkeypatch.delenv("RESEARCH_AGENT_WORKSPACE_ROOT", raising=False)
     completed = subprocess.run(
         [
             sys.executable,
@@ -624,7 +629,7 @@ def test_install_env_dry_run_reports_hashed_prefix(tmp_path: Path, monkeypatch: 
     assert payload["manifest_path"].endswith("/var/state/installation/python/env.json")
     assert payload["environment_lock"] == str(ROOT / "environment.lock.txt")
     assert payload["python_executable"].endswith("/bin/python")
-    assert payload["python_distribution"] == "tspi-runtime"
+    assert payload["python_distribution"] == "research-agent"
     assert payload["python_payload_sha256"] == python_payload_sha256(ROOT)
 
 
@@ -723,6 +728,15 @@ def test_install_env_reuses_control_base_and_isolates_kernel_overlay(tmp_path: P
                 target = site / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target)
+        # Conda can install setuptools with egg metadata whose RECORD lists
+        # package files but omits metadata. Preserve its command entry points
+        # explicitly in the synthetic offline control environment.
+        metadata = site / f"{name.replace('-', '_')}-{distribution.version}.dist-info"
+        metadata.mkdir(parents=True, exist_ok=True)
+        (metadata / "METADATA").write_text(distribution.read_text("METADATA") or distribution.read_text("PKG-INFO"))
+        entry_points = distribution.read_text("entry_points.txt")
+        if entry_points is not None:
+            (metadata / "entry_points.txt").write_text(entry_points)
     runtime_home = tmp_path / "runtime"
     command = [
         sys.executable,
@@ -797,12 +811,12 @@ def test_ts_runtime_run_preserves_pythonpath_without_source_injection(monkeypatc
 def test_ts_runtime_isolated_run_strips_workspace_runtime_context(monkeypatch) -> None:
     calls: dict[str, object] = {}
     runtime_values = {
-        "TS_WORKSPACE_ROOT": "/tmp/live-workspace",
-        "TSPI_PYTHON": "/tmp/override-python",
-        "TSPI_DISABLE_RUNTIME_REEXEC": "1",
-        "TSPI_ENV_ROOT": "/tmp/live-envs",
-        "TSPI_RUNTIME_HOME": "/tmp/live-runtime",
-        "TSPI_RUNTIME_MANIFEST": "/tmp/live-runtime/env.json",
+        "RESEARCH_AGENT_WORKSPACE_ROOT": "/tmp/live-workspace",
+        "RESEARCH_AGENT_PYTHON": "/tmp/override-python",
+        "RESEARCH_AGENT_DISABLE_RUNTIME_REEXEC": "1",
+        "RESEARCH_AGENT_ENV_ROOT": "/tmp/live-envs",
+        "RESEARCH_AGENT_RUNTIME_HOME": "/tmp/live-runtime",
+        "RESEARCH_AGENT_RUNTIME_MANIFEST": "/tmp/live-runtime/env.json",
     }
     for name, value in runtime_values.items():
         monkeypatch.setenv(name, value)
@@ -841,7 +855,7 @@ def test_ts_runtime_isolated_run_cannot_modify_workspace_manifest(tmp_path: Path
     )
     before = manifest.read_bytes()
     env = dict(os.environ)
-    env["TS_WORKSPACE_ROOT"] = str(workspace)
+    env["RESEARCH_AGENT_WORKSPACE_ROOT"] = str(workspace)
 
     completed = subprocess.run(
         [
@@ -888,10 +902,10 @@ def test_ts_runtime_resolve_reports_external_manifest_path(tmp_path: Path) -> No
     workspace.mkdir()
     env = dict(os.environ)
     for name in (
-        "TSPI_PYTHON",
-        "TSPI_RUNTIME_HOME",
-        "TSPI_RUNTIME_MANIFEST",
-        "TSPI_ENV_ROOT",
+        "RESEARCH_AGENT_PYTHON",
+        "RESEARCH_AGENT_RUNTIME_HOME",
+        "RESEARCH_AGENT_RUNTIME_MANIFEST",
+        "RESEARCH_AGENT_ENV_ROOT",
     ):
         env.pop(name, None)
     completed = subprocess.run(
@@ -921,7 +935,7 @@ def test_ts_runtime_resolve_reports_external_manifest_path(tmp_path: Path) -> No
 def _runtime_probe(*, payload_sha256: str | None = None) -> dict[str, object]:
     result = probe_runtime_capabilities(require_distribution=False)
     result["distribution"] = {
-        "name": "tspi-runtime", "installed": True, "version": "0.12.0",
+        "name": "research-agent", "installed": True, "version": "0.12.0",
         "root": str(Path(sys.prefix).resolve()),
         "payload_sha256": payload_sha256 or python_payload_sha256(ROOT),
     }
@@ -929,11 +943,11 @@ def _runtime_probe(*, payload_sha256: str | None = None) -> dict[str, object]:
 
 
 def _write_test_python_payload(package: Path) -> str:
-    source = package / "packages" / "tspi-runtime" / "tspi_runtime"
+    source = package / "backend" / "src" / "research_agent" / "application"
     source.mkdir(parents=True)
     (source / "__init__.py").write_text('"""test payload"""\n', encoding="utf-8")
     (package / "package.json").write_text(
-        '{"name":"@iawnix/tspi","version":"0.12.0"}\n',
+        '{"name":"@iawnix/research-agent","version":"0.12.0"}\n',
         encoding="utf-8",
     )
     return python_payload_sha256(package)

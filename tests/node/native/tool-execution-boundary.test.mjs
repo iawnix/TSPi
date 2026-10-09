@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { wrapToolForHarness } from "../../../packages/agent-runtime/host-api/tool-envelope.mjs";
-import { createToolExecutionContext } from "../../../packages/agent-runtime/host-api/workspace-context.mjs";
+import { wrapToolForHarness } from "../../../apps/agent/tools/envelope.mjs";
+import { createToolExecutionContext } from "../../../apps/agent/tools/context.mjs";
 
 const metadata = { authority: "kernel_write", effect: "research_write", phase: "advance", replay: "idempotent" };
 const context = { abortSignal: new AbortController().signal };
 const api = { callId: "call_1", taskId: "task_1" };
 function trusted(overrides = {}) {
-  return createToolExecutionContext({ workspace_root: "/home/iaw/debug/tspi-test-env/tool-boundary",
-    session_id: "session_1", lifecycle_phase: "turn", principal: "root_agent",
+  return createToolExecutionContext({ workspace_root: "/home/iaw/project/TSPi/local_debug/tool-boundary",
+    session_id: "session_1", principal: "root_agent",
     allowed_authorities: ["kernel_write"], allowed_effects: ["research_write"], ...overrides });
 }
 function definition(execute) {
@@ -17,21 +17,19 @@ function definition(execute) {
 }
 
 test("Durable tools receive one bound policy context and the native asynchronous progress API", async () => {
-  let checked = 0;
   const progress = [];
   const tool = wrapToolForHarness(definition(async (params, execution, current) => {
     assert.equal(params.value, 7);
-    assert.equal(execution.tspi.operation_id, "submission_1");
-    assert.equal(execution.tspi.principal, "root_agent");
+    assert.equal(execution.researchAgent.operation_id, "submission_1");
+    assert.equal(execution.researchAgent.principal, "root_agent");
     assert.equal(current, context);
     await execution.details({ step: 1 }, current);
     return { content: [{ type: "text", text: "saved" }] };
-  }), { toolContext: trusted({ lifecycle_provider: () => { checked++; return {}; } }),
+  }), { toolContext: trusted(),
     invocation: () => ({ operationId: "submission_1" }) });
   const result = await tool.execute({ value: 7 }, { ...api, details: async (value, current) => {
     assert.equal(current, context); progress.push(value);
   } }, context);
-  assert.equal(checked, 1);
   assert.deepEqual(progress, [{ step: 1 }]);
   assert.equal(result.details.envelope.tool_call_id, "call_1");
   assert.equal(result.details.envelope.ok, true);

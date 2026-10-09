@@ -1,81 +1,66 @@
 name: CI
-
 on:
   push:
     branches: [main]
   pull_request:
-
 permissions:
   contents: read
-
 jobs:
-  typescript-and-package:
-    name: TypeScript and package contracts
+  deterministic:
+    name: Deterministic ${{ matrix.suite }}
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        suite: [static, fast, node-fast, integration, native-pi, package, source, system-services]
     env:
-      TSPI_TEST_ENV_ROOT: ${{ runner.temp }}/tspi-test-env
-      TSPI_TEST_ROOT: ${{ runner.temp }}/tn
+      RESEARCH_AGENT_TEST_ENV_ROOT: ${{ runner.temp }}/ra
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run test:package
-      - name: Prepare pinned Pi source
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-activate-base: false
+          channels: conda-forge
+          channel-priority: strict
+      - name: Enable isolated test namespaces on the disposable runner
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Start an owned user manager when absent
+        if: matrix.suite == 'system-services'
         shell: bash
         run: |
-          set -euo pipefail
-          source_root="$(python3 scripts/prepare_pi_source.py --install "$RUNNER_TEMP/tspi")"
-          echo "TSPI_TEST_PI_RUNTIME_ROOT=$source_root" >> "$GITHUB_ENV"
-      - run: npm run test:native-pi
-
-  python-fast:
-    name: Python fast tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - uses: conda-incubator/setup-miniconda@v3
-        with:
-          activate-environment: tspi-skill
-          environment-file: environment.yml
-          auto-activate-base: false
-          channels: conda-forge
-          channel-priority: strict
-      - shell: bash -el {0}
-        run: python tools/test/runner.py fast -- -q
-      - shell: bash -el {0}
-        run: python3 tools/lint_public_surface.py
-      - shell: bash -el {0}
-        run: python3 tools/lint_skills.py
-
-  python-source:
-    name: Managed source runtime
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - uses: conda-incubator/setup-miniconda@v3
-        with:
-          activate-environment: tspi-skill
-          environment-file: environment.yml
-          auto-activate-base: false
-          channels: conda-forge
-          channel-priority: strict
-      - shell: bash -el {0}
-        run: >-
-          python tools/test/runner.py
-          --base-prefix "$CONDA_PREFIX"
-          --conda-root "$(conda info --base)"
-          source -- -q
+          mkdir -p "$RESEARCH_AGENT_TEST_ENV_ROOT/registry"
+          unit="user@$(id -u).service"
+          if ! systemctl is-active --quiet "$unit"; then
+            sudo systemctl start "$unit"
+            touch "$RESEARCH_AGENT_TEST_ENV_ROOT/registry/ci-owns-user-manager"
+          fi
+      - name: Prepare locked dependencies
+        shell: bash -el {0}
+        run: |
+          export RESEARCH_AGENT_TEST_CONDA="$(command -v conda)"
+          python3 tools/test/runner.py prepare
+      - name: Isolated suite
+        shell: bash -el {0}
+        run: python3 tools/test/runner.py ${{ matrix.suite }}
+      - name: Audit and clean owned resources
+        if: always()
+        shell: bash -el {0}
+        run: python3 tools/test/runner.py doctor
+      - name: Stop the manager only if this job created it
+        if: always() && matrix.suite == 'system-services'
+        shell: bash
+        run: |
+          marker="$RESEARCH_AGENT_TEST_ENV_ROOT/registry/ci-owns-user-manager"
+          if test -f "$marker"; then
+            sudo systemctl stop "user@$(id -u).service"
+            rm "$marker"
+          fi
+      # Private test roots, logs, databases and caches are never uploaded.

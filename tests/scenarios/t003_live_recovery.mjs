@@ -6,17 +6,17 @@ import { mkdtemp, readFile, writeFile, copyFile, rm, mkdir } from "node:fs/promi
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { validateToolArguments } from "@earendil-works/pi-ai";
-import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
-import { create_python_kernel_bridge } from "../../packages/research-state-bridge/python_kernel_bridge.mjs";
-import { createStateTool, createResearchDecisionTools } from "../../apps/app-server/pi-native-tools.mjs";
-import { createDecisionContextInjector } from "../../apps/app-server/decision-context.mjs";
+import { create_workspace_initializer } from "../../apps/agent/host/workspace.mjs";
+import { create_python_runtime_bridge } from "../../apps/agent/bridge/transport.mjs";
+import { createStateTool, createResearchDecisionTools } from "../../apps/agent/tools/registry.mjs";
+import { createDecisionContextInjector } from "../../apps/agent/tools/decision-context.mjs";
 
 const { values } = parseArgs({ options: { "agent-dir": { type: "string" }, output: { type: "string" }, runs: { type: "string", default: "2" } } });
-const testRoot = resolve(process.env.TSPI_TEST_ROOT || "/home/iaw/debug/tspi-test-env");
-const piRoot = process.env.TSPI_TEST_PI_RUNTIME_ROOT;
+const testRoot = resolve(process.env.RESEARCH_AGENT_TEST_ROOT || "/home/iaw/project/TSPi/local_debug");
+const piRoot = process.env.RESEARCH_AGENT_TEST_PI_RUNTIME_ROOT;
 if (!piRoot || !values["agent-dir"] || !values.output) throw new Error("Supply pinned Pi, --agent-dir and --output");
 const output = resolve(values.output);
-if (!output.startsWith(testRoot + "/")) throw new Error("Output must be under TSPI_TEST_ROOT");
+if (!output.startsWith(testRoot + "/")) throw new Error("Output must be under RESEARCH_AGENT_TEST_ROOT");
 const runs = Number(values.runs);
 if (!Number.isInteger(runs) || runs < 1 || runs > 3) throw new Error("runs must be 1..3");
 const temporary = await mkdtemp(join(testRoot, "eval-recovery-"));
@@ -36,7 +36,7 @@ try {
     const initializer = create_workspace_initializer();
     await initializer.initialize_workspace({ workspace_root: root, workspace_id: `recovery_${run}`, workspace_mode: "research" });
     await initializer.admit_workspace(root);
-    const bridge = create_python_kernel_bridge({ workspace_root: root });
+    const bridge = create_python_runtime_bridge({ workspace_root: root });
     const row = { run, injected_error: true, turns: [], passed: false };
     record.runs.push(row);
     let job;
@@ -47,7 +47,7 @@ try {
         { type: "set_focus", claim_ids: ["claim_fixture"], node_ids: ["node_fixture"] },
         { type: "create_strategy_plan", id: "strategy_fixture", claim_id: "claim_fixture", node_id: "node_fixture", objective: "Read output", rationale: "Check marker", status: "active" },
       ] });
-      job = await bridge.execute_command("job.start", { job_id: `job_recovery_${run}`, node_id: "node_fixture", command: [process.env.TSPI_PYTHON, "-c", "print('evidence')"], timeout_seconds: 5 });
+      job = await bridge.execute_command("job.start", { job_id: `job_recovery_${run}`, node_id: "node_fixture", command: [process.env.RESEARCH_AGENT_PYTHON, "-c", "print('evidence')"], timeout_seconds: 5 });
       let status;
       for (let poll = 0; poll < 100; poll++) {
         status = await bridge.execute_command("job.status", { job_id: job.job_id });
@@ -63,7 +63,7 @@ try {
         const tool = tools.find(tool => tool.name === call.name);
         if (!tool) throw new Error("Unsupported recovery tool");
         const args = validateToolArguments(tool, call);
-        return tool.execute(args, { callId: call.id, tspi: toolContext }, { abortSignal: AbortSignal.timeout(30_000) });
+        return tool.execute(args, { callId: call.id, research-agent: toolContext }, { abortSignal: AbortSignal.timeout(30_000) });
       };
       const invalid = { type: "toolCall", id: "call_injected", name: "research_interpretation", arguments: { interpretation: {
         id: "interpretation_fixture", claim_id: "claim_fixture", node_id: "node_fixture", attempt_ref: job.attempt_id,

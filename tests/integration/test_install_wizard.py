@@ -1,5 +1,5 @@
 from __future__ import annotations
-from tspi_foundation.layout import paths as layout_paths
+from research_agent.foundation.layout import paths as layout_paths
 
 import json
 import os
@@ -66,7 +66,7 @@ def test_existing_unmanaged_host_is_migrated_to_user_service(tmp_path: Path) -> 
     service_config = root / "etc/service.json"
     service_config.parent.mkdir(parents=True)
     service_config.write_text(
-        json.dumps({"schema_version": "tspi-service/1", "scope": "none", "runtime_dir": None}),
+        json.dumps({"schema_version": "research-agent-service/1", "scope": "none", "runtime_dir": None}),
         encoding="utf-8",
     )
     args = wizard.parse_args(["--install-root", str(root)])
@@ -422,7 +422,7 @@ def test_model_icon_options_are_mutually_exclusive(tmp_path: Path) -> None:
 
 
 def test_bundled_model_icon_font_avoids_the_nerd_font_private_use_range() -> None:
-    with TTFont(ROOT / "assets/fonts/tspi-model-icons.ttf") as font:
+    with TTFont(ROOT / "assets/fonts/research-agent-model-icons.ttf") as font:
         codepoints = set(font.getBestCmap() or {})
         revision = font["head"].fontRevision
 
@@ -436,7 +436,7 @@ def test_model_icon_font_install_writes_private_marker_and_handles_missing_fc_ca
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     package = tmp_path / "package"
-    source = package / "assets/fonts/tspi-model-icons.ttf"
+    source = package / "assets/fonts/research-agent-model-icons.ttf"
     source.parent.mkdir(parents=True)
     source.write_bytes(b"font fixture")
     install_root = tmp_path / "install"
@@ -447,7 +447,7 @@ def test_model_icon_font_install_writes_private_marker_and_handles_missing_fc_ca
 
     result = wizard.install_model_icon_font(package, install_root, enabled=True)
 
-    target = data_home / "fonts/tspi/TSPi-Model-Icons.ttf"
+    target = data_home / "fonts/research-agent/ResearchAgent-Model-Icons.ttf"
     marker = install_root / "etc/model-icons.json"
     assert result["status"] == "installed_cache_unavailable"
     assert result["enabled"] is True
@@ -463,7 +463,7 @@ def test_model_icon_font_install_writes_private_marker_and_handles_missing_fc_ca
 
 def test_model_icon_font_can_be_disabled_without_removing_shared_font(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     package = tmp_path / "package"
-    source = package / "assets/fonts/tspi-model-icons.ttf"
+    source = package / "assets/fonts/research-agent-model-icons.ttf"
     source.parent.mkdir(parents=True)
     source.write_bytes(b"font fixture")
     install_root = tmp_path / "install"
@@ -474,7 +474,7 @@ def test_model_icon_font_can_be_disabled_without_removing_shared_font(tmp_path: 
     result = wizard.install_model_icon_font(package, install_root, enabled=False)
 
     assert result["status"] == "disabled"
-    assert (tmp_path / "xdg-data/fonts/tspi/TSPi-Model-Icons.ttf").is_file()
+    assert (tmp_path / "xdg-data/fonts/research-agent/ResearchAgent-Model-Icons.ttf").is_file()
     assert json.loads((install_root / "etc/model-icons.json").read_text(encoding="utf-8"))["enabled"] is False
 
 
@@ -485,12 +485,12 @@ def test_update_preserves_workspace_root_and_link_defaults(tmp_path: Path) -> No
     phone = root / "var/state/host/link.json"
     phone.parent.mkdir(parents=True, exist_ok=True)
     phone.write_text(json.dumps({
-        "schema_version": "tspi-link/1",
-        "protocol": "tspi-link.v1",
+        "schema_version": "research-agent-link/1",
+        "protocol": "research-agent-link.v1",
         "relay_url": "https://relay.example.test",
         "host_id": "123e4567-e89b-42d3-a456-426614174000",
     }), encoding="utf-8")
-    (phone.parent / "host.token").write_text("tsph_" + "a" * 43, encoding="utf-8")
+    (phone.parent / "host.token").write_text("rah_" + "a" * 43, encoding="utf-8")
     args = wizard.parse_args([
         "--install-root", str(root), "--without-web", "--service-scope", "none", "--non-interactive",
     ])
@@ -506,14 +506,14 @@ def test_explicit_phone_link_uses_discovered_relay_url(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    relay_root = tmp_path / "tspi-link"
+    relay_root = tmp_path / "research-agent-link"
     monkeypatch.setattr(
         wizard,
         "discover_link_relay",
         lambda _root: {
             "root": str(relay_root),
-            "service_root": str(relay_root / "current/service"),
-            "cli": str(relay_root / "current/service/cli.mjs"),
+            "service_root": str(relay_root / "current/services/relay"),
+            "cli": str(relay_root / "current/services/relay/cli.mjs"),
             "state": str(tmp_path / "relay.db"),
             "relay_url": "https://relay.example.test",
         },
@@ -766,11 +766,11 @@ def test_app_server_service_is_one_installation_host(tmp_path: Path) -> None:
 
     assert f"WorkingDirectory={root}" in unit
     assert f'ExecStart="{root / "current/agent/libexec/research-agent-host"}"' in unit
-    assert "Environment=TSPI_SYSTEMD_HOST=1" in unit
-    assert "TSPI_SERVER_EXTENSIONS" not in unit
+    assert "Environment=RESEARCH_AGENT_SYSTEMD_HOST=1" in unit
+    assert "RESEARCH_AGENT_SERVER_EXTENSIONS" not in unit
     assert 'Environment="XDG_RUNTIME_DIR=' in unit
     assert f'PI_CODING_AGENT_DIR={root / "etc/pi"}' in unit
-    assert str(Path(os.environ["XDG_RUNTIME_DIR"]) / "tspi") in unit
+    assert str(Path(os.environ["XDG_RUNTIME_DIR"]) / "ra") in unit
     assert f'ReadWritePaths="{root / "var/state"}"' in unit
     assert f'ReadWritePaths="{root / "workspaces"}"' in unit
     assert "WantedBy=default.target" in unit
@@ -809,17 +809,17 @@ def test_service_runtime_configuration_records_scope_and_socket_directory(
 
     assert configured["scope"] == "user"
     document = layout_paths(args.install_root).read_config()["service"]
-    assert document["schema_version"] == "tspi-service/1"
+    assert document["schema_version"] == "research-agent-service/1"
     assert document["scope"] == "user"
-    assert document["runtime_dir"] == str(runtime_parent / "tspi")
+    assert document["runtime_dir"] == str(runtime_parent / "ra")
 
 
 def test_remote_terminal_profile_is_written_private_and_reloaded(tmp_path: Path) -> None:
     args = wizard.parse_args([
         "--install-root", str(tmp_path / "install"),
         "--remote-host", "pi.example",
-        "--remote-host-socket", "/run/tspi/host.sock",
-        "--remote-proxy-path", "/opt/tspi/apps/app-server/tspi-host-proxy.mjs",
+        "--remote-host-socket", "/run/research-agent/host.sock",
+        "--remote-proxy-path", "/opt/research-agent/apps/agent/transport/ssh.mjs",
         "--ssh-option=-i",
         "--ssh-option", "/home/test/.ssh/id_ed25519",
         "--without-web", "--service-scope", "none", "--non-interactive", "--yes",
@@ -838,7 +838,7 @@ def test_remote_terminal_profile_is_written_private_and_reloaded(tmp_path: Path)
     ])
     wizard.validate_options(reloaded)
     assert reloaded.remote_host == "pi.example"
-    assert reloaded.remote_host_socket == "/run/tspi/host.sock"
+    assert reloaded.remote_host_socket == "/run/research-agent/host.sock"
     assert wizard.configure_remote_host(reloaded)["status"] == "configured"
 
 
@@ -930,16 +930,16 @@ def test_configure_services_installs_and_starts_host_and_web(
 
     services = wizard.configure_services(args)
 
-    assert (unit_dir / "ts-app-server-tspi.service").is_file()
-    assert (unit_dir / "ts-web-tspi.service").is_file()
+    assert (unit_dir / "ts-app-server-research-agent.service").is_file()
+    assert (unit_dir / "ts-web-research-agent.service").is_file()
     assert calls == [
         ("daemon-reload",),
-        ("enable", "ts-app-server-tspi.service"),
-        ("enable", "ts-web-tspi.service"),
-        ("restart", "ts-app-server-tspi.service"),
-        ("restart", "ts-web-tspi.service"),
+        ("enable", "ts-app-server-research-agent.service"),
+        ("enable", "ts-web-research-agent.service"),
+        ("restart", "ts-app-server-research-agent.service"),
+        ("restart", "ts-web-research-agent.service"),
     ]
-    assert services[0]["name"] == "ts-app-server-tspi.service"
+    assert services[0]["name"] == "ts-app-server-research-agent.service"
     assert services[0]["active"] == "active"
 
 
@@ -950,7 +950,7 @@ def test_configure_services_stops_concrete_legacy_app_server_instances(
     args = _options(tmp_path)
     unit_dir = tmp_path / "units"
     unit_dir.mkdir()
-    (unit_dir / "ts-app-server-tspi@.service").write_text(
+    (unit_dir / "ts-app-server-research-agent@.service").write_text(
         f"[Service]\nWorkingDirectory={args.install_root}\n",
         encoding="utf-8",
     )
@@ -958,8 +958,8 @@ def test_configure_services_stops_concrete_legacy_app_server_instances(
     monkeypatch.setattr(wizard, "_service_unit_directory", lambda _scope: unit_dir)
     monkeypatch.setattr(wizard, "verify_service_units", lambda *_args: None)
     monkeypatch.setattr(wizard, "app_server_service_instances", lambda _scope: [
-        "ts-app-server-tspi@reaction-a.service",
-        "ts-app-server-tspi@reaction-b.service",
+        "ts-app-server-research-agent@reaction-a.service",
+        "ts-app-server-research-agent@reaction-b.service",
     ])
     monkeypatch.setattr(wizard, "_run_systemctl", lambda _scope, *values: calls.append(values))
     monkeypatch.setattr(
@@ -970,9 +970,9 @@ def test_configure_services_stops_concrete_legacy_app_server_instances(
 
     wizard.configure_services(args)
 
-    assert not (unit_dir / "ts-app-server-tspi@.service").exists()
-    assert ("disable", "--now", "ts-app-server-tspi@reaction-a.service") in calls
-    assert ("disable", "--now", "ts-app-server-tspi@reaction-b.service") in calls
+    assert not (unit_dir / "ts-app-server-research-agent@.service").exists()
+    assert ("disable", "--now", "ts-app-server-research-agent@reaction-a.service") in calls
+    assert ("disable", "--now", "ts-app-server-research-agent@reaction-b.service") in calls
 
 
 def test_configure_services_removes_owned_web_unit_when_web_is_disabled(
@@ -988,7 +988,7 @@ def test_configure_services_removes_owned_web_unit_when_web_is_disabled(
     wizard.validate_options(args)
     unit_dir = tmp_path / "units"
     unit_dir.mkdir()
-    (unit_dir / "ts-web-tspi.service").write_text(
+    (unit_dir / "ts-web-research-agent.service").write_text(
         f"[Service]\nWorkingDirectory={args.install_root}\n",
         encoding="utf-8",
     )
@@ -1004,9 +1004,9 @@ def test_configure_services_removes_owned_web_unit_when_web_is_disabled(
 
     wizard.configure_services(args)
 
-    assert not (unit_dir / "ts-web-tspi.service").exists()
-    assert ("stop", "ts-web-tspi.service") in calls
-    assert ("disable", "ts-web-tspi.service") in calls
+    assert not (unit_dir / "ts-web-research-agent.service").exists()
+    assert ("stop", "ts-web-research-agent.service") in calls
+    assert ("disable", "ts-web-research-agent.service") in calls
 
 
 def test_service_ownership_rejects_a_different_installation(
@@ -1016,7 +1016,7 @@ def test_service_ownership_rejects_a_different_installation(
     args = _options(tmp_path)
     unit_dir = tmp_path / "units"
     unit_dir.mkdir()
-    (unit_dir / "ts-app-server-tspi.service").write_text(
+    (unit_dir / "ts-app-server-research-agent.service").write_text(
         "[Service]\nWorkingDirectory=/another/install\n",
         encoding="utf-8",
     )
@@ -1032,14 +1032,14 @@ def test_component_summary_exposes_app_server_and_phone_connection(tmp_path: Pat
         args,
         {"runtime": {"env_prefix": "/runtime", "runtime_probe": {"modules": {}, "commands": {}}}},
         runtime,
-        [{"name": "ts-app-server-tspi.service", "scope": "user", "enabled": "enabled", "active": "active"}],
+        [{"name": "ts-app-server-research-agent.service", "scope": "user", "enabled": "enabled", "active": "active"}],
         {"web_http": {"path": "/token", "status": "created", "mode": "0600"}},
     )
     assert components["app_server"]["runtime"] == str(runtime)
     assert components["app_server"]["server_id"].endswith("/var/state/host/server-id")
-    assert components["app_server"]["start"] == "systemctl --user start ts-app-server-tspi.service"
+    assert components["app_server"]["start"] == "systemctl --user start ts-app-server-research-agent.service"
     assert components["phone"]["tool_access"] == "same_as_terminal"
-    assert components["phone"]["protocol"] == "tspi-link.v1"
+    assert components["phone"]["protocol"] == "research-agent-link.v1"
     assert components["runtime"]["status"] == "not_probed"
     assert components["job"]["status"] == "not_configured"
     assert "render" not in components
@@ -1086,20 +1086,20 @@ def test_link_manifest_is_secret_free_and_host_token_is_private(tmp_path: Path, 
     host_id = wizard.ensure_host_identity(root).read_text(encoding="ascii").strip()
     monkeypatch.setattr(wizard, "_redeem_link_enrollment", lambda *_args: {
         "hostId": host_id,
-        "protocol": "tspi-link.v1",
-        "hostToken": "tsph_" + "a" * 43,
+        "protocol": "research-agent-link.v1",
+        "hostToken": "rah_" + "a" * 43,
     })
 
     result = wizard.configure_phone_connection(args)
 
     manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
     assert manifest["relay_url"] == "https://relay.example.test"
-    assert manifest["protocol"] == "tspi-link.v1"
+    assert manifest["protocol"] == "research-agent-link.v1"
     assert result["tool_access"] == "same_as_terminal"
     assert "token" not in manifest
     assert "secret" not in manifest
     token_file = root / "var/state/host/host.token"
-    assert token_file.read_text(encoding="utf-8").strip().startswith("tsph_")
+    assert token_file.read_text(encoding="utf-8").strip().startswith("rah_")
     assert stat.S_IMODE(token_file.stat().st_mode) == 0o600
 
 
@@ -1109,12 +1109,12 @@ def test_changing_relay_requires_a_new_host_enrollment(tmp_path: Path) -> None:
     state = root / "var/state/host"
     state.mkdir(parents=True)
     (state / "link.json").write_text(json.dumps({
-        "schema_version": "tspi-link/1",
-        "protocol": "tspi-link.v1",
+        "schema_version": "research-agent-link/1",
+        "protocol": "research-agent-link.v1",
         "relay_url": "https://old-relay.example.test",
         "host_id": "123e4567-e89b-42d3-a456-426614174000",
     }), encoding="utf-8")
-    (state / "host.token").write_text("tsph_" + "a" * 43, encoding="ascii")
+    (state / "host.token").write_text("rah_" + "a" * 43, encoding="ascii")
     args.phone_access = "link"
     args.link_url = "https://new-relay.example.test"
     args.link_enrollment_code = None
@@ -1231,7 +1231,7 @@ def test_job_toml_is_validated_and_written_private(tmp_path: Path) -> None:
         'ssh_host = "cluster"',
         f'ssh_config = "{ssh_config}"',
         'scheduler = "torque"',
-        'remote_root = "/srv/tspi"',
+        'remote_root = "/srv/research-agent"',
         'allowed_queues = ["batch"]',
         '',
     ]) + "\n", encoding="utf-8")
@@ -1352,3 +1352,35 @@ def test_install_uninstaller_copies_recovery_files_and_marks_ownership(tmp_path:
     assert (root / "runtimes/maintenance/uninstall.py").is_file()
     marker = json.loads((root / "etc/installation.json").read_text(encoding="utf-8"))
     assert marker["schema_version"] == "research-agent-installation/2"
+
+
+def test_configured_update_preserves_existing_relay_host_enrollment(tmp_path, monkeypatch):
+    from scripts import install_configured, install_wizard
+    from types import SimpleNamespace
+    root = tmp_path / 'install'
+    state = root / 'var/state/host'
+    state.mkdir(parents=True)
+    host_id = '431e9e39-0d9c-4353-9f8b-d934eeab8323'
+    relay_url = 'https://relay.example'
+    (state / 'server-id').write_text(host_id)
+    (state / 'host.token').write_text('existing-token')
+    (state / 'link.json').write_text(json.dumps({'schema_version':'research-agent-link/1','relay_url':relay_url,'host_id':host_id}))
+    config = tmp_path / 'config'; config.mkdir(); (config / 'job.toml').write_text('')
+    monkeypatch.setattr(install_wizard, '_validate_job_config', lambda value: value)
+    monkeypatch.setattr(install_configured, 'discover_link_relay', lambda path: {
+        'service_root': str(root / 'runtimes/link-relay/current/services/relay'), 'relay_url':relay_url,
+        'state': str(root / 'var/state/link-relay/relay.db')})
+    def build(args, config, target):
+        assert args.link_enrollment_code is None
+        assert args.link_url == relay_url
+        return ['verified-wizard-command']
+    calls = []
+    def run(command, **kwargs):
+        calls.append(command)
+        assert command == ['verified-wizard-command'], 'must not create another enrollment for an enrolled Host'
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(install_configured, 'build_command', build)
+    monkeypatch.setattr(install_configured.subprocess, 'run', run)
+    assert install_configured.main(['--install-root',str(root),'--config-dir',str(config)]) == 0
+    assert len(calls) == 1
+    assert (state / 'host.token').read_text() == 'existing-token'

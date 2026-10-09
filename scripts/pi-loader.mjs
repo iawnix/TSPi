@@ -3,9 +3,9 @@ import { registerHooks } from "node:module";
 import { isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const executable = process.env.TS_PI_EXECUTABLE;
+const executable = process.env.RESEARCH_AGENT_PI_EXECUTABLE;
 if (!executable || !isAbsolute(executable)) {
-  throw new Error("TSPi requires the selected Pi executable; start through the installation launcher.");
+  throw new Error("ResearchAgent requires the selected Pi executable; start through the installation launcher.");
 }
 const parentURL = pathToFileURL(realpathSync(executable)).href;
 const packages = new Set(["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"]);

@@ -2,7 +2,7 @@
 
 [English](INSTALLATION.md) | 简体中文
 
-本指南安装 TSPi Agent、可选的 TS Web 只读浏览器，以及按需安装的公网 TSPi Link Relay。
+本指南安装 ResearchAgent Agent、可选的 TS Web 只读浏览器，以及按需安装的公网 ResearchAgent Link Relay。
 TS Phone 是独立的 Flutter 应用。Relay 仍然是独立服务和独立安装目录，但主安装器可以
 在一次安装中部署 Relay 并完成 Host 注册。
 
@@ -18,23 +18,23 @@ TS Phone 是独立的 Flutter 应用。Relay 仍然是独立服务和独立安�
 浅克隆。私有 GitHub 仓库可显式传入 SSH 地址，不需要 TS Phone 仓库：
 
 ```bash
-./install.sh --tspi-repo git@github.com:your-org/TSPi.git
+./install.sh --research-agent-repo git@github.com:your-org/ResearchAgent.git
 ```
 
 ## 安装或选择版本
 
-运行 `./install.sh`，确认安装目录、TSPi revision、workspace root、Conda root、
+运行 `./install.sh`，确认安装目录、ResearchAgent revision、workspace root、Conda root、
 可选 TS Web 组件和服务策略。Core Agent 和控制运行时始终安装；科学计算、验证和渲染
 依赖单独配置的执行环境。
 
 `install-configured.sh` 默认在同一次非交互安装中部署本机 Relay、生成一次性 enrollment
 code 并完成 Host 注册。默认 Relay URL 是 `https://tsphone.iawnix.xyz`；如果 Relay 已经
-由其他安装提供，可以设置 `TSPI_WITH_LINK_RELAY=false` 并传入已有的
-`TSPI_LINK_ENROLLMENT_CODE`。Relay 相关配置还包括 `TSPI_LINK_RELAY_ROOT`、
-`TSPI_LINK_RELAY_STATE_DIR`、`TSPI_LINK_RELAY_LISTEN`、`TSPI_LINK_RELAY_PORT`、
-`TSPI_LINK_RELAY_SERVICE_SCOPE` 和 `TSPI_LINK_RELAY_SERVICE_USER`。
+由其他安装提供，可以设置 `RESEARCH_AGENT_WITH_LINK_RELAY=false` 并传入已有的
+`RESEARCH_AGENT_LINK_ENROLLMENT_CODE`。Relay 相关配置还包括 `RESEARCH_AGENT_LINK_RELAY_ROOT`、
+`RESEARCH_AGENT_LINK_RELAY_STATE_DIR`、`RESEARCH_AGENT_LINK_RELAY_LISTEN`、`RESEARCH_AGENT_LINK_RELAY_PORT`、
+`RESEARCH_AGENT_LINK_RELAY_SERVICE_SCOPE` 和 `RESEARCH_AGENT_LINK_RELAY_SERVICE_USER`。
 本机 Relay 会通过 `127.0.0.1:8788` 兑换 enrollment code，Host manifest 仍保存公网 URL，
-因此安装时不要求公网反向代理已经完成；可以用 `TSPI_LINK_ENROLLMENT_URL` 覆盖本地兑换地址。
+因此安装时不要求公网反向代理已经完成；可以用 `RESEARCH_AGENT_LINK_ENROLLMENT_URL` 覆盖本地兑换地址。
 非交互安装可使用 `--workspace-root /absolute/path`；默认值为
 `<install>/workspaces`。Host、终端、TS Web 和卸载器共享
 `etc/installation.json` 中记录的值。
@@ -49,32 +49,32 @@ code 并完成 Host 注册。默认 Relay URL 是 `https://tsphone.iawnix.xyz`�
 <install>/current -> releases/<release-id>
 ```
 
-只有选中的 release 会暴露给 `TSPi` 启动器；安装器记录校验和，不执行该 release
+只有选中的 release 会暴露给 `ResearchAgent` 启动器；安装器记录校验和，不执行该 release
 之外的源码。
 
 ### 可选模型图标字体
 
 可选模型图标字体可通过 `--with-model-icons` 安装，使用
 `--without-model-icons` 禁用。字体属于用户数据目录，不是科学运行时依赖；
-`TSPI_ICON_STYLE=unicode` 或 `nerd` 可显式覆盖选择。模型字形使用补充私用区，避免被
+`RESEARCH_AGENT_ICON_STYLE=unicode` 或 `nerd` 可显式覆盖选择。模型字形使用补充私用区，避免被
 终端主 Nerd Font 中已有的同码位字形遮蔽。
 
 交互安装默认询问并选择启用；非交互安装默认禁用，明确传入参数才会安装：
 
 ```bash
 ./install.sh --non-interactive --yes --with-model-icons \
-  --install-root "$HOME/.local/share/tspi"
+  --install-root "$HOME/.local/share/research-agent"
 ```
 
-字体安装在用户数据目录（`$XDG_DATA_HOME/fonts/tspi` 或
-`$HOME/.local/share/fonts/tspi`），所选 release 在
+字体安装在用户数据目录（`$XDG_DATA_HOME/fonts/research-agent` 或
+`$HOME/.local/share/fonts/research-agent`），所选 release 在
 `<install>/etc/model-icons.json` 保存私有标记。无需另装 Nerd Font；其他图标沿用
-已有 Nerd Font，设置 `TSPI_ICON_STYLE=unicode` 时回退到普通 Unicode。安装器在可用时刷新
+已有 Nerd Font，设置 `RESEARCH_AGENT_ICON_STYLE=unicode` 时回退到普通 Unicode。安装器在可用时刷新
 fontconfig 缓存；已打开的终端可能需要重启才能加载回退字体。
 
 ## 受管 Python 运行时
 
-Host Python 环境默认位于 `~/soft/tspi/host-envs/<installation-id>`，元数据位于
+Host Python 环境默认位于 `~/soft/research-agent/host-envs/<installation-id>`，元数据位于
 `<install>/var/state/installation/python`；缓存位于 `<install>/var/cache`，可删除后
 重建而不会影响工作区。Host 通过 `environment.lock.txt` 安装固定 Conda 构建，
 不按 `environment.yml` 重新求解。基础环境身份包含 YAML 和显式锁摘要，Python overlay
@@ -86,9 +86,9 @@ Host Python 环境默认位于 `~/soft/tspi/host-envs/<installation-id>`，元�
 scripts/prepare_pi_source.py --install <root>
 ```
 
-能力发现、Node 暂停/恢复和选择性远程或模型 smoke 命令见
+能力发现、Job 取消与恢复和选择性远程或模型 smoke 命令见
 [科学能力运维](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。同一步会验证固定版本的 Pi
-运行时及文档列出的 TSPi 补丁集；运行时使用下文说明的按 workspace 隔离的 SQLite session
+运行时及文档列出的 ResearchAgent 补丁集；运行时使用下文说明的按 workspace 隔离的 SQLite session
 布局。
 
 ## 配置计算后端
@@ -99,18 +99,18 @@ scripts/prepare_pi_source.py --install <root>
 
 复制 `config/compute.example.toml` 并修改目标路径与绑定，再通过
 `--job-config /absolute/path/job.toml` 交给安装器。安装管理的私有副本位于
-`<install>/etc/job.toml`。SSH 凭据仍保留在 SSH 配置中。TSPi 不安装站点管理的
+`<install>/etc/job.toml`。SSH 凭据仍保留在 SSH 配置中。ResearchAgent 不安装站点管理的
 Gaussian 或 xTB 原生程序。
 
 化学扩展随包提供 wrapper、结构/验证、CF22D 和渲染环境锁。在安装或更新 Host 前，
 通过 `scripts/install_job_environment.py` 准备所需目标，具体步骤见
-[目标环境安装说明](../extensions/chemical/environments/README.zh-CN.md)。示例路径需要
+[目标环境安装说明](../domains/chemical/environments/README.zh-CN.md)。示例路径需要
 按实际安装修改；远端锁须匹配远端系统与 CPU。原生执行入口不强制要求 Python。
 
 安装器检查统一配置契约，再到实际目标核验每个已配置执行入口。维护时可运行：
 
 ```bash
-"$TSPI_PYTHON" -m tspi_runtime.environment_check --config "$TS_JOB_CONFIG"
+"$RESEARCH_AGENT_PYTHON" -m research_agent.application.environment_check --config "$RESEARCH_AGENT_JOB_CONFIG"
 ```
 
 结果区分已核验与未配置入口；配置了却不可用的目标会使核验失败。探针成功不代表科学
@@ -136,12 +136,12 @@ package 步骤还会在同一目录保留独立的 `install-failure-<timestamp>.
 
 ```bash
 ./install.sh \
-  --install-root "$HOME/.local/share/tspi" \
+  --install-root "$HOME/.local/share/research-agent" \
   --non-interactive --yes --service-scope user \
   --email-binding smtp --email-preset qq \
   --email-recipient receiver@example.com \
   --email-address sender@qq.com \
-  --email-password-file "$HOME/.config/tspi/qq-smtp-password"
+  --email-password-file "$HOME/.config/research-agent/qq-smtp-password"
 ```
 
 非交互安装要求密码文件已经存在且权限为 `0600`。交互流程会隐藏输入授权码，并在私有安装
@@ -154,7 +154,7 @@ provider = "smtp"
 preset = "qq"                 # "163"、"qq" 或 "custom"
 recipient = "receiver@example.com"
 username = "sender@qq.com"
-password_env = "TSPI_EMAIL_PASSWORD"
+password_env = "RESEARCH_AGENT_EMAIL_PASSWORD"
 ```
 
 SMTP 预设默认使用 `smtp.163.com` 或 `smtp.qq.com`、465 端口和隐式 TLS。自定义服务器可用
@@ -162,29 +162,29 @@ SMTP 预设默认使用 `smtp.163.com` 或 `smtp.qq.com`、465 端口和隐式 T
 `--email-security`。使用 `--email-password-env NAME` 时，若安装环境中存在该变量，安装器
 会创建私有 systemd `EnvironmentFile`；否则请在启动 Host 前创建
 `<install>/etc/secrets/service.env`。使用私有的 `0600` `password_file` 可免去服务环境配置。
-TSPi 通知只发送邮件，不需要 POP3 或 IMAP。
+ResearchAgent 通知只发送邮件，不需要 POP3 或 IMAP。
 
 ## 启动安装级 Host
 
-一个安装为 workspace root 下所有已验证工作区拥有唯一 TSPi Host。Host 是 control plane；
+一个安装为 workspace root 下所有已验证工作区拥有唯一 ResearchAgent Host。Host 是 control plane；
 安装级 Pi App Server 为每个活动 session 管理一个固定版本的 `SessionWorker`/`durable Harness`
 lane。安装器会在报告成功前启用并启动 Host；普通终端启动时直接附着到该服务：
 
 ```bash
-./ResearchAgent --workspace reaction-a
+./research-agent --workspace reaction-a
 ```
 
 user scope 安装使用：
 
 ```bash
-systemctl --user status ts-app-server-tspi.service
-systemctl --user restart ts-app-server-tspi.service
-systemctl --user stop ts-app-server-tspi.service
+systemctl --user status ts-app-server-research-agent.service
+systemctl --user restart ts-app-server-research-agent.service
+systemctl --user stop ts-app-server-research-agent.service
 ```
 
 system scope 安装省略 `--user`。Host 是终端、Phone 和后台 Monitor 的必需依赖；`service scope = none`
-仅用于底层包暂存或测试，普通 workspace 入口不可用。生成的 unit 调用 TSPi 内部服务入口，普通
-用户不应运行 `ResearchAgent --host`。
+仅用于底层包暂存或测试，普通 workspace 入口不可用。生成的 unit 调用 ResearchAgent 内部服务入口，普通
+用户不应运行 `research-agent --host`。
 
 默认且推荐的 scope 是 systemd user unit。system unit 必须提供显式的 `--service-user`；安装器
 会设置 `HOME`、`PI_CODING_AGENT_DIR` 和私有运行时目录，确保 Host 身份和本地 Pi 连接使用
@@ -197,26 +197,26 @@ Package release。
 
 | 组件 | unit | 创建条件 |
 | --- | --- | --- |
-| TSPi Host | `ts-app-server-tspi.service` | `--service-scope user` 或 `system` |
-| TS Web | `ts-web-tspi.service` | `--with-web` 且 Host 使用 service scope |
-| Link Relay | `tspi-link-relay.service` | `--with-link-relay` 且 `--relay-service-scope user` 或 `system` |
+| ResearchAgent Host | `ts-app-server-research-agent.service` | `--service-scope user` 或 `system` |
+| TS Web | `ts-web-research-agent.service` | `--with-web` 且 Host 使用 service scope |
+| Link Relay | `research-agent-relay.service` | `--with-link-relay` 且 `--relay-service-scope user` 或 `system` |
 
 使用 `--*-service-scope none` 时只安装文件和配置，不注册对应的 systemd unit。Host
 会管理 Monitor 和 session worker，它们不是额外的常驻 unit。TS Phone 是独立的 Flutter
 客户端，不会在安装主机上创建服务。
 
-## ResearchAgent 与内部 App Server
+## research-agent 与内部 App Server
 
-`ResearchAgent` 打开连接安装级 Agent Server 的终端。服务由 systemd 管理：
+`research-agent` 打开连接安装级 Agent Server 的终端。服务由 systemd 管理：
 
 ```bash
-systemctl --user start ts-app-server-tspi.service
+systemctl --user start ts-app-server-research-agent.service
 ```
 
 生成的 unit 调用 `current/agent/libexec/research-agent-host` 内部入口，并明确设置安装根目录。
-不再提供公开的 `ResearchAgentServer` 命令。
+不再提供公开的 `research-agentServer` 命令。
 Host API、Pi SDK Harness、Monitor 和 session worker 都属于同一个 Agent Server。
-Pi 负责 Agent loop、模型/工具调用和持久 transcript，TSPi 负责研究策略与工具。
+Pi 负责 Agent loop、模型/工具调用和持久 transcript，ResearchAgent 负责研究策略与工具。
 
 固定的 Pi checkout 位于 `<install>/runtimes/pi/<commit>`。Session 存储由安装
 统一管理；独立 runtime 注入、HTTP session store 和 `.pi/research-agent/server.json`
@@ -225,8 +225,8 @@ Pi 负责 Agent loop、模型/工具调用和持久 transcript，TSPi 负责研�
 创建新会话或继续项目中的最新会话：
 
 ```bash
-./ResearchAgent --workspace reaction-a
-./ResearchAgent --workspace reaction-a -c
+./research-agent --workspace reaction-a
+./research-agent --workspace reaction-a -c
 ```
 
 Host 身份位于 `<install>/var/state/host/server-id`；非输入 RPC 回执、内部生产者身份、
@@ -238,16 +238,16 @@ Harness 不接受 workspace `.pi/sessions`。
 PTY scraping。Host 重启会保留 SQLite durable transcript、operation/queue ID、回执和 Monitor outbox；
 重新连接的客户端从新的 Host epoch/cursor 恢复。
 
-TS Phone 通过 TSPi Link 连接该 Host。安装时启用 Phone access，并提供 HTTPS TSPi Link Relay
+TS Phone 通过 ResearchAgent Link 连接该 Host。安装时启用 Phone access，并提供 HTTPS ResearchAgent Link Relay
 origin 和 Relay 管理员创建的一次性 Host enrollment code。交互式安装会在耗时的运行时安装
 完成后、写入 Phone manifest 前才询问这个短期 code，避免安装超过 code 有效期；非交互式安装
 仍通过 `--link-enrollment-code` 直接提供。安装器写入
 `var/state/host/link.json` 及仅所有者可读的 `var/state/host/host.token`；Host
 只向 Relay 建立出站 WSS，不会向 Relay 或互联网暴露 App Server 端口。
 
-如果本机已经单独安装了 Relay，设置 `TSPI_WITH_LINK_RELAY=false`，安装器会优先读取已知目录（包括
-`/home/iaw/soft/tspi-link`）及其 `tspi-link-relay.service`，自动填充 Relay URL；也可以显式
-指定 `--link-relay-root /path/to/tspi-link`。Relay 仍然是独立服务；统一安装器在明确启用
+如果本机已经单独安装了 Relay，设置 `RESEARCH_AGENT_WITH_LINK_RELAY=false`，安装器会优先读取已知目录（包括
+`/home/iaw/soft/research-agent-link`）及其 `research-agent-relay.service`，自动填充 Relay URL；也可以显式
+指定 `--link-relay-root /path/to/research-agent-link`。Relay 仍然是独立服务；统一安装器在明确启用
 Relay 时负责其生命周期，Host 安装器只负责兑换 enrollment code。
 
 统一安装器会在 `<install>/.pi/link-relay.json` 写入所有权标记。卸载时默认停止并移除该
@@ -257,24 +257,24 @@ Relay 时负责其生命周期，Host 安装器只负责兑换 enrollment code�
 Host 上线后使用以下命令管理 Phone 授权：
 
 ```bash
-./ResearchAgent phone pair
-./ResearchAgent phone devices
-./ResearchAgent phone revoke <device-id>
+./research-agent phone pair
+./research-agent phone devices
+./research-agent phone revoke <device-id>
 ```
 
 内网客户端可以使用 SSH transport 连接远端 Host。远端安装必须包含
-`apps/app-server/tspi-host-proxy.mjs`，客户端通过 SSH 为 Host 和 Pi socket 启动该 proxy，
-不监听公网 TCP 端口。SSH host key 校验由 OpenSSH 完成，Host 仍执行 `tspi-host/2` protocol
+`apps/agent/transport/ssh.mjs`，客户端通过 SSH 为 Host 和 Pi socket 启动该 proxy，
+不监听公网 TCP 端口。SSH host key 校验由 OpenSSH 完成，Host 仍执行 `research-agent-host/2` protocol
 协商。可用重复的 `--ssh-option` 传入 `-i` 等 OpenSSH 选项。
 
-安装器可以持久化该配置，之后直接运行 `ResearchAgent --workspace`：
+安装器可以持久化该配置，之后直接运行 `research-agent --workspace`：
 
 ```bash
 ./scripts/install_wizard.py --non-interactive --yes \
-  --install-root /home/iaw/ResearchAgent \
+  --install-root /home/iaw/research-agent \
   --remote-host pi.example \
-  --remote-host-socket /run/user/1000/tspi/host.sock \
-  --remote-proxy-path /opt/tspi/apps/app-server/tspi-host-proxy.mjs \
+  --remote-host-socket /run/user/1000/research-agent/host.sock \
+  --remote-proxy-path /opt/research-agent/apps/agent/transport/ssh.mjs \
   --ssh-config /home/user/.ssh/config \
   --ssh-option=-i --ssh-option=/home/user/.ssh/id_ed25519
 ```
@@ -290,12 +290,10 @@ token 相互独立。Phone 是普通的交互式 Pi 客户端，与终端共享�
 
 Host 为 workspace root 启动一个 Monitor worker，轮询持久化 Compute 状态，并在每个
 workspace 内写入 registration、event 和 delivery 回执。`monitor/list`、`monitor/status`、
-`monitor/enable`、`monitor/disable` 提供健康状态和积压信息。wake 与 notification 分别
-确认、租约和退避；wake 只表示 Pi 接受了输入，不表示 agent turn 已完成。Root Agent
-必须重新读取 `research_read`、检查计算后才能修改 ResearchMap。
+`monitor/enable`、`monitor/disable` 提供健康状态和积压信息。next_run 持久保留认证执行事件，原会话忙或自动执行暂停时继续等待。投递与消费身份独立于 Memory revision，输入接受不代表完成科学解释。Agent 读取关联 Node 与 Job 回执，再记录结论。
 
 规范的 `workspace_manifest.json` identity 会先被验证，再由 Monitor 用于 Host 路由。其
-`workspace_id` 在 Research State、本地运行记录和远程计算 intent 中保持一致；不存在独立的
+`workspace_id` 在 Research Memory、本地运行记录和远程计算 intent 中保持一致；不存在独立的
 `workspace.json` 身份或 alias 层。
 
 ## 会话历史
@@ -306,9 +304,8 @@ session 格式。
 
 ## 工作区初始化
 
-首次运行 `./ResearchAgent --workspace <name>` 时，客户端会在配置的 workspace root 下创建 0700 工作区
-以及规范的 `workspace_manifest.json`、`research_map/context.json`、`lifecycle/liveness.json` 和
-`memory/index.json`。Host 的 WorkspaceDirectory 也提供同一操作给 TS Phone。Host 不会创建无名项目；
+首次运行 `./research-agent --workspace <name>` 时，客户端会在配置的 workspace root 下创建 0700 工作区
+以及 `research_workspace/2` 的 `workspace_manifest.json` 与 Research Memory 存储。Node 按需在 `research/nodes/` 创建，不生成全局 progress 或 lifecycle 文档。Host 的 WorkspaceDirectory 也提供同一操作给 TS Phone。Host 不会创建无名项目；
 初始化会验证规范协议，遇到旧格式或不完整状态时拒绝而不是重写。
 
 ## 运行 TS Web Research Explorer
@@ -318,7 +315,7 @@ session 格式。
 ```bash
 ./TSWeb serve \
   --state-dir var/state/web \
-  --auth-token-file "$HOME/.local/share/tspi/etc/web/auth.token" \
+  --auth-token-file "$HOME/.local/share/research-agent/etc/web/auth.token" \
   --source-root /configured/workspace-root/reaction-a \
   --label "Reaction A" --host 127.0.0.1 --port 8766
 ```
@@ -326,7 +323,7 @@ session 格式。
 只有在使用认证 token 文件时，才允许安装配置 `--web-host 0.0.0.0 --allow-remote`；直接运行
 TS Web 时对应 `serve --host 0.0.0.0 --allow-remote`。安装器会拒绝缺少这两个显式设置的
 非回环绑定。TS Web 只读，既不拥有 Pi session，也不提供科学写入路由。
-其 bearer token 与 TSPi Link Host 和 Phone 设备凭据分开。
+其 bearer token 与 ResearchAgent Link Host 和 Phone 设备凭据分开。
 
 token 文件不存在时，安装器会生成随机 TS Web token。也可以传入 8--100 个 URL-safe 字符的
 `--web-auth-token`，或在交互隐藏提示中输入。命令行 token 可能出现在 shell history 或进程
@@ -337,7 +334,7 @@ token 文件不存在时，安装器会生成随机 TS Web token。也可以传�
 模型目录和 API adapter 由固定 Pi release 提供。安装时，安装器会把 Host 服务账户
 `~/.pi/agent/` 中已有且安装目录缺失的 `models.json` 与 `auth.json` 复制到私有安装状态
 `<install>/etc/pi/`；升级不会覆盖安装目录中已有的文件。如果没有可导入的配置，必须先
-通过 Pi 或 provider 环境变量配置凭据，再创建 TSPi 会话。终端、TS Phone 和其他客户端连接
+通过 Pi 或 provider 环境变量配置凭据，再创建 ResearchAgent 会话。终端、TS Phone 和其他客户端连接
 同一 session，因此共享模型和工具集合；模型兼容性见
 [模型兼容性](MODEL_COMPATIBILITY.zh-CN.md)。
 
@@ -359,14 +356,14 @@ token 文件不存在时，安装器会生成随机 TS Web token。也可以传�
 以下恢复只针对当前协议下创建的任务与会话。
 如果 Host 退出，重启唯一的 Host service。进程退出会释放 Root lock，Pi SQLite session 保持完整。
 本地计算 worker 在可用时运行于独立的临时 user service，Host 重启通常不会中断；恢复后仍须检查
-Attempt 状态。终端或 Phone 重连时首先接收新的 session snapshot；传输失败且结果不确定时，prompt
+Job 状态。终端或 Phone 重连时首先接收新的 session snapshot；传输失败且结果不确定时，prompt
 不会自动重发。
 
 查看 `<install>/var/log/` 中最新的安装日志，并按安装时的 scope 检查服务：
 
 ```bash
-systemctl --user status ts-app-server-tspi.service  # user scope
-systemctl status ts-app-server-tspi.service         # system scope
+systemctl --user status ts-app-server-research-agent.service  # user scope
+systemctl status ts-app-server-research-agent.service         # system scope
 ```
 
 ## 卸载

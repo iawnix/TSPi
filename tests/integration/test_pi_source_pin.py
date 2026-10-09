@@ -19,13 +19,13 @@ def test_pi_source_pin_is_explicit_and_uses_latest_durable_runtime() -> None:
     }
     patch = "\n".join(path.read_text(encoding="utf-8") for path in sorted((ROOT / "config/pi-patches").glob("*.patch")))
     assert "PI_SESSION_WORKER_ENTRY" in patch
-    assert "TSPI_PI_DIAGNOSTIC_FILE" in patch
+    assert "RESEARCH_AGENT_PI_DIAGNOSTIC_FILE" in patch
     assert "workspaceId" in patch
     assert "session.sqlite" in patch
 
 
 def test_prepare_pi_source_verifies_a_matching_checkout() -> None:
-    configured = os.environ.get("TSPI_TEST_PI_RUNTIME_ROOT")
+    configured = os.environ.get("RESEARCH_AGENT_TEST_PI_RUNTIME_ROOT")
     if not configured or not Path(configured).is_dir():
         return
     result = subprocess.run(

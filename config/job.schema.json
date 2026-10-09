@@ -25,6 +25,12 @@
               "remote"
             ]
           },
+          "supervisor": {
+            "enum": [
+              "process",
+              "systemd"
+            ]
+          },
           "python": {
             "type": "object",
             "properties": {
@@ -349,7 +355,12 @@
               "required": [
                 "ssh_host",
                 "remote_root"
-              ]
+              ],
+              "not": {
+                "required": [
+                  "supervisor"
+                ]
+              }
             },
             "else": {
               "not": {

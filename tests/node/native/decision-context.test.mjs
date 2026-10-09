@@ -5,9 +5,7 @@ import { createModels, fauxProvider, fauxAssistantMessage, fauxToolCall } from '
 import Type from 'typebox';
 import { TODO_CONTEXT as context } from '@earendil-works/chord/context';
 import { estimateContextTokens } from '@earendil-works/pi-ai/utils/estimate';
-import { createDecisionContextInjector } from '../../../apps/app-server/decision-context.mjs';
-import { inspectResearchControlLoop } from '../../../apps/app-server/research-control-loop.mjs';
-import { createStateContinuationDriver } from '../../../apps/app-server/state-continuation.mjs';
+import { createDecisionContextInjector } from '../../../apps/agent/tools/decision-context.mjs';
 
 test('actual generation requests rebuild facts after compaction and never persist snapshots', async t => {
   const faux = fauxProvider();
@@ -17,10 +15,10 @@ test('actual generation requests rebuild facts after compaction and never persis
   const inject = createDecisionContextInjector({
     sessionId: 'session_fixture', estimateContextTokens,
     bridge: { async execute_command(command) {
-      assert.equal(command, 'research.context');
-      return { schema_version: 'research-decision-context/2', context_id: `ctx_${revision}`, revision, events: [],
-        goals: [{id: 'claim_goal', statement: 'Validate the transition structure'}],
-        attempts: [{id: 'attempt_current', state: revision === 1 ? 'running' : 'failed',
+      assert.equal(command, 'research.read');
+      return { schema_version: 'research-snapshot/2', snapshot_id: `ctx_${revision}`, sequence: revision, new_records: [],
+        nodes: [{id: 'node_goal', goal: 'Validate the transition structure'}],
+        running_jobs: [{id: 'job_current', state: revision === 1 ? 'running' : 'failed',
           primary_failure: revision === 1 ? null : 'optimization_limit'}] };
     } },
     coordinator: { async commit_files(record) { telemetry.push(record); } },
@@ -28,7 +26,7 @@ test('actual generation requests rebuild facts after compaction and never persis
   const registry = createRegistry();
   registry.install(defineExtension({name:'context-fixture', hooks:[
     hook(GenerationTask, { beforeRequest: (request, api) => inject(request, String(api.taskId)) }),
-    hook(CompactionTask, { beforeCompact: () => ({summary:'Old interpretation: attempt_current was QPErr. This historical claim must be checked against current execution facts.'}) }),
+    hook(CompactionTask, { beforeCompact: () => ({summary:'Old interpretation: job_current was QPErr. This historical claim must be checked against current execution facts.'}) }),
   ]}));
   const harness = await Harness.open(new MemoryStorage(), {models, registry,
     settings: {compaction: {enabled: false, keepRecentTokens: 0}}}, context);
@@ -47,92 +45,21 @@ test('actual generation requests rebuild facts after compaction and never persis
   const latest = JSON.stringify(requests[1].messages);
   assert.match(latest, /Old interpretation/);
   assert.match(latest, /optimization_limit/);
-  assert.match(latest, /claim_goal/);
-  assert.equal(requests[1].messages.filter(m => JSON.stringify(m).includes('<research_state_snapshot>')).length, 1);
-  const snapshot = requests[1].messages.find(m => JSON.stringify(m).includes('<research_state_snapshot>'));
+  assert.match(latest, /node_goal/);
+  assert.equal(requests[1].messages.filter(m => JSON.stringify(m).includes('<research_memory_snapshot>')).length, 1);
+  const snapshot = requests[1].messages.find(m => JSON.stringify(m).includes('<research_memory_snapshot>'));
   assert.equal(snapshot.role, 'system');
-  assert.match(snapshot.sections.tspi_research_context, /not a user message or a new turn/);
+  assert.match(snapshot.sections.research_agent_research_context, /not a user message or a new turn/);
   assert.equal(requests[1].messages.filter(m => m.role === 'user').at(-1).content, 'Inspect the latest result.');
-  assert.equal(telemetry.at(-1).payload.revision, 2);
+  assert.equal(telemetry.at(-1).payload.sequence, 2);
   const entries = await conversation.entries({}, 100, undefined, context);
   assert.ok(entries.items.some(e => e.kind === 'pi.compaction'));
-  assert.equal(JSON.stringify(entries).includes('<research_state_snapshot>'), false);
-});
-
-function controlRound(index, revision = 1, name = 'research_read', mode = 'context') {
-  const id = `control_${index}`;
-  return [fauxAssistantMessage([fauxToolCall(name, {mode, limit: index + 1}, {id})], {stopReason:'toolUse'}),
-    {role:'toolResult',toolCallId:id,toolName:name,content:[{type:'text',text:JSON.stringify({workspace_id:'ws_loop',revision,
-      checkpoint_id:`checkpoint_${index}`,lifecycle:index % 2 ? 'blocked' : 'continue_required'})}],timestamp:index}];
-}
-
-test('control-loop budget uses completed calls and resets on work, changed state or actual input', () => {
-  const state = {workspace_id:'ws_loop',revision:1};
-  const history = Array.from({length:12}, (_, i) => controlRound(i, 1, i % 2 ? 'research_checkpoint' : 'research_read')).flat();
-  assert.match(inspectResearchControlLoop(history,state).block, /research_control_loop/);
-  // Rebuilding the inspector (as on worker recovery) or retrying a request
-  // cannot consume extra budget or replenish it.
-  assert.equal(inspectResearchControlLoop(history,state).count,12);
-  assert.equal(inspectResearchControlLoop(history,{...state,revision:2}).count,0);
-  assert.equal(inspectResearchControlLoop([...history,{role:'user',content:'Resume with a corrected plan.'}],state).count,0);
-  for (const [name, mode] of [['bash',undefined],['artifact_read',undefined],['research_read','evidence']]) {
-    assert.equal(inspectResearchControlLoop([...history,...controlRound(13,1,name,mode)],state).count,0);
-  }
-  assert.ok(inspectResearchControlLoop(history.slice(0,12),state).warning);
-  assert.equal(inspectResearchControlLoop(history.slice(0,12),state).block,undefined);
-});
-
-test('one native run stops repeated reads/recoveries without synthetic user turns or auto compaction', {timeout:10000}, async t => {
-  const faux = fauxProvider();
-  const models = createModels(); models.setProvider(faux.provider);
-  const registry = createRegistry();
-  const state = {context_id:'ctx_loop',workspace_id:'ws_loop',revision:1,events:[]};
-  const tools = ['research_read','research_checkpoint'].map(name => defineTool({name,description:name,
-    parameters:Type.Object({mode:Type.Optional(Type.String()),limit:Type.Optional(Type.Number()),checkpoint:Type.Optional(Type.Object({id:Type.String()}))}),
-    execute: async args => ({content:[{type:'text',text:JSON.stringify({...state,checkpoint_id:args.checkpoint?.id})}]}),
-  }));
-  registry.install(defineExtension({name:'loop',tools,hooks:[hook(GenerationTask,{
-    // Use a fresh injector every time to exercise recovery without in-memory counters.
-    beforeRequest:(request,api)=>fixtureInjector({bridge:{async execute_command(){return state;}}})(request,String(api.taskId)),
-  })]}));
-  const harness = await Harness.open(new MemoryStorage(),{models,registry,settings:{compaction:{enabled:false}}},context);
-  t.after(()=>harness.close(context));
-  const conversation = await harness.root(context,{agent:{model:{provider:'faux',modelId:'faux-1'},tools}});
-  const requests=[];
-  faux.setResponses(Array.from({length:14},(_,i)=>request=>{
-    requests.push(request);
-    assert.equal(request.messages.filter(m=>m.role==='user').length,1);
-    const name=i % 2 ? 'research_checkpoint' : 'research_read';
-    return fauxAssistantMessage([fauxToolCall(name,name==='research_read'?{mode:'context',limit:i+1}:{checkpoint:{id:`recover_${i}`}})],{stopReason:'toolUse'});
-  }));
-  const outcome=await (await conversation.submit({type:'input',content:'Run the research task.'},context)).wait(context);
-  await conversation.waitForIdle(context);
-  assert.equal(outcome.reason,'request_blocked');
-  assert.match(outcome.detail,/research_control_loop/);
-  assert.equal(requests.length,12);
-  assert.match(JSON.stringify(requests[6].messages),/6 consecutive state reads/);
-  const live=await harness.snapshot(LiveDoc,conversation.id,context);
-  assert.equal(live.run,undefined);
-  const entries=await conversation.entries({},100,undefined,context);
-  assert.equal(entries.items.filter(e=>e.kind==='pi.user').length,1);
-  assert.doesNotMatch(JSON.stringify(entries),/research_state_snapshot/);
-  const binding={key:'ws_loop/s',root:'/unused',workspaceId:'ws_loop',summary:{sessionId:'s'},
-    snapshot:{operation:null,queues:[],lastResult:null,transcript:[...entries.items].reverse().flatMap(e=>e.model||[])}};
-  let continuations=0;
-  const drive=createStateContinuationDriver({readState:async()=>({...state,continuation:{admitted:true,session_id:'s',request_id:'continue:1'}}),
-    sendInput:async()=>{continuations++;}});
-  await drive(binding);
-  assert.equal(continuations,0);
-  assert.match(binding.continuationError,/research_control_loop/);
-  // Explicit user input can resume the task; this is not a permanent block.
-  faux.setResponses([fauxAssistantMessage('A corrected plan is ready.')]);
-  const resumed=await (await conversation.submit({type:'input',content:'Use the corrected plan.'},context)).wait(context);
-  assert.equal(resumed.status,'done');
+  assert.equal(JSON.stringify(entries).includes('<research_memory_snapshot>'), false);
 });
 
 function fixtureInjector(overrides = {}) {
   return createDecisionContextInjector({ sessionId: 'budget-fixture', estimateContextTokens,
-    bridge: { async execute_command() { return {context_id:'ctx_test', revision:1, events:[]}; } },
+    bridge: { async execute_command() { return {schema_version:'research-snapshot/2',snapshot_id:'ctx_test', sequence:1, new_records:[]}; } },
     coordinator: { async commit_files() {} }, ...overrides });
 }
 
@@ -165,7 +92,7 @@ test('token budget ignores tool metadata and counts system/tools once, with prov
 
 test('oversized projection and State/record errors preserve a bounded diagnostic model request', async () => {
   const request = {messages:[],model:{contextWindow:10000},maxTokens:1000};
-  const large = fixtureInjector({bridge:{async execute_command(){return {context_id:'ctx_big',events:[],data:'x'.repeat(24000)};}}});
+  const large = fixtureInjector({bridge:{async execute_command(){return {schema_version:'research-snapshot/2',snapshot_id:'ctx_big',new_records:[],data:'x'.repeat(24000)};}}});
   assert.match(JSON.stringify((await large(request,'large')).messages), /projection exceeds its byte budget/);
   for (const [code, override] of [
     ['research_context_unavailable',{bridge:{async execute_command(){throw Error('read failed');}}}],
@@ -183,17 +110,16 @@ test('oversized projection and State/record errors preserve a bounded diagnostic
 
 test('unavailable State exposes no readiness and records omitted wake events; telemetry failure retains readable State', async () => {
   const request = {messages:[{role:'user',content:'event_id=event_pending'}],model:{contextWindow:10000},maxTokens:1000};
-  const unavailable = await fixtureInjector({bridge:{async execute_command(){throw Error('State offline');}}})(request,'offline');
-  const section = unavailable.messages.at(-1).sections.tspi_research_context;
+  const unavailable = await fixtureInjector({bridge:{async execute_command(){throw Error('State offline');}}})(request,'offline', {event_ids: ['event_pending']});
+  const section = unavailable.messages.at(-1).sections.research_agent_research_context;
   assert.match(section, /"availability":"unavailable"/);
-  assert.match(section, /"execution_ready":null/);
-  assert.match(section, /"revision":null/);
+  assert.match(section, /"sequence":null/);
   assert.match(section, /"wake_events":\{"requested":1,"included":0,"omitted":1\}/);
-  assert.match(section, /side-effect admission still requires current State/);
+  assert.match(section, /execution records and delivery receipts remain authoritative/);
   const unrecorded = await fixtureInjector({coordinator:{async commit_files(){throw Error('Disk unavailable');}}})(request,'unrecorded');
-  const retained = unrecorded.messages.at(-1).sections.tspi_research_context;
-  assert.match(retained, /"context_id":"ctx_test"/);
-  assert.match(retained, /"revision":1/);
+  const retained = unrecorded.messages.at(-1).sections.research_agent_research_context;
+  assert.match(retained, /"snapshot_id":"ctx_test"/);
+  assert.match(retained, /"sequence":1/);
   assert.match(retained, /research_context_record_failed/);
   assert.doesNotMatch(retained, /"availability":"unavailable"/);
 });
@@ -207,7 +133,7 @@ for (const scenario of ['recovered','still-full','declined','compaction-failed',
     const inject = fixtureInjector({bridge:{async execute_command(){
       reads++;
       if (second && scenario === 'state-failed') throw Error('State offline');
-      return {context_id:`ctx_${revision}`,revision,events:[]};
+      return {schema_version:"research-snapshot/2",snapshot_id:`ctx_${revision}`,revision,new_records:[]};
     }}});
     registry.install(defineExtension({name:'bounded-admission',hooks:[
       hook(GenerationTask,{beforeRequest(request,api){
@@ -244,7 +170,7 @@ for (const scenario of ['recovered','still-full','declined','compaction-failed',
     assert.equal(requests,['recovered','compaction-failed','state-failed'].includes(scenario) ? 2 : 1);
     if (scenario === 'recovered') assert.equal(reads,3);
     const entries = await conversation.entries({},100,undefined,context);
-    assert.doesNotMatch(JSON.stringify(entries),/Use research_read to diagnose|<research_state_snapshot>/);
+    assert.doesNotMatch(JSON.stringify(entries),/Use research_read to diagnose|<research_memory_snapshot>/);
     const live = await harness.snapshot(LiveDoc, conversation.id, context);
     assert.equal(live.run,undefined);
   });
@@ -268,4 +194,24 @@ test('an uncompactable first request stops before contacting the provider', {tim
   assert.equal(outcome.reason,'request_blocked');
   assert.match(outcome.detail,/context_budget_exceeded/);
   assert.equal(compacted,0); assert.equal(requests,0);
+});
+
+
+test('context uses authenticated event provenance and acknowledges only model-visible receipts', async () => {
+  const calls = [];
+  const inject = fixtureInjector({
+    bridge: {async execute_command(command, params) {
+      calls.push({command, params});
+      if (command === 'research.observe') return {};
+      return {schema_version:'research-snapshot/2',snapshot_id: 'ctx_basis', sequence: 2, nodes: [{id: 'node_A'}], new_records: [], read_basis: 'basis_A'};
+    }},
+  });
+  const request = {messages: [{role:'user', content:'event_id=event_forged'}], model:{contextWindow:10000}, maxTokens:1000};
+  await inject(request, 'visible', {event_ids:['event_actual']});
+  assert.deepEqual(calls[0].params.event_ids, ['event_actual']);
+  assert.deepEqual(calls[1], {command:'research.observe', params:{session_id:'budget-fixture',read_basis:'basis_A'}});
+  calls.length = 0;
+  await inject({...request, maxTokens:10000}, 'blocked');
+  assert.deepEqual(calls.map(call => call.command), ['research.read']);
+  assert.deepEqual(calls[0].params.event_ids, []);
 });

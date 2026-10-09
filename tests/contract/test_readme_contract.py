@@ -15,25 +15,25 @@ TERMINAL = ROOT / "docs" / "TERMINAL.md"
 TERMINAL_ZH = ROOT / "docs" / "TERMINAL.zh-CN.md"
 INSTALLATION = ROOT / "docs" / "INSTALLATION.md"
 MAINTAINER = ROOT / "docs" / "MAINTAINER_GUIDE.md"
-ADR = ROOT / "docs" / "adr" / "0001-phase-node-research-state.md"
-SKILL_ROOT = ROOT / "extensions" / "core" / "skills" / "research-state"
+ADR = ROOT / "docs" / "archive" / "adr" / "0001-phase-node-research-state.md"
+SKILL_ROOT = ROOT / "skills" / "research-memory"
 SKILL = SKILL_ROOT / "SKILL.md"
 REFERENCES = SKILL_ROOT / "references"
-ORCHESTRATION_ROOT = ROOT / "extensions" / "core" / "skills" / "orchestration"
+ORCHESTRATION_ROOT = ROOT / "skills" / "research-workflow"
 FOCUSED_SKILLS = {
-    "orchestration": ORCHESTRATION_ROOT,
-    **{name: ROOT / "extensions" / "chemical" / "skills" / name for name in (
+    "research-workflow": ORCHESTRATION_ROOT,
+    **{name: ROOT / "domains" / "chemical" / "skills" / name for name in (
         "candidate-generation", "validation", "irc", "energetics", "method-selection",
         "cf22d", "xtb", "crest", "qbics", "gaussian", "mechanism-reasoning", "chemical-input",
     )},
-    "email": ROOT / "extensions" / "email",
+    "email": ROOT / "skills" / "email",
 }
 
 
 PUBLIC_DOCS = (
     README, README_ZH, ARCHITECTURE, ARCHITECTURE_ZH, TERMINAL, TERMINAL_ZH,
     INSTALLATION, MAINTAINER, ADR,
-    ROOT / "extensions" / "core" / "README.md", ROOT / "extensions" / "core" / "README.zh-CN.md",
+
 )
 
 
@@ -75,21 +75,17 @@ def test_public_document_set_covers_install_architecture_and_maintenance() -> No
 
     architecture = ARCHITECTURE.read_text(encoding="utf-8")
     for heading in [
-        "## Component Responsibilities",
-        "## Scientific State Model",
-        "## ChangeSets And Browser Clients",
-        "## TSPi Lifecycle",
-        "## Agent execution",
-        "## Deterministic Tool Plane",
-        "## Run Journals And Result Delivery",
-        "## Contract Locations",
+        "## Ownership",
+        "## Workspace and storage",
+        "## Model-facing interface",
+        "## Context and next_run",
+        "## Skills and delivery",
     ]:
         assert heading in architecture
 
     maintainer = MAINTAINER.read_text(encoding="utf-8")
     for heading in [
-        "## Scientific Model",
-        "## ResearchMap Validation Rules",
+        "## Research Memory and Execution Boundaries",
         "## Deterministic Tool Contracts",
         "## Documentation Ownership",
         "## Contract Change Matrix",
@@ -183,40 +179,19 @@ def test_normal_runtime_docs_use_canonical_tool_names() -> None:
 
 def test_workspace_docs_match_bootstrap_canonical_file_names() -> None:
     architecture = ARCHITECTURE.read_text(encoding="utf-8")
-    contract = (REFERENCES / "workspace_contract.md").read_text(encoding="utf-8")
+    contract = (REFERENCES / "storage.md").read_text(encoding="utf-8")
 
-    required = [
-        "workspace_manifest.json",
-        "research_map/context.json",
-        "lifecycle/liveness.json",
-        "nodes/<node_id>/",
-    ]
     for text in (architecture, contract):
-        for name in required:
+        for name in ["research_workspace/2", "research/nodes/", "artifacts/<id>/payload"]:
             assert name in text
-    assert "fail closed" in contract
 
 
-def test_skill_routes_details_through_focused_references() -> None:
-    text = SKILL.read_text(encoding="utf-8")
-
-    assert len(text.splitlines()) < 260
-    for ref in [
-        "references/state_model.md",
-        "references/workspace_contract.md",
-        "references/decision_contract.md",
-        "references/glossary.md",
-    ]:
-        assert ref in text
-    orchestration = (ORCHESTRATION_ROOT / "SKILL.md").read_text(encoding="utf-8")
-    for ref in (
-        "references/compute_tools.md",
-        "references/pi_agent_adapter.md",
-        "references/agent_decision_protocol.md",
-        "references/artifact_tools.md",
-        "references/package_sources.md",
-        "references/program_runtime_failures.md",
-    ):
+def test_skill_routes_details_through_focused_references():
+    text=SKILL.read_text()
+    assert len(text.splitlines()) < 100
+    assert "references/storage.md" in text
+    orchestration=(ORCHESTRATION_ROOT/"SKILL.md").read_text()
+    for ref in ["references/tools.md", "references/skills.md", "references/public_contract.md"]:
         assert ref in orchestration
 
 
@@ -269,11 +244,11 @@ def test_focused_skills_have_bilingual_entrypoints_and_route_their_references() 
 
 
 def test_compute_reference_describes_the_generic_job_runtime() -> None:
-    compute = (ORCHESTRATION_ROOT / "references" / "compute_tools.md").read_text(encoding="utf-8")
+    compute = (ORCHESTRATION_ROOT / "references" / "tools.md").read_text(encoding="utf-8")
 
     assert "Job Runtime" in compute
     assert "job_start" in compute
 
 
 def test_static_research_map_templates_are_removed() -> None:
-    assert not list((ROOT / "extensions" / "core" / "skills").glob("*/assets/templates/research_map"))
+    assert not list((ROOT / "skills").glob("*/assets/templates/research_map"))

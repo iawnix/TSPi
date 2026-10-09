@@ -1,5 +1,5 @@
 # Execution bindings; edit these example target paths before installation.
-# Provision the shipped extensions/chemical/environments locks first.
+# Provision the shipped domains/chemical/environments locks first.
 # Copy to the installation-owned etc/job.toml and edit the backend bindings
 # available in each compute environment. The kind selects the execution platform.
 
@@ -11,22 +11,22 @@ kind = "local"
 [environments.local.python]
 manager = "conda"
 conda_executable = "/opt/conda/bin/conda"
-prefix = "/opt/tspi/envs/wrapper-20261009"
-lock_ref = "/opt/tspi/locks/wrapper.lock"
+prefix = "/opt/research-agent/envs/wrapper-20261009"
+lock_ref = "/opt/research-agent/locks/wrapper.lock"
 
 # These Python-only methods use the selected target's RDKit/NumPy environment.
 [environments.local.backends.structure]
 [environments.local.backends.structure.python]
 manager = "conda"
 conda_executable = "/opt/conda/bin/conda"
-prefix = "/opt/tspi/envs/structure-20261009"
-lock_ref = "/opt/tspi/locks/structure.lock"
+prefix = "/opt/research-agent/envs/structure-20261009"
+lock_ref = "/opt/research-agent/locks/structure.lock"
 [environments.local.backends.validation]
 [environments.local.backends.validation.python]
 manager = "conda"
 conda_executable = "/opt/conda/bin/conda"
-prefix = "/opt/tspi/envs/structure-20261009"
-lock_ref = "/opt/tspi/locks/structure.lock"
+prefix = "/opt/research-agent/envs/structure-20261009"
+lock_ref = "/opt/research-agent/locks/structure.lock"
 
 [environments.local.backends.gaussian]
 command = "/opt/gaussian/g16/g16"
@@ -44,8 +44,8 @@ activation_script = "/opt/xtb/activate.sh"
 [environments.local.backends.pyscf.python]
 manager = "conda"
 conda_executable = "/opt/conda/bin/conda"
-prefix = "/opt/tspi/envs/cf22d-20261009"
-lock_ref = "/opt/tspi/locks/cf22d.lock"
+prefix = "/opt/research-agent/envs/cf22d-20261009"
+lock_ref = "/opt/research-agent/locks/cf22d.lock"
 
 # Local remains the default. Select the remote explicitly with
 # platform = "remote" in the prepared Job request.
@@ -56,7 +56,7 @@ lock_ref = "/opt/tspi/locks/cf22d.lock"
 kind = "remote"
 ssh_host = "research-cluster"
 scheduler = "torque"
-remote_root = "/scratch/tspi/jobs"
+remote_root = "/scratch/research-agent/jobs"
 allowed_queues = ["batch", "fat", "fata"]
 connect_timeout_seconds = 15
 command_timeout_seconds = 60
@@ -74,21 +74,21 @@ walltime = "01:00:00"
 [environments.remote.python]
 manager = "conda"
 conda_executable = "/opt/conda/bin/conda"
-prefix = "/opt/tspi/envs/wrapper-20261009"
-lock_ref = "/opt/tspi/locks/wrapper.lock"
+prefix = "/opt/research-agent/envs/wrapper-20261009"
+lock_ref = "/opt/research-agent/locks/wrapper.lock"
 
 [environments.remote.backends.structure]
 [environments.remote.backends.structure.python]
 manager = "conda"
 conda_executable = "/opt/conda/bin/conda"
-prefix = "/opt/tspi/envs/structure-20261009"
-lock_ref = "/opt/tspi/locks/structure.lock"
+prefix = "/opt/research-agent/envs/structure-20261009"
+lock_ref = "/opt/research-agent/locks/structure.lock"
 [environments.remote.backends.validation]
 [environments.remote.backends.validation.python]
 manager = "conda"
 conda_executable = "/opt/conda/bin/conda"
-prefix = "/opt/tspi/envs/structure-20261009"
-lock_ref = "/opt/tspi/locks/structure.lock"
+prefix = "/opt/research-agent/envs/structure-20261009"
+lock_ref = "/opt/research-agent/locks/structure.lock"
 
 [environments.remote.commands]
 qsub = "qsub"
@@ -110,12 +110,12 @@ allowed_queues = ["batch", "fat", "fata"]
 [environments.remote.backends.pyscf.python]
 manager = "conda"
 conda_executable = "/opt/conda/bin/conda"
-prefix = "/opt/tspi/envs/cf22d-20261009"
-lock_ref = "/opt/tspi/locks/cf22d.lock"
+prefix = "/opt/research-agent/envs/cf22d-20261009"
+lock_ref = "/opt/research-agent/locks/cf22d.lock"
 
 # Optional molecular images; text reports need no rendering libraries.
 [environments.local.backends.render.python]
 manager = "conda"
 conda_executable = "/opt/conda/bin/conda"
-prefix = "/opt/tspi/envs/render-20261009"
-lock_ref = "/opt/tspi/locks/render.lock"
+prefix = "/opt/research-agent/envs/render-20261009"
+lock_ref = "/opt/research-agent/locks/render.lock"

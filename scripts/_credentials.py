@@ -1,4 +1,4 @@
-"""Secure credential provisioning for installed TSPi services."""
+"""Secure credential provisioning for installed ResearchAgent services."""
 
 from __future__ import annotations
 

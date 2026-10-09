@@ -1,84 +1,94 @@
-schema_version = "tspi-test-manifest/1"
+schema_version = "research-agent-test-manifest/1"
+
+[suites.static]
+kind = "static"
+environment = "managed Node dependencies"
+description = "Generated contracts, TypeScript, architecture and package boundaries."
+requires = ["python", "node"]
+timeout = 240
 
 [suites.fast]
-kind = "pytest-source"
-environment = "conda:tools/test/environment.lock.txt"
-description = "Deterministic unit and public contract tests against the source tree."
-paths = ["tests/unit", "tests/contract"]
+exclude = ["tests/unit/test_local_job_isolation.py", "tests/contract/test_system_service_cleanup.py"]
+kind = "pytest"
+environment = "locked Python source runtime"
+description = "Deterministic unit and public contract tests."
+globs = ["tests/unit/test_*.py", "tests/contract/test_*.py", "backend/tests/test_*.py"]
+requires = ["python", "node"]
+timeout = 900
 
-[suites.source]
-kind = "pytest-managed"
-environment = "wheel-overlay"
-description = "All Python tests against a temporary wheel-backed runtime."
-paths = ["tests"]
+[suites.integration]
+kind = "pytest"
+environment = "locked Python source runtime"
+description = "Research, jobs, artifact and application integration."
+globs = ["tests/integration/test_*.py"]
+requires = ["python", "node", "pi"]
+timeout = 1200
+
+[suites.node-fast]
+kind = "node"
+environment = "managed Node dependencies"
+description = "Node pure logic and contracts without a Pi server."
+globs = ["tests/node/*.test.mjs", "tests/node/fast/*.test.mjs"]
+requires = ["node", "python"]
+timeout = 300
 
 [suites.native-pi]
 kind = "node-native"
-environment = "Node.js 22 + pinned Pi checkout (TSPI_TEST_PI_RUNTIME_ROOT)"
-description = "Pi Harness server, native TUI client, recovery, Monitor, and Native session checks."
-paths = [
-  "tests/node/native/pi-app-server.test.mjs",
-  "tests/node/native/pi-session-worker-startup.test.mjs",
-  "tests/node/native/worker-research-flow.test.mjs",
-  "tests/node/native/user-sources.test.mjs",
-  "tests/node/native/decision-context.test.mjs",
-  "tests/node/native/compaction-outcome.test.mjs",
-  "tests/node/fast/job-query-recovery.test.mjs",
-  "tests/node/native/monitor-admission.test.mjs",
-  "tests/node/native/pi-harness-policy.test.mjs",
-  "tests/node/native/tspi-host.test.mjs",
-  "tests/node/native/tspi-host-transport.test.mjs",
-  "tests/node/native/tspi-browser-gateway.test.mjs",
-  "tests/node/native/session-admission.test.mjs",
-  "tests/node/native/input-admission.test.mjs",
-  "tests/node/fast/pi-monitor-worker.test.mjs",
-  "tests/node/fast/tspi-terminal-errors.test.mjs",
-  "tests/node/fast/tspi-terminal-client.test.mjs",
-  "tests/node/native/tspi-native-commands.test.mjs",
-  "tests/node/native/tspi-link-relay.test.mjs",
-  "tests/node/native/server-extension-loader.test.mjs",
-  "tests/node/native/research-interpretation-contract.test.mjs",
-  "tests/node/native/tool-execution-boundary.test.mjs",
-  "tests/node/native/tool-presentation.test.mjs",
-  "tests/node/native/status-presentation.test.mjs",
-  "tests/node/manifest-workspace-boundaries.test.mjs",
-  "tests/node/research-agent-compute-cross-mode.test.mjs",
-  "tests/node/research-agent-framework.test.mjs",
-  "tests/node/research-agent-kernel-bridge.test.mjs",
-  "tests/node/research-agent-kernel-python.test.mjs",
-  "tests/node/research-agent-lifecycle-authority.test.mjs",
-  "tests/node/research-agent-native-kernel-route.test.mjs",
-  "tests/node/command-contract.test.mjs",
-  "tests/node/research-agent-workspace.test.mjs",
-  "tests/node/research-map-reader.test.mjs",
-  "tests/node/fast/lifecycle-recovery.test.mjs",
-  "tests/node/native/checkpoint-followup.test.mjs",
-  "tests/node/native/extension-manifest-loader.test.mjs",
-  "tests/node/native/state-continuation.test.mjs",
-  "tests/node/native/tspi-harness-backend.test.mjs",
-  "tests/node/native/workspace-mode-tools.test.mjs",
-]
+environment = "pinned Pi source and locked Python"
+description = "Real Pi workers, native client, tools, recovery and Monitor."
+globs = ["tests/node/native/*.test.mjs"]
+requires = ["node", "python", "pi"]
+timeout = 1800
 
 [suites.package]
 kind = "package-check"
-environment = "Node.js 22"
-description = "Package inventory and release-boundary checks."
-paths = []
+environment = "managed Node dependencies"
+description = "Package inventory and release boundaries."
+requires = ["node", "python"]
+timeout = 300
 
-[suites.remote-smoke]
-kind = "scenario"
-environment = "managed Python + configured Job Runtime platform"
-description = "Opt-in remote Job Runtime smoke; never part of the default suite."
-paths = []
+[suites.source]
+exclude = ["tests/unit/test_local_job_isolation.py", "tests/contract/test_system_service_cleanup.py"]
+kind = "pytest-managed"
+environment = "wheel overlay built from this snapshot"
+description = "All Python tests against the built wheel."
+globs = ["tests/unit/test_*.py", "tests/contract/test_*.py", "tests/integration/test_*.py", "backend/tests/test_*.py"]
+aggregate = true
+requires = ["node", "python", "pi"]
+timeout = 2400
 
 [suites.live-eval]
 kind = "scenario"
-environment = "managed Python + authorized model provider"
-description = "Opt-in model evaluation; never part of CI or the default suite."
+environment = "authorized external provider"
+description = "External model evaluation requires explicit data authorization."
 paths = ["tests/scenarios/t003_live_eval.mjs"]
+external = true
 
 [suites.live-recovery]
 kind = "scenario"
-environment = "managed Python + authorized model provider"
-description = "Opt-in real model recovery from an injected evidence ID error through current Native tools."
+environment = "authorized external provider"
+description = "External model recovery requires explicit data authorization."
 paths = ["tests/scenarios/t003_live_recovery.mjs"]
+external = true
+
+[suites.remote-smoke]
+kind = "unavailable"
+environment = "authorized remote platform"
+description = "No executable remote smoke scenario implemented."
+external = true
+
+[suites.release]
+kind = "release"
+environment = "immutable complete package archive"
+description = "Actual package installation, external cwd, wheel origins and uninstall."
+requires = ["python", "host", "node", "pi"]
+timeout = 2400
+aggregate = true
+
+[suites.system-services]
+kind = "systemd"
+environment = "real local user manager, isolated registered units"
+description = "Real service resource limits and jobs surviving Host stop."
+globs = ["tests/unit/test_local_job_isolation.py", "tests/contract/test_system_service_cleanup.py"]
+requires = ["python", "node"]
+timeout = 300

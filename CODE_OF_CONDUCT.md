@@ -2,7 +2,7 @@
 
 ## Our Standard
 
-Participants in the TSPi project must treat one another with respect. Useful
+Participants in the ResearchAgent project must treat one another with respect. Useful
 technical disagreement is welcome; harassment, discrimination, intimidation,
 personal attacks, and unwanted contact are not.
 

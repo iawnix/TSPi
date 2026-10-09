@@ -5,8 +5,8 @@
   "license": "Apache-2.0",
   "description": "Optional read-only TS Web explorer component",
   "protocols": {
-    "provider": "research-map-provider/1",
-    "map": "research-map/1",
+    "provider": "research-memory-provider/1",
+    "snapshot": "research-snapshot/2",
     "theme": "ts-theme/1"
   }
 }

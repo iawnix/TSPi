@@ -9,13 +9,15 @@ import sys
 
 import pytest
 
-from research_state.references import (ReferenceError, annotate_artifact_references, artifact_reference,
-                                       prepare_job, resolve_artifact_reference, resolve_operation_references,
+from research_agent.application.references import (ReferenceError, annotate_artifact_references, artifact_reference,
+                                       prepare_job, resolve_artifact_reference,
                                        resolve_prepared_job)
-from research_state.agent_workspace import apply_change, read_context
-from tspi_runtime.api import execute
-from tspi_runtime.evidence import dispatch as evidence
-from tspi_runtime.execution import JobSubmissionError, dispatch as execute_job
+from research_agent.application.memory_context import read
+from research_agent.research.records import journal
+from research_agent.artifacts.registry import read_manifest
+from research_agent.application.api import execute
+from research_agent.application.evidence import dispatch as evidence
+from research_agent.application.execution import JobSubmissionError, dispatch as execute_job
 from tests.unit.test_job_recovery import workspace
 
 
@@ -34,13 +36,13 @@ def test_prepared_ref_is_immutable_and_input_versions_are_checked(tmp_path):
     first = prepare_job(tmp_path, {"request_file": str(path)})
     assert first["prepared_ref"] == "p1"
     assert prepare_job(tmp_path, {"request_file": str(path)}) == first
-    original = resolve_prepared_job(tmp_path, {"prepared_ref": "p1", "node_id": "node_1"})
+    original = resolve_prepared_job(tmp_path, {"prepared_ref": "p1"})
     assert original["work_id"] == "work_one"
     assert original["inputs"][0]["sha256"]
     path.write_text(path.read_text().replace('"pass"', '"print(2)"'))
     second = prepare_job(tmp_path, {"request_file": str(path)})
     assert second["prepared_ref"] != first["prepared_ref"]
-    assert resolve_prepared_job(tmp_path, {"prepared_ref": "p1", "node_id": "node_1"}) == original
+    assert resolve_prepared_job(tmp_path, {"prepared_ref": "p1"}) == original
     with pytest.raises(ReferenceError, match="prepared_override_forbidden"):
         resolve_prepared_job(tmp_path, {"prepared_ref": "p1", "work_id": "replace"})
     (tmp_path / "input.xyz").write_text("changed geometry")
@@ -57,7 +59,7 @@ def test_concurrent_preparation_and_restart_reuse_one_reference(tmp_path):
     with ThreadPoolExecutor(max_workers=4) as pool:
         values = list(pool.map(lambda _: prepare_job(tmp_path, {"request_file": str(path)}), range(8)))
     assert {value["prepared_ref"] for value in values} == {"p1"}
-    script = "from research_state.references import prepare_job; import json,sys; print(json.dumps(prepare_job(sys.argv[1], {'request_file':sys.argv[2]})))"
+    script = "from research_agent.application.references import prepare_job; import json,sys; print(json.dumps(prepare_job(sys.argv[1], {'request_file':sys.argv[2]})))"
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": os.pathsep.join(sys.path)}
     result = subprocess.run([sys.executable, "-c", script, str(tmp_path), str(path)], env=env, capture_output=True, text=True, check=True)
     assert json.loads(result.stdout)["prepared_ref"] == "p1"
@@ -66,21 +68,16 @@ def test_concurrent_preparation_and_restart_reuse_one_reference(tmp_path):
 
 def test_artifact_refs_are_exact_typed_and_preserve_canonical_provenance(tmp_path):
     workspace(tmp_path)
-    item = evidence("create", {"root": str(tmp_path), "node_id": "node_1", "name": "note", "content": "result"})
+    item = evidence("create", {"root": str(tmp_path), "name": "note", "content": "result"})
     assert item["artifact_ref"] == "a1"
     assert artifact_reference(tmp_path, item["artifact_id"]) == "a1"
     assert evidence("read", {"root": str(tmp_path), "artifact_id": "a1"})["content"] == "result"
     assert resolve_artifact_reference(tmp_path, "a1") == item["artifact_id"]
-    op = {"type": "create_finding", "statement": "a1 is written literally here", "source_refs": ["a1"]}
-    resolved = resolve_operation_references(tmp_path, [op])[0]
-    assert resolved["source_refs"] == [item["artifact_id"]]
-    assert resolved["statement"] == op["statement"]
-    assert op["source_refs"] == ["a1"]
     with pytest.raises(ReferenceError, match="reference_not_found.*available references: a1"):
         resolve_artifact_reference(tmp_path, "a99")
     with pytest.raises(ReferenceError, match="reference_type_mismatch"):
         resolve_artifact_reference(tmp_path, "p1")
-    canonical = read_context(tmp_path)["artifacts"][0]
+    canonical = read_manifest(tmp_path, item["artifact_id"])
     assert annotate_artifact_references(tmp_path, {"records": [canonical]})["records"][0]["artifact_ref"] == "a1"
 
 
@@ -93,30 +90,10 @@ def test_artifact_refs_do_not_escape_the_bound_workspace(tmp_path):
         resolve_artifact_reference(other, "a1")
 
 
-def test_public_commands_and_changes_resolve_artifact_selectors(tmp_path):
-    workspace(tmp_path)
-    item = execute("artifact.create", tmp_path, {"node_id": "node_1", "content": "result"})
-    other = execute("artifact.create", tmp_path, {"node_id": "node_1", "content": "other result"})
-    ref = item["artifact_ref"]
-    assert execute("artifact.read", tmp_path, {"artifact_ref": ref})["content"] == "result"
-    assert execute("research.detail", tmp_path, {"kind": "artifact", "id": ref})["item"]["id"] == item["artifact_id"]
-    with pytest.raises(ValueError, match="artifact_selector_conflict"):
-        execute("artifact.read", tmp_path, {"artifact_ref": ref, "artifact_id": other["artifact_id"]})
-    with pytest.raises(ValueError, match="artifact_selector_required"):
-        execute("artifact.read", tmp_path, {})
-    linked = execute("artifact.link", tmp_path, {"artifact_ref": ref, "subject_id": "claim_1"})
-    assert linked["artifact_id"] == item["artifact_id"]
-    apply_change(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "operations": [{
-        "type": "link_evidence", "id": "evidence_via_change", "artifact_ref": other["artifact_ref"],
-        "subject_type": "claim", "subject_id": "claim_1", "relation": "documents",
-    }]})
-    assert next(row for row in read_context(tmp_path)["evidence_links"] if row["id"] == "evidence_via_change")["artifact_id"] == other["artifact_id"]
-
-
 def test_preparation_cli_emits_only_a_file_and_digest_in_workspace(tmp_path):
     workspace(tmp_path)
     config = tmp_path / "job.toml"
-    from job_runtime.config_contract import load_job_config
+    from research_agent.jobs.config_contract import load_job_config
     python = load_job_config(config)['environments']['local']['backends']['validation']['python']
     config.write_text('''default_environment = "local"
 [environments.local]
@@ -134,14 +111,14 @@ command = ["/bin/true"]
     xyz.write_text("1\nH\nH 0 0 0\n")
     output = tmp_path / "prepared" / "request.json"
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": os.pathsep.join(sys.path)}
-    before = read_context(tmp_path)
-    result = subprocess.run([sys.executable, "-m", "tspi_runtime.executors", "--config", str(config), "--environment", "local",
+    before = read(tmp_path)
+    result = subprocess.run([sys.executable, "-m", "research_agent.application.executors", "--config", str(config), "--environment", "local",
                              "--executor", "chemical.xtb", "--version", "1", "--input", "geometry=" + str(xyz), "--output", str(output),
                              "--", "--task", "sp"], env=env, capture_output=True, text=True, check=True)
     value = json.loads(result.stdout)
     assert value == {"request_file": str(output), "request_sha256": hashlib.sha256(output.read_bytes()).hexdigest()}
     assert any(row['source'] == str(xyz) for row in json.loads(output.read_text())["inputs"])
-    assert read_context(tmp_path) == before
+    assert read(tmp_path) == before
     assert not (tmp_path / "operations/references/index.json").exists()
 
 
@@ -164,7 +141,7 @@ def test_repeated_reference_submissions_reuse_the_same_real_job(tmp_path):
     marker = tmp_path / "launches.txt"
     path = prepared(tmp_path, command=[sys.executable, "-c", f"from pathlib import Path; Path({str(marker)!r}).open('a').write('run\\n')"])
     ref = prepare_job(tmp_path, {"request_file": str(path)})["prepared_ref"]
-    params = {"prepared_ref": ref, "node_id": "node_1"}
+    params = {"prepared_ref": ref}
     def launch(_):
         try:
             return execute("job.start", tmp_path, params)
@@ -184,12 +161,12 @@ def test_repeated_reference_submissions_reuse_the_same_real_job(tmp_path):
             break
         time.sleep(.01)
     assert marker.read_text() == "run\n"
-    assert len(read_context(tmp_path)["attempts"]) == 1
+    assert len(list((tmp_path/"operations/executions").glob("*.json"))) == 1
     assert execute_job("collect", {"root": str(tmp_path), "job_id": first["job_id"]})["status"]["state"] == "succeeded"
 
 
 def test_registry_index_and_snapshot_recover_as_one_transaction(tmp_path, monkeypatch):
-    from research_state import transactions
+    from research_agent.foundation import transactions
     workspace(tmp_path)
     (tmp_path / "input.xyz").write_text("geometry")
     path = prepared(tmp_path)
@@ -213,25 +190,23 @@ def test_registry_index_and_snapshot_recover_as_one_transaction(tmp_path, monkey
     ({"request_sha256": None}, "prepared_request_digest_required"),
     ({"command": ["false"]}, "prepared_override_forbidden"),
     ({"request_id": "replacement"}, "prepared_override_forbidden: remove top-level request_id"),
-    ({"node_id": "node_missing"}, "research_node_required"),
 ])
 def test_file_submission_rejection_does_not_register_or_stage(tmp_path, change, error):
     workspace(tmp_path)
     (tmp_path / "input.xyz").write_text("geometry")
     path = prepared(tmp_path)
-    params = {"request_file": str(path), "request_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-              "node_id": "node_1", **change}
-    before = read_context(tmp_path)
+    params = {"request_file": str(path), "request_sha256": hashlib.sha256(path.read_bytes()).hexdigest(), **change}
+    before = read(tmp_path)
     with pytest.raises(ValueError, match=error):
         execute("job.start", tmp_path, params)
-    assert read_context(tmp_path) == before
+    assert read(tmp_path) == before
     assert not (tmp_path / "operations/references/index.json").exists()
     assert not list((tmp_path / "operations/jobs").glob("*.json"))
     assert not list((tmp_path / "runs/jobs").glob("*"))
 
 
 def test_file_submission_freezes_one_read_and_replays_without_execution(tmp_path, monkeypatch):
-    from research_state import references
+    from research_agent.application import references
     import time
 
     workspace(tmp_path)
@@ -240,7 +215,7 @@ def test_file_submission_freezes_one_read_and_replays_without_execution(tmp_path
     path = prepared(tmp_path, command=[sys.executable, "-c",
         f"from pathlib import Path; Path({str(marker)!r}).open('a').write('run\\n')"])
     encoded = path.read_bytes()
-    params = {"request_file": str(path), "request_sha256": hashlib.sha256(encoded).hexdigest(), "node_id": "node_1"}
+    params = {"request_file": str(path), "request_sha256": hashlib.sha256(encoded).hexdigest()}
     original = references.read_prepared_file
     reads = []
 
@@ -262,7 +237,7 @@ def test_file_submission_freezes_one_read_and_replays_without_execution(tmp_path
     replay = execute("job.start", tmp_path, params)
     assert replay["prepared_ref"] == "p1"
     assert replay["job_id"] == first["job_id"]
-    assert execute("job.start", tmp_path, {"prepared_ref": "p1", "node_id": "node_1"})["job_id"] == first["job_id"]
+    assert execute("job.start", tmp_path, {"prepared_ref": "p1"})["job_id"] == first["job_id"]
     for _ in range(200):
         status = execute_job("status", {"root": str(tmp_path), "job_id": first["job_id"]})
         if status["state"] in {"succeeded", "failed"}:
@@ -270,19 +245,19 @@ def test_file_submission_freezes_one_read_and_replays_without_execution(tmp_path
         time.sleep(.01)
     assert status["state"] == "succeeded"
     assert marker.read_text() == "run\n"
-    assert len(read_context(tmp_path)["attempts"]) == 1
+    assert len(list((tmp_path/"operations/executions").glob("*.json"))) == 1
     assert len(list((tmp_path / "operations/references/records").glob("p*.json"))) == 1
 
 
 def test_file_reference_and_attempt_recover_in_the_same_dispatch_transaction(tmp_path, monkeypatch):
-    from research_state import transactions
+    from research_agent.foundation import transactions
 
     workspace(tmp_path)
     (tmp_path / "input.xyz").write_text("geometry")
     marker = tmp_path / "launches.txt"
     path = prepared(tmp_path, command=[sys.executable, "-c",
         f"from pathlib import Path; Path({str(marker)!r}).touch()"])
-    params = {"request_file": str(path), "request_sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "node_id": "node_1"}
+    params = {"request_file": str(path), "request_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
     original = transactions._atomic_json
 
     def fail_index(target, value):
@@ -298,8 +273,8 @@ def test_file_reference_and_attempt_recover_in_the_same_dispatch_transaction(tmp
     assert replay["state"] == "unknown"
     assert not marker.exists()
     assert resolve_prepared_job(tmp_path, {"prepared_ref": "p1"})["work_id"] == "work_one"
-    attempts = read_context(tmp_path)["attempts"]
+    attempts = list((tmp_path/"operations/executions").glob("*.json"))
     assert len(attempts) == 1
     intent = json.loads((tmp_path / f"operations/jobs/{replay['job_id']}.json").read_text())
     assert intent["prepared_ref"] == "p1"
-    assert intent["attempt_id"] == attempts[0]["id"]
+    assert intent["job_id"] == json.loads(attempts[0].read_text())["job_id"]

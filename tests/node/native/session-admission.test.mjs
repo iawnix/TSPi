@@ -3,7 +3,7 @@ import test from 'node:test';
 import { Harness, MemoryStorage, createRegistry, LiveDoc } from '@earendil-works/pi-durable';
 import { createModels, fauxProvider } from '@earendil-works/pi-ai';
 import { TODO_CONTEXT as context } from '@earendil-works/chord/context';
-import { createSessionAdmission } from '../../../apps/app-server/session-admission.mjs';
+import { createSessionAdmission } from '../../../apps/agent/host/admission/session.mjs';
 
 test('interrupt aborts its active turn; a late retry leaves the next turn running', { timeout: 10000 }, async t => {
   const faux = fauxProvider();

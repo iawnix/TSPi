@@ -28,7 +28,7 @@ def test_no_color_disables_ansi_even_on_a_tty(monkeypatch) -> None:
     monkeypatch.setenv("NO_COLOR", "")
     stream = TerminalBuffer()
 
-    ui.title("TSPi Installer", "Configure TSPi.", stream=stream)
+    ui.title("ResearchAgent Installer", "Configure ResearchAgent.", stream=stream)
 
     assert "\033[" not in stream.getvalue()
 
@@ -46,7 +46,7 @@ def test_prompts_do_not_use_an_ambiguous_question_mark(monkeypatch) -> None:
     replies = iter(["", ""])
     monkeypatch.setattr("builtins.input", lambda label: labels.append(label) or next(replies))
 
-    assert ui.ask_text("Installation directory", "/tmp/tspi") == "/tmp/tspi"
+    assert ui.ask_text("Installation directory", "/tmp/research-agent") == "/tmp/research-agent"
     assert ui.ask_yes_no("Proceed", True) is True
 
     assert all("?" not in label for label in labels)

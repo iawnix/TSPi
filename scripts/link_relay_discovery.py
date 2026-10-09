@@ -1,6 +1,6 @@
-"""Discover an already-installed TSPi Link Relay.
+"""Discover an already-installed ResearchAgent Link Relay.
 
-The Relay is intentionally installed separately from a TSPi Host.  This small
+The Relay is intentionally installed separately from a ResearchAgent Host.  This small
 module only reads its installation and service metadata so the Host installer
 can reuse a local Relay instead of asking for a URL that is already available
 on the machine.
@@ -15,10 +15,10 @@ from typing import Any
 
 
 DEFAULT_RELAY_ROOTS = (
-    Path("/home/iaw/soft/tspi-link"),
-    Path("/home/soft/tspi-link"),
-    Path("/opt/tspi-link-relay"),
-    Path.home() / ".local/share/tspi-link-relay",
+    Path("/home/iaw/soft/research-agent-link"),
+    Path("/home/soft/research-agent-link"),
+    Path("/opt/research-agent-relay"),
+    Path.home() / ".local/share/research-agent-relay",
 )
 
 
@@ -48,15 +48,15 @@ def _normalise_root(value: str | os.PathLike[str]) -> Path | None:
 
 
 def _inspect_root(root: Path) -> dict[str, str] | None:
-    service_root = root / "current" / "service"
+    service_root = root / "current" / "services/relay"
     cli = service_root / "cli.mjs"
     if not cli.is_file() or cli.is_symlink():
         return None
 
     unit_paths = (
-        root / "tspi-link-relay.service",
-        Path.home() / ".config/systemd/user/tspi-link-relay.service",
-        Path("/etc/systemd/system/tspi-link-relay.service"),
+        root / "research-agent-relay.service",
+        Path.home() / ".config/systemd/user/research-agent-relay.service",
+        Path("/etc/systemd/system/research-agent-relay.service"),
     )
     unit_text = ""
     for unit in unit_paths:
@@ -103,10 +103,10 @@ def _unit_argument(text: str, name: str) -> str | None:
 
 def _default_state_paths(root: Path) -> list[Path]:
     return [
-        root.parent / "tspi-link-state" / "relay.db",
+        root.parent / "research-agent-link-state" / "relay.db",
         root / "state" / "relay.db",
-        Path("/var/lib/tspi-link-relay/relay.db"),
-        Path.home() / ".local/state/tspi-link-relay/relay.db",
+        Path("/var/lib/research-agent-relay/relay.db"),
+        Path.home() / ".local/state/research-agent-relay/relay.db",
     ]
 
 

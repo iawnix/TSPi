@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Research memory response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "workspace",
+    "snapshot"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "research-memory-response/1"
+    },
+    "workspace": {
+      "type": "object",
+      "required": [
+        "workspace_id",
+        "label"
+      ],
+      "properties": {
+        "workspace_id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "sequence",
+        "nodes",
+        "tasks",
+        "running_jobs",
+        "uncollected_jobs",
+        "new_records",
+        "bounds",
+        "read_more",
+        "snapshot_id"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "research-snapshot/2"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tasks": {
+          "type": "array"
+        },
+        "running_jobs": {
+          "type": "array"
+        },
+        "uncollected_jobs": {
+          "type": "array"
+        },
+        "new_records": {
+          "type": "array"
+        },
+        "bounds": {
+          "type": "object"
+        },
+        "read_more": {
+          "type": "object"
+        },
+        "snapshot_id": {
+          "type": "string"
+        },
+        "nodes": {
+          "type": "array"
+        }
+      }
+    }
+  }
+}

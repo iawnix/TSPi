@@ -6,20 +6,20 @@ import shutil
 import sys
 from pathlib import Path
 
-from tspi_foundation.env import RUNTIME_PROBE_VERSION, python_payload_sha256, spec_sha256
+from research_agent.foundation.env import RUNTIME_PROBE_VERSION, python_payload_sha256, spec_sha256
 
 
 def write_test_suite_manifest(suite_root: Path, *, version: str = "0.10.0") -> Path:
     """Write the minimal complete suite identity required by launcher tests."""
 
     release_id = suite_root.name
-    manifest_path = suite_root / ".tspi-package-release.json"
+    manifest_path = suite_root / ".research-agent-package-release.json"
     manifest_path.write_text(
         json.dumps(
             {
-                "schema_version": "tspi-package-release/4",
+                "schema_version": "research-agent-package-release/4",
                 "release_id": release_id,
-                "package": {"name": "@iawnix/tspi", "version": version},
+                "package": {"name": "@iawnix/research-agent", "version": version},
                 "components": {
                     "agent": {"release_id": "test-agent", "version": version},
                 },
@@ -30,12 +30,12 @@ def write_test_suite_manifest(suite_root: Path, *, version: str = "0.10.0") -> P
         + "\n",
         encoding="utf-8",
     )
-    from tspi_foundation.layout import paths
+    from research_agent.foundation.layout import paths
     layout = paths(suite_root.parent.parent).initialize()
     state_path = layout.install_state
     state_path.write_text(json.dumps({
-        "schema_version": "tspi-package-install/1", "current_release_id": release_id,
-        "package_root": str(suite_root), "session_guard_contract": "tspi-session-guard/1",
+        "schema_version": "research-agent-package-install/1", "current_release_id": release_id,
+        "package_root": str(suite_root), "session_guard_contract": "research-agent-session-guard/1",
     }) + "\n")
     state_path.chmod(0o600)
     return manifest_path
@@ -85,7 +85,7 @@ def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
             "ok": True,
             "python": {"version": sys.version.split()[0], "executable": str(kernel_bin / "python")},
             "distribution": {
-                "name": "tspi-runtime",
+                "name": "research-agent",
                 "installed": True,
                 "version": package["version"],
                 "root": str(kernel_prefix),

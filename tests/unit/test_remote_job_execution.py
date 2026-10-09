@@ -9,9 +9,9 @@ import sys
 
 import pytest
 
-from job_runtime import JobOutput, JobSpec, JobState, TorqueSSHPlatform
-from job_runtime.config_contract import job_config_schema, resolve_submission, validate_job_config
-from job_runtime import remote as remote_module
+from research_agent.jobs import JobOutput, JobSpec, JobState, TorqueSSHPlatform
+from research_agent.jobs.config_contract import job_config_schema, resolve_submission, validate_job_config
+from research_agent.jobs import remote as remote_module
 
 
 @pytest.fixture
@@ -159,25 +159,24 @@ def test_pbs_resources_use_select_and_the_shorter_execution_limit(tmp_path):
 
 
 def test_raw_job_submission_resolves_defaults_before_recording_attempt(tmp_path, monkeypatch):
-    from research_state.workspace import initialize_workspace
-    from research_state.agent_workspace import admit_workspace, apply_change, read_context
-    from tspi_runtime.execution import dispatch
+    from research_agent.research.workspace import initialize_workspace
+    from research_agent.research.workspace import admit_research_workspace
+    from research_agent.application.job_state import execution
+    from research_agent.application.execution import dispatch
     root = tmp_path / 'workspace'
     initialize_workspace(root, 'resources_test', 'research')
-    admit_workspace(root, {'authority': 'host'})
-    apply_change(root, {'principal': 'root_agent', 'authority': 'kernel_write', 'operations': [
-        {'type': 'create_node', 'id': 'node_resources', 'title': 'Resource probe', 'objective': 'Verify execution resources'}]})
+    admit_research_workspace(root)
     config = tmp_path / 'defaults.toml'
-    config.write_text('default_environment="local"\n[environments.local]\nkind="local"\n'
+    config.write_text('default_environment="local"\n[environments.local]\nkind="local"\nsupervisor="process"\n'
                       '[environments.local.submission.resources]\ncpus=1\nmemory_mb=256\nwalltime="00:00:15"\n')
-    monkeypatch.setenv('TS_JOB_CONFIG', str(config))
-    request = {'root': str(root), 'job_id': 'job_defaults', 'node_id': 'node_resources',
+    monkeypatch.setenv('RESEARCH_AGENT_JOB_CONFIG', str(config))
+    request = {'root': str(root), 'job_id': 'job_defaults',
                'command': ['/bin/true'], 'metadata': {'resources': {'memory_mb': 128}}}
     result = dispatch('start', request)
     expected = {'cpus': 1, 'memory_mb': 128, 'walltime': '00:00:15'}
     assert result['metadata']['resources'] == expected
-    state = read_context(root)
-    assert state['attempts'][0]['metadata']['job_metadata']['resources'] == expected
+    state = execution(root, result["job_id"])
+    assert state['metadata']['resources'] == expected
     # A later default change must not alter a previously accepted Job or start it again.
     config.write_text(config.read_text().replace('cpus=1', 'cpus=2'))
     assert dispatch('start', request)['metadata']['resources'] == expected

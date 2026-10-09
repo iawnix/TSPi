@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install one validated TSPi Core Package and its selected optional components."""
+"""Install one validated ResearchAgent Core Package and its selected optional components."""
 
 from __future__ import annotations
 
@@ -113,9 +113,9 @@ except ImportError:
     )
 
 
-INSTALLED_MANIFEST = ".tspi-package-release.json"
+INSTALLED_MANIFEST = ".research-agent-package-release.json"
 LAUNCHER_PATHS = {
-    "ResearchAgent": ("agent", "ResearchAgent"),
+    "research-agent": ("agent", "research-agent"),
     "TSWeb": ("web", "bin", "ts-web"),
 }
 
@@ -126,15 +126,15 @@ try:
 except ImportError:
     from _bootstrap import activate_source_package
 activate_source_package(Path(__file__).resolve().parents[1])
-from tspi_bootstrap.session_guard import CONTRACT, SessionGuardError, guard_installation_upgrade
-from tspi_foundation.layout import paths
+from research_agent.bootstrap.session_guard import CONTRACT, SessionGuardError, guard_installation_upgrade
+from research_agent.foundation.layout import paths
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Install one validated TSPi Package release.")
-    parser.add_argument("--manifest", required=True, help="Path to tspi-package-release.json.")
+    parser = argparse.ArgumentParser(description="Install one validated ResearchAgent Package release.")
+    parser.add_argument("--manifest", required=True, help="Path to research-agent-package-release.json.")
     parser.add_argument("--archive", help="Package archive; defaults to the manifest archive filename.")
-    parser.add_argument("--install-root", required=True, help="TSPi installation root.")
+    parser.add_argument("--install-root", required=True, help="ResearchAgent installation root.")
     parser.add_argument("--conda", help="Path to conda or mamba executable.")
     parser.add_argument("--conda-root", help="Root directory of an existing Conda or Mamba installation.")
     parser.add_argument(
@@ -171,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
         ValueError,
         tarfile.TarError,
     ) as error:
-        print(f"TSPi Package install failed: {error}", file=sys.stderr)
+        print(f"ResearchAgent Package install failed: {error}", file=sys.stderr)
         return 1
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
@@ -194,7 +194,7 @@ def install_package(
     runtime_preparer: Callable[..., PreparedRuntime] | None = None,
     runtime_publisher: Callable[[PreparedRuntime], Path] | None = None,
 ) -> dict[str, Any]:
-    manifest = validate_suite_manifest(read_json_object(manifest_path, "TSPi Package manifest"))
+    manifest = validate_suite_manifest(read_json_object(manifest_path, "ResearchAgent Package manifest"))
     if not allow_dirty:
         dirty_components = [
             label
@@ -214,15 +214,15 @@ def install_package(
     archive_descriptor = manifest["archive"]
     resolved_archive = archive_path or (manifest_path.parent / archive_descriptor["filename"])
     if resolved_archive.name != archive_descriptor["filename"]:
-        raise SuiteReleaseError("TSPi Package archive filename does not match the manifest")
-    with tempfile.TemporaryDirectory(prefix="tspi-package-input-") as input_directory:
+        raise SuiteReleaseError("ResearchAgent Package archive filename does not match the manifest")
+    with tempfile.TemporaryDirectory(prefix="research-agent-package-input-") as input_directory:
         input_root = Path(input_directory)
         input_root.chmod(0o700)
         captured_archive = copy_verified_file_snapshot(
             resolved_archive,
             input_root / archive_descriptor["filename"],
             archive_descriptor,
-            "TSPi Package archive",
+            "ResearchAgent Package archive",
         )
         return _install_captured_package(
             manifest,
@@ -256,7 +256,7 @@ def _install_captured_package(
     if "web" in manifest["components"]:
         expected_suite_files.add(manifest["components"]["web"]["archive"]["path"])
     if suite_files != expected_suite_files:
-        raise SuiteReleaseError("TSPi Package archive does not contain the exact declared component set")
+        raise SuiteReleaseError("ResearchAgent Package archive does not contain the exact declared component set")
 
     install_root = prepare_install_root(install_root)
     layout = paths(install_root).initialize()
@@ -302,7 +302,7 @@ def _install_captured_package(
         )
         archived_notification_state = []
         ensure_private_directory(install_root / "workspaces")
-        installed_manifest = read_json_object(target / INSTALLED_MANIFEST, "installed TSPi Package manifest")
+        installed_manifest = read_json_object(target / INSTALLED_MANIFEST, "installed ResearchAgent Package manifest")
         state = {
             "schema_version": SUITE_INSTALL_SCHEMA_VERSION,
             "current_release_id": manifest["release_id"],
@@ -330,7 +330,7 @@ def _install_captured_package(
             "release_id": manifest["release_id"],
             "package_root": str(target),
             "current": str(package_home / "current"),
-            "launcher": launchers["ResearchAgent"],
+            "launcher": launchers["research-agent"],
             "launchers": launchers,
             "runtime": dict(prepared_runtime.result),
             "services_activated": False,
@@ -354,11 +354,6 @@ def ensure_name_resolver_config(install_root: Path, release_root: Path) -> None:
             raise SuiteReleaseError(f"existing name-resolver configuration must be a regular file: {destination}")
         return
     source = release_root / "agent" / "config" / "name-resolver.example.toml"
-    if source.is_symlink() or not source.is_file():
-        # Source-based installers keep the same bundled contract beside this
-        # installer. This also lets minimal test releases exercise the
-        # installation path without weakening the real package contract.
-        source = Path(__file__).resolve().parents[1] / "config" / "name-resolver.example.toml"
     if source.is_symlink() or not source.is_file():
         raise SuiteReleaseError(f"package installer is missing the bundled name-resolver configuration: {source}")
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -506,7 +501,7 @@ def validate_extracted_suite(root: Path, manifest: dict[str, Any]) -> None:
 def validate_existing_suite(target: Path, manifest: dict[str, Any]) -> None:
     if target.is_symlink() or not target.is_dir():
         raise SuiteReleaseError(f"suite release target is not a regular directory: {target}")
-    installed = validate_suite_manifest(read_json_object(target / INSTALLED_MANIFEST, "installed TSPi Package manifest"))
+    installed = validate_suite_manifest(read_json_object(target / INSTALLED_MANIFEST, "installed ResearchAgent Package manifest"))
     if suite_identity(installed) != suite_identity(manifest):
         raise SuiteReleaseError(f"existing suite release manifest does not match: {target}")
     validate_installed_suite(target, manifest)
@@ -548,8 +543,8 @@ def inspect_embedded_agent(
         raise SuiteReleaseError(f"embedded Agent archive is invalid: {error}") from error
     # The embedded archive is an Agent release; its manifest contract is
     # represented by the shared wheel/release schema constant.
-    if RELEASE_SCHEMA_VERSION != "tspi-release/1":
-        raise SuiteReleaseError("only tspi-release/1 is supported")
+    if RELEASE_SCHEMA_VERSION != "research-agent-release/1":
+        raise SuiteReleaseError("only research-agent-release/1 is supported")
     required_files = REQUIRED_RUNTIME_FILES
     missing = sorted(required_files - files)
     if missing:
@@ -606,7 +601,7 @@ def agent_release_manifest(descriptor: dict[str, Any], created_at_utc: str) -> d
     return {
         "schema_version": RELEASE_SCHEMA_VERSION,
         "release_id": descriptor["release_id"],
-        "package": {"name": "@iawnix/tspi", "version": descriptor["version"]},
+        "package": {"name": "@iawnix/research-agent", "version": descriptor["version"]},
         "python_distribution": descriptor["python_distribution"],
         "archive": {
             "filename": PurePosixPath(archive["path"]).name,
@@ -646,7 +641,7 @@ def install_launchers(
         name: selected_root / Path(*relative)
         for name, relative in paths.items()
     }
-    enabled = {"ResearchAgent"}
+    enabled = {"research-agent"}
     if "web" in components:
         enabled.add("TSWeb")
     for name, target in targets.items():
@@ -667,7 +662,7 @@ def validate_launcher_slots(
     package_home: Path,
     components: dict[str, Any],
 ) -> None:
-    enabled = {"ResearchAgent"}
+    enabled = {"research-agent"}
     if "web" in components:
         enabled.add("TSWeb")
     conflicts = [

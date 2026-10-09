@@ -3,19 +3,19 @@ import { parseArgs } from "node:util";
 import { mkdtemp, readFile, writeFile, copyFile, rm, mkdir } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { createDecisionContextInjector } from "../../apps/app-server/decision-context.mjs";
+import { createDecisionContextInjector } from "../../apps/agent/tools/decision-context.mjs";
 
 const { values } = parseArgs({ options: {
   "agent-dir": { type: "string" }, output: { type: "string" },
   provider: { type: "string" }, model: { type: "string" },
 } });
-const piRoot = process.env.TSPI_TEST_PI_RUNTIME_ROOT;
+const piRoot = process.env.RESEARCH_AGENT_TEST_PI_RUNTIME_ROOT;
 if (!piRoot || !values["agent-dir"] || !values.output) {
   throw new Error("Use the pinned Pi source resolver and supply --agent-dir and --output; optional --provider/--model override configured defaults.");
 }
-const testRoot = resolve(process.env.TSPI_TEST_ROOT || "/home/iaw/debug/tspi-test-env");
+const testRoot = resolve(process.env.RESEARCH_AGENT_TEST_ROOT || "/home/iaw/project/TSPi/local_debug");
 const output = resolve(values.output);
-if (!output.startsWith(testRoot + "/")) throw new Error("Evaluation output must be under TSPI_TEST_ROOT");
+if (!output.startsWith(testRoot + "/")) throw new Error("Evaluation output must be under RESEARCH_AGENT_TEST_ROOT");
 const temporary = await mkdtemp(join(testRoot, "eval-t003-"));
 const record = { schema_version: "t003-context-evaluation/1", kind: "live-context-ablation", runs: [],
   limitations: "Six bounded decisions on synthetic facts; not an end-to-end research benchmark or a statistical comparison of old/new releases." };

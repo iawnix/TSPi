@@ -18,7 +18,6 @@ STATIC_FILES = {
     "index.html": "text/html; charset=utf-8",
     "app.css": "text/css; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
-    "i18n.js": "text/javascript; charset=utf-8",
     "logo.svg": "image/svg+xml",
     "favicon.svg": "image/svg+xml",
 }
@@ -92,9 +91,9 @@ def _make_handler(provider: ProviderClient, *, auth_token: str | None = None):
                     self._send_json(
                         {
                             "ok": True,
-                            "protocol": "research-map/1",
-                            "provider_protocol": "research-map-provider/1",
-                            "canonical": "ResearchMap",
+                            "protocol": "research-snapshot/2",
+                            "provider_protocol": "research-memory-provider/1",
+                            "canonical": "Research memory",
                             "read_only": True,
                         }
                     )
@@ -143,8 +142,8 @@ def _make_handler(provider: ProviderClient, *, auth_token: str | None = None):
         ) -> None:
             self._send_json(
                 {
-                    "schema_version": "research-map-error/1",
-                    "error": message[:4000] or "ResearchMap request failed",
+                    "schema_version": "research-memory-error/1",
+                    "error": message[:4000] or "Research memory request failed",
                     "retryable": retryable,
                 },
                 status=status,

@@ -1,0 +1,496 @@
+{
+  "files": [
+    {
+      "source": "apps/app-server/system-prompt.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/pi/prompt.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/pi-runtime-deps.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/pi/typebox.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/server-extension-loader.mjs",
+      "status": "merged",
+      "targets": [
+        "apps/agent/tools/registry.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/tspi-link-host.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/transport/link.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/pi-monitor-worker.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/host/monitor/worker.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/pi-native-client.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/pi/client.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/pi-app-server.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/main.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/tspi-browser-gateway.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/transport/browser.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/pi-harness-policy.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/pi/policy.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/tspi-harness-backend.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/pi/backend.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/tspi-native-client-facet.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/terminal/commands/facet.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/tspi-terminal-errors.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/terminal/errors.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/extension-manifest-loader.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/resources/skills.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/workspace-mode-tools.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/host/workspace-modes.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/session-admission.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/host/admission/session.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/workspace-catalog.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/host/workspaces.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/input-admission.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/host/admission/input.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/research-native-kernel.mjs",
+      "status": "merged",
+      "targets": [
+        "apps/agent/tools/research/tools.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/user-sources.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/tools/user-sources.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/evidence-runtime.mjs",
+      "status": "merged",
+      "targets": [
+        "apps/agent/tools/artifacts/tools.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/execution-runtime.mjs",
+      "status": "merged",
+      "targets": [
+        "apps/agent/tools/jobs/tools.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/pi-native-tools.mjs",
+      "status": "split",
+      "targets": [
+        "apps/agent/tools/registry.mjs",
+        "apps/agent/tools/research/tools.mjs",
+        "apps/agent/tools/jobs/tools.mjs",
+        "apps/agent/tools/artifacts/tools.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/pi-session-worker.mjs",
+      "status": "split",
+      "targets": [
+        "apps/agent/pi/worker.mjs",
+        "apps/agent/pi/setup.mjs",
+        "apps/agent/pi/coding-tools.mjs",
+        "apps/agent/resources/skills.mjs",
+        "prompts/research-agent.md"
+      ]
+    },
+    {
+      "source": "apps/app-server/tspi-host-client.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/transport/host-client.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/tspi-host-proxy.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/transport/ssh.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/tspi-host.mjs",
+      "status": "split",
+      "targets": [
+        "apps/agent/host/server.mjs",
+        "apps/agent/host/sessions.mjs",
+        "apps/agent/host/requests.mjs",
+        "apps/agent/host/workspaces.mjs",
+        "apps/agent/host/monitor/events.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/tspi-terminal-client.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/terminal/main.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/tspi-client-queries.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/pi/services/queries.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/tspi-terminal-session.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/terminal/session.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/monitor-admission.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/host/admission/monitor.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/session-selection.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/host/session-selection.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/skill-paths.mjs",
+      "status": "retired",
+      "targets": []
+    },
+    {
+      "source": "apps/app-server/tspi-tool-renderers.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/terminal/renderers/tools.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/tspi-status-presentation.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/terminal/status/presentation.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/tspi-document-view.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/terminal/renderers/document.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/tspi-monitor-subscription.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/terminal/status/monitor.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/decision-context.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/tools/decision-context.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/job-query-recovery.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/tools/jobs/query-recovery.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/tspi-command-panel.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/terminal/commands/panel.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/server-tools/core-tools.mjs",
+      "status": "merged",
+      "targets": [
+        "apps/agent/tools/registry.mjs"
+      ]
+    },
+    {
+      "source": "apps/app-server/server-tools/extensions.json",
+      "status": "merged",
+      "targets": [
+        "apps/agent/tools/registry.mjs"
+      ]
+    },
+    {
+      "source": "packages/agent-core/ports.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/host/ports.mjs"
+      ]
+    },
+    {
+      "source": "packages/agent-core/ports.d.mts",
+      "status": "moved",
+      "targets": [
+        "apps/agent/host/ports.d.mts"
+      ]
+    },
+    {
+      "source": "packages/agent-core/session_mode.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/contracts/session-mode.mjs"
+      ]
+    },
+    {
+      "source": "packages/agent-core/session_mode.d.mts",
+      "status": "moved",
+      "targets": [
+        "apps/agent/contracts/session-mode.d.mts"
+      ]
+    },
+    {
+      "source": "packages/agent-core/workspace.d.mts",
+      "status": "moved",
+      "targets": [
+        "apps/agent/host/workspace.d.mts"
+      ]
+    },
+    {
+      "source": "packages/agent-core/workspace_id.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/contracts/workspace-id.mjs"
+      ]
+    },
+    {
+      "source": "packages/agent-core/workspace_id.d.mts",
+      "status": "moved",
+      "targets": [
+        "apps/agent/contracts/workspace-id.d.mts"
+      ]
+    },
+    {
+      "source": "packages/agent-core/workspace.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/host/workspace.mjs"
+      ]
+    },
+    {
+      "source": "packages/runtime-bridge/ports.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/bridge/ports.mjs"
+      ]
+    },
+    {
+      "source": "packages/runtime-bridge/ports.d.mts",
+      "status": "moved",
+      "targets": [
+        "apps/agent/bridge/ports.d.mts"
+      ]
+    },
+    {
+      "source": "packages/runtime-bridge/python_kernel_bridge.d.mts",
+      "status": "split",
+      "targets": [
+        "apps/agent/bridge/client.d.mts",
+        "apps/agent/bridge/transport.d.mts",
+        "apps/agent/bridge/ports.d.mts"
+      ]
+    },
+    {
+      "source": "packages/runtime-bridge/python_kernel_bridge.mjs",
+      "status": "split",
+      "targets": [
+        "apps/agent/bridge/client.mjs",
+        "apps/agent/bridge/transport.mjs",
+        "apps/agent/bridge/ports.mjs"
+      ]
+    },
+    {
+      "source": "packages/agent-runtime/host-api/commands.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/tools/commands.mjs"
+      ]
+    },
+    {
+      "source": "packages/agent-runtime/host-api/commands.d.mts",
+      "status": "moved",
+      "targets": [
+        "apps/agent/tools/commands.d.mts"
+      ]
+    },
+    {
+      "source": "packages/agent-runtime/host-api/tools.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/tools/contracts.mjs"
+      ]
+    },
+    {
+      "source": "packages/agent-runtime/host-api/tools.d.mts",
+      "status": "moved",
+      "targets": [
+        "apps/agent/tools/contracts.d.mts"
+      ]
+    },
+    {
+      "source": "packages/agent-runtime/host-api/system-prompt.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/pi/prompt-manifest.mjs"
+      ]
+    },
+    {
+      "source": "packages/agent-runtime/host-api/system-prompt.d.mts",
+      "status": "moved",
+      "targets": [
+        "apps/agent/pi/prompt-manifest.d.mts"
+      ]
+    },
+    {
+      "source": "packages/agent-runtime/host-api/workspace-context.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/tools/context.mjs"
+      ]
+    },
+    {
+      "source": "packages/agent-runtime/host-api/tool-envelope.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/tools/envelope.mjs"
+      ]
+    },
+    {
+      "source": "packages/agent-runtime/host-api/tool-envelope.d.mts",
+      "status": "moved",
+      "targets": [
+        "apps/agent/tools/envelope.d.mts"
+      ]
+    },
+    {
+      "source": "packages/agent-runtime/host-api/lifecycle.d.mts",
+      "status": "retired",
+      "targets": []
+    },
+    {
+      "source": "packages/agent-runtime/host-api/workspace-context.d.mts",
+      "status": "moved",
+      "targets": [
+        "apps/agent/tools/context.d.mts"
+      ]
+    },
+    {
+      "source": "packages/agent-runtime/host-api/model-readiness.ts",
+      "status": "retired",
+      "targets": []
+    },
+    {
+      "source": "packages/agent-runtime/host-api/tool-parameters.d.mts",
+      "status": "moved",
+      "targets": [
+        "apps/agent/tools/parameters.d.mts"
+      ]
+    },
+    {
+      "source": "packages/agent-runtime/transactions/coordinator.d.mts",
+      "status": "moved",
+      "targets": [
+        "apps/agent/bridge/transactions.d.mts"
+      ]
+    },
+    {
+      "source": "packages/agent-runtime/transactions/coordinator.mjs",
+      "status": "moved",
+      "targets": [
+        "apps/agent/bridge/transactions.mjs"
+      ]
+    },
+    {
+      "source": "packages/agent-ui/themes/ts-theme.json",
+      "status": "moved",
+      "targets": [
+        "apps/agent/terminal/themes/research-agent.json"
+      ]
+    }
+  ]
+}

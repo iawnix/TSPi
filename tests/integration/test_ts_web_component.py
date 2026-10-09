@@ -18,10 +18,10 @@ COMPONENT_ROOT = ROOT / "components" / "ts-web"
 
 
 def test_web_cli_uses_explicit_provider_and_shared_catalog(tmp_path: Path, monkeypatch) -> None:
-    from research_state.workspace import initialize_workspace, admit_research_workspace
-    from research_state.workspace_catalog import WorkspaceCatalog
+    from research_agent.research.workspace import initialize_workspace, admit_research_workspace
+    from research_agent.research.workspace_catalog import WorkspaceCatalog
 
-    monkeypatch.delenv("TSPI_WEB_PROVIDER", raising=False)
+    monkeypatch.delenv("RESEARCH_AGENT_WEB_PROVIDER", raising=False)
     external = tmp_path / "external"
     initialize_workspace(external, "study", "research")
     admit_research_workspace(external)
@@ -49,14 +49,14 @@ def test_web_cli_uses_explicit_provider_and_shared_catalog(tmp_path: Path, monke
         [*entry, "list", "--state-dir", str(state_dir)], capture_output=True, text=True,
     )
     assert missing_provider.returncode != 0
-    assert "requires --provider or TSPI_WEB_PROVIDER" in missing_provider.stderr
+    assert "requires --provider or RESEARCH_AGENT_WEB_PROVIDER" in missing_provider.stderr
 
 
-def test_web_component_source_has_no_private_tspi_runtime_imports() -> None:
+def test_web_component_source_has_no_private_research_agent_runtime_imports() -> None:
     for path in COMPONENT_ROOT.rglob("*.py"):
         source = path.read_text(encoding="utf-8")
-        assert "import tspi_runtime" not in source
-        assert "from tspi_runtime" not in source
+        assert "import research_agent.application" not in source
+        assert "from research_agent.application" not in source
 
 
 def test_web_component_archive_is_complete_and_validated(tmp_path: Path) -> None:
@@ -88,7 +88,7 @@ def test_web_component_protocol_schemas_validate_envelopes() -> None:
     )
 
     request = {
-        "schema_version": "research-map-provider/1",
+        "schema_version": "research-memory-provider/1",
         "request_id": "schema-check",
         "operation": "catalog",
         "workspace_id": None,
@@ -98,7 +98,7 @@ def test_web_component_protocol_schemas_validate_envelopes() -> None:
     Draft202012Validator(request_schema).validate(request)
     Draft202012Validator(response_schema).validate(
         {
-            "schema_version": "research-map-provider/1",
+            "schema_version": "research-memory-provider/1",
             "request_id": "schema-check",
             "ok": True,
             "payload": {"workspaces": []},
@@ -110,8 +110,8 @@ def test_web_component_protocol_schemas_validate_envelopes() -> None:
             "release_id": "0.17.0-sha256-0123456789abcdef",
             "component": {"name": "ts-web", "version": "0.18.0"},
             "protocols": {
-                "provider": "research-map-provider/1",
-                "map": "research-map/1",
+                "provider": "research-memory-provider/1",
+                "snapshot": "research-snapshot/2",
                 "theme": "ts-theme/1",
             },
             "entrypoint": {"path": "bin/ts-web"},
@@ -130,7 +130,7 @@ def test_provider_json_lines_does_not_reuse_a_previous_request_id(tmp_path: Path
     state_dir = tmp_path / "state"
     provider = ROOT / "apps" / "agent-cli" / "research_web_bridge.py"
     first = {
-        "schema_version": "research-map-provider/1",
+        "schema_version": "research-memory-provider/1",
         "request_id": "first",
         "operation": "catalog",
         "workspace_id": None,
@@ -153,7 +153,7 @@ def test_provider_json_lines_does_not_reuse_a_previous_request_id(tmp_path: Path
     assert [response["request_id"] for response in responses] == ["first", "unknown", "unknown", "after-errors"]
     assert responses[0]["ok"] is True
     assert responses[1]["ok"] is False
-    assert responses[1]["error"]["schema_version"] == "research-map-error/1"
+    assert responses[1]["error"]["schema_version"] == "research-memory-error/1"
     assert responses[2]["ok"] is False
-    assert responses[2]["error"]["schema_version"] == "research-map-error/1"
+    assert responses[2]["error"]["schema_version"] == "research-memory-error/1"
     assert responses[3]["ok"] is True

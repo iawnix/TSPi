@@ -1,30 +1,20 @@
-from __future__ import annotations
-
 from pathlib import Path
-
-from tools.test.manifest import ROOT, load_manifest, suite_paths
-
-
-def test_test_manifest_declares_all_supported_lanes_and_existing_paths() -> None:
-    suites = load_manifest()["suites"]
-    assert {
-        "fast",
-        "source",
-        "native-pi",
-        "package",
-        "remote-smoke",
-        "live-eval",
-    } <= set(suites)
-    for name in suites:
-        assert all(Path(path).exists() for path in suite_paths(name))
+from tools.test.manifest import ROOT,audit,load_manifest,suite_paths
 
 
-def test_test_root_contains_only_configuration_files() -> None:
-    allowed = {"__init__.py", "conftest.py"}
-    files = {path.name for path in (ROOT / "tests").iterdir() if path.is_file()}
-    assert files <= allowed
+def test_manifest_discovers_each_test_in_exactly_one_primary_suite():
+    result=audit()
+    assert result['files']>0
+    assert {'fast','node-fast','integration','native-pi','source','package'} <= set(load_manifest()['suites'])
 
 
-def test_native_lane_covers_every_node_test():
-    declared = {Path(path).resolve() for path in suite_paths("native-pi")}
-    assert set((ROOT / "tests/node").rglob("*.test.mjs")) <= declared
+def test_native_and_fast_node_suites_do_not_overlap():
+    native={Path(path) for path in suite_paths('native-pi')}
+    fast={Path(path) for path in suite_paths('node-fast')}
+    assert native.isdisjoint(fast)
+    assert native|fast==set((ROOT/'tests/node').rglob('*.test.mjs'))
+    assert all('native' in path.parts for path in native)
+
+
+def test_test_root_contains_only_configuration_files():
+    assert {path.name for path in (ROOT/'tests').iterdir() if path.is_file()} <= {'__init__.py','conftest.py'}

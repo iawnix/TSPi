@@ -6,9 +6,9 @@ import time
 
 import pytest
 
-from job_runtime import JobOutput, JobRuntime, JobSpec, JobState, LocalProcessPlatform, TorqueSSHPlatform, platforms_from_config
-from job_runtime.local import _process_state
-from tspi_runtime.execution import _spec
+from research_agent.jobs import JobOutput, JobRuntime, JobSpec, JobState, LocalProcessPlatform, TorqueSSHPlatform, platforms_from_config
+from research_agent.jobs.local import _process_state
+from research_agent.application.execution import _spec
 
 
 def _runtime() -> JobRuntime:
@@ -69,8 +69,6 @@ def test_job_runtime_preserves_research_identity_without_domain_parsing(tmp_path
         command=(sys.executable, "-c", "print('raw evidence')"),
         cwd=tmp_path,
         workspace_id="ws_demo",
-        node_id="node_demo",
-        attempt_id="attempt_demo",
         job_id="job_demo",
     )
 
@@ -80,8 +78,6 @@ def test_job_runtime_preserves_research_identity_without_domain_parsing(tmp_path
     assert status.state is JobState.SUCCEEDED
     assert receipt.job_id == "job_demo"
     assert receipt.workspace_id == "ws_demo"
-    assert receipt.node_id == "node_demo"
-    assert receipt.attempt_id == "attempt_demo"
     assert runtime.job_collect(receipt)["job_id"] == "job_demo"
 
 
@@ -97,7 +93,7 @@ kind = \"remote\"
 ssh_host = \"compute.example\"
 ssh_config = \"/tmp/ssh-config\"
 scheduler = \"torque\"
-remote_root = \"/scratch/tspi\"
+remote_root = \"/scratch/research-agent\"
 """,
         encoding="utf-8",
     )

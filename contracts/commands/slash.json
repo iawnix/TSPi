@@ -1,0 +1,38 @@
+{
+  "schema_version": "research-agent-slash-source/1",
+  "commands": {
+    "research": {
+      "name": "research",
+      "description": "Read or validate the research workspace.",
+      "usage": "/research [read [ref] | search [text]]",
+      "completions": [
+        "read",
+        "search"
+      ]
+    },
+    "sys-prompt": {
+      "name": "sys-prompt",
+      "description": "Inspect the current worker system prompt and provenance.",
+      "usage": "/sys-prompt",
+      "completions": []
+    },
+    "resume": {
+      "name": "resume",
+      "description": "Switch to a session in the current workspace.",
+      "usage": "/resume [session-id]",
+      "completions": []
+    },
+    "quit": {
+      "name": "quit",
+      "description": "Disconnect this terminal; leave background work running.",
+      "usage": "/quit",
+      "completions": []
+    },
+    "usage": {
+      "name": "usage",
+      "description": "Inspect session token usage and monitor health.",
+      "usage": "/usage",
+      "completions": []
+    }
+  }
+}

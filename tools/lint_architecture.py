@@ -2,8 +2,8 @@
 """Enforce package ownership and the single production runtime boundary.
 
 This check is intentionally source based.  It prevents a new implementation
-from silently recreating the removed ``tspi_runtime`` subpackages while the
-single wheel continues to ship several namespaces.
+from silently recreating the removed ``research_agent.application`` subpackages while the
+single wheel ships one research_agent namespace.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from package_inventory import RETIRED_RUNTIME_PATHS
 
 OLD_SUBPACKAGE = re.compile(
-    r"\btspi_runtime\.(?:backends|analysis|remote|platforms|structures|reaction|pyscf|workspace|providers|io|path_safety|calculation_contracts|runtime)\b"
+    r"\bresearch_agent_runtime\.(?:backends|analysis|remote|platforms|structures|reaction|pyscf|workspace|providers|io|path_safety|calculation_contracts|runtime)\b"
 )
 
 
@@ -29,18 +29,22 @@ def _python_files(root: Path):
 def check() -> list[str]:
     errors: list[str] = []
     old_roots = [
-        ROOT / "packages" / "tspi-runtime" / "tspi_runtime" / name
+        ROOT / "backend" / "src" / "research_agent" / "application" / name
         for name in ("backends", "analysis", "remote", "platforms", "structures", "reaction", "pyscf", "workspace", "providers", "io.py", "path_safety.py", "calculation_contracts.py", "runtime")
     ]
     for path in old_roots:
         if path.exists() and (path.is_file() or any(path.rglob("*.py"))):
-            errors.append(f"removed tspi_runtime implementation remains: {path.relative_to(ROOT)}")
+            errors.append(f"removed research_agent.application implementation remains: {path.relative_to(ROOT)}")
 
-    state_root = ROOT / "packages" / "research-state" / "research_state"
-    for path in _python_files(state_root):
+    memory_root = ROOT / "backend" / "src" / "research_agent" / "research"
+    for path in _python_files(memory_root):
         text = path.read_text(encoding="utf-8")
-        if "chemical_runtime" in text or "research_compute" in text or re.search(r"\btspi_runtime\b", text):
-            errors.append(f"research_state imports a non-State namespace: {path.relative_to(ROOT)}")
+        if re.search(r"(?:from|import)\s+(?:research_agent\.(?:application|jobs)|chemical_runtime|research_compute)\b", text):
+            errors.append(f"research_agent.research imports an execution namespace: {path.relative_to(ROOT)}")
+    for namespace in ("artifacts", "foundation"):
+        for path in _python_files(ROOT / "backend/src/research_agent" / namespace):
+            if re.search(r"(?:from|import)\s+(?:research_agent\.research|research_agent\.application)\b", path.read_text()):
+                errors.append(f"storage/foundation imports research policy: {path.relative_to(ROOT)}")
     for relative in RETIRED_RUNTIME_PATHS:
         path = ROOT / relative
         if path.is_file() or (path.is_dir() and any(
@@ -48,16 +52,16 @@ def check() -> list[str]:
             for item in path.rglob("*")
         )):
             errors.append(f"retired implementation remains: {relative}")
-    for root in (ROOT / "packages", ROOT / "extensions", ROOT / "apps", ROOT / "scripts", ROOT / "tools"):
+    for root in (ROOT / "backend/src", ROOT / "packages", ROOT / "apps", ROOT / "scripts", ROOT / "tools"):
         for path in _python_files(root):
             text = path.read_text(encoding="utf-8")
             if OLD_SUBPACKAGE.search(text):
-                errors.append(f"removed tspi_runtime subpackage reference: {path.relative_to(ROOT)}")
+                errors.append(f"removed research_agent.application subpackage reference: {path.relative_to(ROOT)}")
     required = (
-        ROOT / "packages" / "tspi-foundation" / "tspi_foundation" / "io.py",
-        ROOT / "packages" / "research-state" / "research_state" / "agent_workspace.py",
-        ROOT / "packages" / "job-runtime" / "job_runtime" / "runtime.py",
-        ROOT / "packages" / "tspi-bootstrap" / "tspi_bootstrap" / "launcher.py",
+        ROOT / "backend" / "src" / "research_agent" / "foundation" / "io.py",
+        ROOT / "backend" / "src" / "research_agent" / "research" / "nodes.py",
+        ROOT / "backend" / "src" / "research_agent" / "jobs" / "runtime.py",
+        ROOT / "backend" / "src" / "research_agent" / "bootstrap" / "launcher.py",
     )
     for path in required:
         if not path.is_file():
@@ -86,9 +90,14 @@ def check() -> list[str]:
             for marker in forbidden_runtime_markers:
                 if marker in text:
                     errors.append(f"removed alternate Pi runtime boundary {marker!r}: {path.relative_to(ROOT)}")
-    app_server = ROOT / "apps" / "app-server" / "pi-app-server.mjs"
+    app_server = ROOT / "apps/agent/main.mjs"
     if "source-root" in app_server.read_text(encoding="utf-8"):
         errors.append("pi-app-server exposes a replaceable source-root option")
+    for path in (ROOT / "apps/agent").rglob("*.mjs"):
+        if path.relative_to(ROOT).as_posix() == "apps/agent/pi/source.mjs":
+            continue
+        if re.search(r"packages/(?:coding-agent|durable|ai|tui)/src/", path.read_text()):
+            errors.append(f"Pi private source path outside adapter: {path.relative_to(ROOT)}")
     return errors
 
 

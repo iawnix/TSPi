@@ -12,7 +12,7 @@ from scripts.uninstall import uninstall
 
 
 def _args(root: Path, **overrides: object):
-    from tspi_foundation.layout import paths
+    from research_agent.foundation.layout import paths
     paths(root).initialize()
     values = {
         "install_root": str(root),
@@ -32,7 +32,7 @@ def _args(root: Path, **overrides: object):
 
 def test_uninstall_preserves_workspace_and_config_by_default(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    from tspi_foundation.layout import paths
+    from research_agent.foundation.layout import paths
     paths(root).initialize()
     (root / "workspaces/ts_001").mkdir(parents=True)
     web_token = root / "etc/web/auth.token"
@@ -40,11 +40,11 @@ def test_uninstall_preserves_workspace_and_config_by_default(tmp_path: Path) -> 
     web_token.write_text("w" * 43)
     phone_connection = root / "var/state/host/link.json"
     phone_connection.parent.mkdir(parents=True, exist_ok=True)
-    phone_connection.write_text('{"schema_version":"tspi-link/1"}\n', encoding="utf-8")
+    phone_connection.write_text('{"schema_version":"research-agent-link/1"}\n', encoding="utf-8")
     download = root / "downloads/client.apk"
     download.parent.mkdir()
     download.write_bytes(b"apk")
-    (root / "ResearchAgent").symlink_to("./current")
+    (root / "research-agent").symlink_to("./current")
 
     result = uninstall(_args(root))
 
@@ -62,10 +62,10 @@ def test_uninstall_removes_owned_stable_links(tmp_path: Path, dangling: bool) ->
     args = _args(root)
     if not dangling: (root / "releases/old/agent").mkdir(parents=True)
     (root / "current").symlink_to("releases/old")
-    (root / "ResearchAgent").symlink_to("current/agent/ResearchAgent")
+    (root / "research-agent").symlink_to("current/agent/research-agent")
     uninstall(args)
     assert not (root / "current").is_symlink()
-    assert not (root / "ResearchAgent").is_symlink()
+    assert not (root / "research-agent").is_symlink()
     assert root.is_dir()
 
 
@@ -74,8 +74,8 @@ def test_uninstall_does_not_follow_external_bin_directory(tmp_path: Path) -> Non
     root.mkdir()
     external = tmp_path / "external"
     external.mkdir()
-    launcher = external / "ResearchAgent"
-    launcher.symlink_to(root / "./current/agent/ResearchAgent")
+    launcher = external / "research-agent"
+    launcher.symlink_to(root / "./current/agent/research-agent")
     (root / "bin").symlink_to(external)
 
     uninstall(_args(root))
@@ -85,7 +85,7 @@ def test_uninstall_does_not_follow_external_bin_directory(tmp_path: Path) -> Non
 
 def test_uninstall_uses_configured_external_workspace_root(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    from tspi_foundation.layout import paths
+    from research_agent.foundation.layout import paths
     paths(root).initialize()
     workspace_root = tmp_path / "research"
     (workspace_root / "reaction-a").mkdir(parents=True)
@@ -99,7 +99,7 @@ def test_uninstall_uses_configured_external_workspace_root(tmp_path: Path) -> No
 
 def test_uninstall_refuses_to_purge_an_installation_ancestor(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    from tspi_foundation.layout import paths
+    from research_agent.foundation.layout import paths
     paths(root).initialize()
     paths(root).update_config(workspace_root=str(tmp_path))
 
@@ -111,7 +111,7 @@ def test_uninstall_refuses_to_purge_an_installation_ancestor(tmp_path: Path) -> 
 
 def test_interactive_defaults_run_safe_uninstall_and_preserve_data(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path / "install"
-    from tspi_foundation.layout import paths
+    from research_agent.foundation.layout import paths
     paths(root).initialize()
     workspace = root / "workspaces/ts_001"
     workspace.mkdir(parents=True)
@@ -119,7 +119,7 @@ def test_interactive_defaults_run_safe_uninstall_and_preserve_data(tmp_path: Pat
     config.write_text("[remote]\n", encoding="utf-8")
     runtime = paths(root).env_root / "base/test"
     runtime.mkdir(parents=True)
-    (root / "ResearchAgent").symlink_to("./current")
+    (root / "research-agent").symlink_to("./current")
     monkeypatch.setattr(uninstaller.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(uninstaller.sys.stdout, "isatty", lambda: True)
     replies = iter(["", "", "", ""])
@@ -160,10 +160,10 @@ def test_uninstall_removes_immutable_release_without_following_links(tmp_path: P
 
 def test_uninstall_purge_removes_the_dedicated_installation_root(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    from tspi_foundation.layout import paths
+    from research_agent.foundation.layout import paths
     paths(root).initialize()
     (root / "workspaces/ts_001").mkdir(parents=True)
-    (root / "ResearchAgent").symlink_to("./current")
+    (root / "research-agent").symlink_to("./current")
     install_uninstaller(root, Path(__file__).resolve().parents[2])
     download = root / "downloads/client.apk"
     download.parent.mkdir()
@@ -177,7 +177,7 @@ def test_uninstall_purge_removes_the_dedicated_installation_root(tmp_path: Path)
 
 def test_installed_uninstaller_runs_with_its_private_ui_module(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    from tspi_foundation.layout import paths
+    from research_agent.foundation.layout import paths
     paths(root).initialize()
     install_uninstaller(root, Path(__file__).resolve().parents[2])
 
@@ -236,12 +236,12 @@ def test_installed_uninstaller_removes_an_immutable_partial_release(tmp_path: Pa
 def test_uninstall_rejects_a_source_checkout_without_installation_metadata(tmp_path: Path) -> None:
     root = tmp_path / "source"
     root.mkdir()
-    (root / "ResearchAgent").write_text("#!/bin/sh\n")
+    (root / "research-agent").write_text("#!/bin/sh\n")
 
-    with pytest.raises(ValueError, match="trusted TSPi installation metadata"):
+    with pytest.raises(ValueError, match="trusted ResearchAgent installation metadata"):
         uninstaller.validate_root(root)
 
-    assert (root / "ResearchAgent").is_file()
+    assert (root / "research-agent").is_file()
 
 
 def test_uninstall_rejects_non_object_package_state(tmp_path: Path) -> None:
@@ -270,7 +270,7 @@ def test_valid_ownership_marker_allows_cleanup_of_damaged_package_state(tmp_path
 
 def test_purge_config_removes_local_uninstaller_and_ownership_marker(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    from tspi_foundation.layout import paths
+    from research_agent.foundation.layout import paths
     paths(root).initialize()
     install_uninstaller(root, Path(__file__).resolve().parents[2])
     web_token = root / "etc/web/auth.token"
@@ -290,7 +290,7 @@ def test_purge_config_removes_local_uninstaller_and_ownership_marker(tmp_path: P
 
 def test_purge_removes_unified_host_sessions_and_credentials(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    from tspi_foundation.layout import paths
+    from research_agent.foundation.layout import paths
     paths(root).initialize()
     host_session = root / "var/state/pi/sessions/workspace/session/session.sqlite"
     host_session.parent.mkdir(parents=True)
@@ -314,3 +314,28 @@ def test_purge_removes_unified_host_sessions_and_credentials(tmp_path: Path) -> 
     assert not host_token.exists()
     assert not (root / "etc/pi").exists()
     assert not (root / "etc/secrets").exists()
+
+
+def test_installed_uninstaller_removes_owned_relay_without_source_tree(tmp_path: Path) -> None:
+    root = tmp_path / 'installation'
+    from research_agent.foundation.layout import paths
+    paths(root).initialize()
+    install_uninstaller(root, Path(__file__).resolve().parents[2])
+    relay_root = root / 'runtimes/link-relay'
+    (relay_root / 'releases').mkdir(parents=True)
+    state = root / 'var/state/link-relay'
+    state.mkdir(parents=True)
+    (state / 'relay.db').write_bytes(b'preserved state')
+    (root / 'etc/link-relay.json').write_text(json.dumps({
+        'schema': 'research-agent-install-link-relay/1', 'owned': True, 'install_root': str(root),
+        'relay_install_root': str(relay_root), 'state_dir': str(state), 'service_scope': 'none',
+    }))
+    completed = subprocess.run([
+        str(root / 'uninstall.sh'), '--install-root', str(root), '--service-scope', 'none',
+        '--non-interactive', '--yes', '--json',
+    ], cwd=tmp_path, text=True, capture_output=True, check=False)
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    assert result['link_relay']['ok'] is True
+    assert not relay_root.exists()
+    assert (state / 'relay.db').read_bytes() == b'preserved state'

@@ -1,7 +1,7 @@
 from pathlib import Path
 import subprocess
 import pytest
-from job_runtime import TorqueSSHPlatform, JobReceipt, JobState
+from research_agent.jobs import TorqueSSHPlatform, JobReceipt, JobState
 
 
 def platform():return TorqueSSHPlatform({'ssh_host':'fixture','remote_root':'/scratch'})
@@ -79,14 +79,14 @@ def test_completed_program_wins_over_a_racing_cancellation(tmp_path, monkeypatch
 def test_reconcile_recovers_submission_without_calling_qsub(tmp_path,monkeypatch):
     import json
     remote=platform()
-    (tmp_path/'spec.json').write_text(json.dumps({'command':['true'],'attempt_id':'attempt_1','node_id':'node_1'}))
+    (tmp_path/'spec.json').write_text(json.dumps({'command':['true'],'workspace_id':'ws_remote'}))
     def run(command,**kwargs):
         assert 'qsub' not in command and 'scheduler.id' in command
         return subprocess.CompletedProcess([],0,'123.cluster\n','')
     monkeypatch.setattr(remote,'_run_ssh',run)
     recovered=remote.recover_receipt('job_remote',tmp_path)
     assert recovered.metadata['scheduler_id']=='123.cluster'
-    assert recovered.attempt_id=='attempt_1'
+    assert recovered.workspace_id=='ws_remote'
 
 
 @pytest.mark.parametrize('code,expected', [(125, JobState.FAILED), (0, JobState.SUCCEEDED)])

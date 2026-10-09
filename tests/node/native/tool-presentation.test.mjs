@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { createTspiToolRenderers } from "../../../apps/app-server/tspi-tool-renderers.mjs";
+import { createResearchAgentToolRenderers } from "../../../apps/agent/terminal/renderers/tools.mjs";
 import { pinnedPiSource } from "./test-environment.mjs";
 
 const source = pinnedPiSource();
@@ -12,7 +12,7 @@ const colors = [];
 const theme = { fg(color, text) { colors.push(color); return text; }, bold(text) { return text; } };
 
 test("tool summaries stay bounded while full arguments and output remain available", () => {
-  const renderer = createTspiToolRenderers(tui, ["research_read"]).research_read;
+  const renderer = createResearchAgentToolRenderers(tui, ["research_read"]).research_read;
   const raw = JSON.stringify({ nodes: Array.from({ length: 100 }, (_, i) => ({ id: i, summary: "x".repeat(100) })) }, null, 2);
   const call = renderer.renderCall({ mode: "context", payload: raw }, theme, { expanded: false });
   assert.ok(call.render(60).length <= 4);
@@ -24,7 +24,7 @@ test("tool summaries stay bounded while full arguments and output remain availab
 });
 
 test("job submission and running are distinct from completed and failed states", () => {
-  const renderer = createTspiToolRenderers(tui, ["job_start"]).job_start;
+  const renderer = createResearchAgentToolRenderers(tui, ["job_start"]).job_start;
   for (const [state, color] of [["running", "warning"], ["succeeded", "success"], ["failed", "error"]]) {
     colors.length = 0;
     const result = renderer.renderResult({ content: [], details: { result: { state } } }, {}, theme, {});
@@ -39,7 +39,7 @@ test("native chat applies registered renderers and expands cards without losing 
   const { ExperimentalChatView, configureToolRenderers } = await fromSource("packages/coding-agent/src/experimental/client-tui-chat.ts");
   const { initTheme } = await fromSource("packages/coding-agent/src/modes/interactive/theme/theme.ts");
   initTheme("dark");
-  configureToolRenderers(createTspiToolRenderers(tui, ["research_read"]));
+  configureToolRenderers(createResearchAgentToolRenderers(tui, ["research_read"]));
   const view = new ExperimentalChatView({ requestRender() {} }, process.cwd());
   const raw = "evidence\n".repeat(100);
   try {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Canonical TSPi command entry point for hosts and interactive clients."""
+"""Canonical ResearchAgent command entry point for hosts and interactive clients."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import argparse
 import json
 import sys
 from pathlib import Path
-import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -15,60 +14,28 @@ from _bootstrap import bootstrap_python_package
 
 bootstrap_python_package(ROOT, workspace_from_argv=True)
 
-from research_memory.service import install_state_projection_writer  # noqa: E402
-from tspi_runtime.api import COMMANDS, CommandError, execute  # noqa: E402
+from research_agent.application.api import COMMANDS, CommandError, execute  # noqa: E402
 
-install_state_projection_writer()
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="research_api")
     parser.add_argument("command", choices=sorted(COMMANDS))
     parser.add_argument("--root", required=True)
-    parser.add_argument("--kind")
-    parser.add_argument("--id")
-    parser.add_argument("--name")
-    parser.add_argument("--query")
-    parser.add_argument("--claim-id")
-    parser.add_argument("--record-type")
-    parser.add_argument("--limit", type=int)
-    parser.add_argument("--offset", type=int)
-    parser.add_argument("--max-bytes", type=int)
-    parser.add_argument("--event-id", action="append", dest="event_ids")
-    parser.add_argument("--attempt-id")
-    parser.add_argument("--job-id")
-    parser.add_argument("--node-id")
-    parser.add_argument("--artifact-id")
-    parser.add_argument("--subject-id")
-    parser.add_argument("--operation")
-    parser.add_argument("--request-file")
+    for field in ("ref", "query", "origin", "job-id", "artifact-id", "content", "title", "goal", "note", "proposal", "plan", "progress", "status", "node-id", "conclusion", "summary", "observation", "limitations", "field", "event-id", "request-id", "session-id", "read-basis"):
+        parser.add_argument("--" + field)
+    for field in ("limit", "offset", "after-sequence"):
+        parser.add_argument("--" + field, type=int)
+    parser.add_argument("--params-file", help="JSON object of command parameters")
     args = parser.parse_args(argv)
     try:
-        params = {
-            key: value
-            for key, value in {
-                "kind": args.kind,
-                "id": args.id,
-                "name": args.name,
-                "query": args.query,
-                "claim_id": args.claim_id,
-                "record_type": args.record_type,
-                "limit": args.limit,
-                "offset": args.offset, "max_bytes": args.max_bytes,
-                "event_ids": args.event_ids,
-                "attempt_id": args.attempt_id, "job_id": args.job_id,
-                "node_id": args.node_id,
-                "artifact_id": args.artifact_id,
-                "subject_id": args.subject_id,
-                "operation": args.operation,
-            }.items()
-            if value is not None
-        }
-        if args.request_file:
-            request = json.loads(Path(args.request_file).read_text(encoding="utf-8"))
+        params = {key: value for key, value in vars(args).items()
+                  if key not in {"command", "root", "params_file"} and value is not None}
+        if args.params_file:
+            request = json.loads(Path(args.params_file).read_text(encoding="utf-8"))
             if not isinstance(request, dict):
-                raise CommandError("request file must contain an object")
-            params["request"] = request
+                raise CommandError("params file must contain an object")
+            params = {**request, **params}
         result = execute(args.command, args.root, params)
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         return 0

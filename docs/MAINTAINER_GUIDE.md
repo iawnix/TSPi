@@ -1,17 +1,12 @@
 # Maintainer Guide
 
-TSPi is a Pi package with an installation Host and a native Pi client launcher.
-Keep the package boundaries explicit: the Pi Harness worker owns sessions and
-turns, Host owns routing and receipts, the Python Research State runtime owns scientific state,
-and optional TS Web only reads workspaces. The Node side exposes only the
-Research State transport bridge and port; it has no alternate Research State filesystem boundary
-implementation.
+ResearchAgent uses native Pi Harness. Host binds workspaces, authenticated input and durable scheduling; Python Research Memory stores original requirements, problem Nodes, immutable Results and relations. `runtime-bridge` only transports commands; TS Web consumes the same read-only queries. See [architecture](ARCHITECTURE.md) for refactor acceptance status.
 
 ## Development Setup
 
 Install the pinned Pi source and the separate test environment with
-`python3 tools/bootstrap_dev.py --install`. It uses `tools/test/environment.lock.txt`
-under `/home/iaw/debug/tspi-test-env` (override with `TSPI_TEST_ENV_ROOT`).
+`python3 tools/test/runner.py prepare`. It uses `tools/test/environment.lock.txt`
+under `/home/iaw/project/TSPi/local_debug` (override with `RESEARCH_AGENT_TEST_ENV_ROOT`).
 The root `environment.lock.txt` belongs to the minimal Host and does not include
 scientific or pytest dependencies. Run the fast test suite before changing package layout:
 
@@ -23,14 +18,16 @@ npm run lint:public
 The full suite uses `python3 tools/test/runner.py source -- -q`. Use
 `python3 tools/test/runner.py list` to inspect all lanes. The native lane
 exercises the Harness Host, native Pi client, history isolation/import, Monitor
-delivery, TSPi Link, and the pinned Pi extension/provider boundaries. Run it with
-a prepared checkout
-whose commit matches `config/pi-source.json`:
+delivery, ResearchAgent Link, and the pinned Pi extension/provider boundaries. Use the pinned dependencies prepared in the private test root:
 
 ```bash
-export TSPI_TEST_PI_RUNTIME_ROOT=/path/to/prepared/pi
-npm run test:native-pi
+python3 tools/test/runner.py prepare
+python3 tools/test/runner.py check --changed
+python3 tools/test/runner.py native-pi
+python3 tools/test/runner.py verify
 ```
+
+The runner creates immutable source snapshots, isolated workspaces and process ledgers under `local_debug/`. It disables outbound networking for deterministic tests, preserves failure evidence locally, and terminates all owned services. Do not upload these files, logs or credentials. `replay --run <id> --failed` repeats the recorded bytes and dependencies; `gc --dry-run` previews eligible cleanup.
 
 The Native Pi Harness path does not require tmux and is the only supported
 runtime. Backend selection is not configurable. Do not
@@ -45,68 +42,66 @@ dispatched by `tools/test/runner.py`. Python tests are grouped under
 live scenarios belong to `tools/test/probes/` and `tools/test/scenarios/` and
 must not be added to the default Python suite.
 
-## Scientific Model
+## Research Memory and Execution Boundaries
 
-The canonical workspace identity is `workspace_manifest.json`. Research
-workspaces store scientific state in `research_map/context.json`, lifecycle in
-`lifecycle/liveness.json`, and the Research State-owned metadata projection in
-`memory/index.json`. The canonical JSON records include phases, claims, claim
-relations, nodes, findings, gates, requirements, Attempts, Artifacts, focus,
-and revision. Research State contracts and ChangeSets validate these records;
-`research.map` supplies the client projection. Job inputs, logs, and receipts
-live under `runs/jobs/<job_id>/`; registered payloads live under `artifacts/`.
-Retired `workspace.json`, `research_map.json`, and
-`transactions.jsonl` files are not runtime authorities.
+`workspace_manifest.json` uses `research_workspace/2`. `research_agent.research` is the sole namespace, without a legacy state or global-progress protocol. Original messages, Node content revisions and runtime facts retain distinct origins. Stable Node directories preserve repeated attempts; immutable Results pin their basis.
 
-## ResearchMap Validation Rules
+Agent tools are research_read / research_search / research_create / research_update / research_result. Creation needs goal; a note needs node_id and note; publication needs node_id and conclusion. The trusted adapter supplies identities, read basis, revisions and transactions. Background Jobs do not change Node content revision. Relations are stored once with generated reverse queries. Actual uses requires proven inputs; search is not evidence adoption.
 
-Validation is deterministic and revision-bound. Gates evaluate declared map
-criteria and evidence references; Root Agent interpretation changes Claim or
-Node state through a ResearchMap ChangeSet. Unsupported legacy files are
-rejected explicitly during bootstrap.
+Job Runtime owns execution receipts; Artifact Store owns bytes and provenance. Monitor next_run depends on event and delivery identity, never Memory sequence or checkpoint. Email receipts own deduplication; Memory failure cannot trigger resending. Old workspaces are rejected without migration or mixed writes.
+
+## Repair research views
+
+Inspect the workspace, rebuild derived views when the diagnostic identifies a projection problem, then inspect again:
+
+```bash
+"$RESEARCH_AGENT_PYTHON" apps/agent-cli/workspace.py doctor --root /absolute/workspace
+"$RESEARCH_AGENT_PYTHON" apps/agent-cli/workspace.py rebuild --root /absolute/workspace
+"$RESEARCH_AGENT_PYTHON" apps/agent-cli/workspace.py doctor --root /absolute/workspace
+```
+
+Rebuild uses immutable records and results to restore Node/map indexes, search and readable views. It does not invent scientific results, change execution/email receipts or migrate old workspace formats. Missing or inconsistent originals require repairing the actual source. Use public tools for research changes; the CLI has no expected-version / observed-sequence global-progress arguments.
 
 ## Deterministic Tool Contracts
 
 Scientific command builders and parsers live in
-`extensions/chemical/skills/<skill>/scripts/`, with shared helpers in
-`extensions/chemical/skills/_shared/`. Generic local and remote execution lives
-in `packages/job-runtime/`; `packages/tspi-runtime/` binds Job receipts and
-collected Artifacts to Research State. Public command fields are declared in
-`packages/tspi-runtime/tspi_runtime/command_catalog.json`. Every Artifact needs
+`domains/chemical/skills/<skill>/scripts/`, with shared helpers in
+`domains/chemical/skills/_shared/`. Generic local and remote execution lives
+in `backend/src/research_agent/jobs/`; `backend/src/research_agent/application/` records Job facts and registers
+collected materials in Artifact Store. Public command fields are declared in
+`contracts/commands/`; generated Python and Node catalogs are checked at build time. Every Artifact needs
 a content digest and a verified location. Preserve earlier evidence when
 recording scheduler state, Job identity, commands, and collection results.
 
 ## Scientific Analysis Maintenance
 
 Independent analyses run Skill scripts through generic Jobs. Registered
-validators and acceptance profiles are declared in the extension manifest;
-`packages/tspi-runtime/tspi_runtime/validators.py` verifies and stages the
-declared validator and inputs. The extension manifest contract lives in
-`contracts/tspi-extension/1/`. Core and domain Skills use the same manifest loader; entrypoints, references,
-and scripts are pinned by `scripts/update_skill_resources.py`. New scientific algorithms require
+validators and acceptance profiles are declared in `domains/chemical/execution.json`;
+`backend/src/research_agent/application/validators.py` verifies and stages the
+declared validator and inputs. Python owns execution catalog validation independently of Pi Skill discovery. Pi loads product and domain Skills from `package.json.pi.skills`; `scripts/update_resources.py` generates resource digests. New scientific algorithms require
 bounded inputs, explicit applicability, counterexamples, replayable candidates
 and a version change when deterministic output semantics change. Keep domain
 schemas out of the always-loaded tools. Do not add scientific successor routing.
 
-Node state and dependency admission belong to Research State. Preserve the
+Job state and recovery belong to the execution runtime. Preserve the
 workspace transaction boundary around dispatch intentions, execution observations,
 and collected evidence; keep inspection, collection and cancellation available.
-Test the Native Harness client and server-extension contract,
+Test the Native Harness client and Pi resource and scientific execution contracts,
 Monitor retry/acknowledgement behavior, wheel
-installation, direct ResearchMap Web rendering, and source-tampering rejection.
+installation, Memory Node/Result Web queries and retrieval, and source-tampering rejection.
 Use the stable operations guide and focused test suites as the current evidence;
-one-off validation reports do not belong in the repository.
+superseded one-off reports belong only in docs/archive and are not current acceptance evidence.
 
 ## Documentation Ownership
 
 - `docs/ARCHITECTURE.md` — runtime and scientific boundaries.
 - `docs/INSTALLATION.md` — installer, services, upgrades, and recovery.
 - `docs/TERMINAL.md` — Native Pi TUI, Host, Phone, and Monitor usage.
-- `extensions/*/skills/` — user-facing scientific procedures and references.
-- `contracts/ts-web/` — optional browser transport schemas for canonical map responses.
+- `skills/` and `domains/chemical/skills/` — user-facing scientific procedures and references.
+- `contracts/ts-web/` — optional browser transport schemas for Memory context, Nodes, Results and records.
 
 TS Phone documentation and mobile release tooling are maintained in the
-independent `ts-phone` repository. TSPi owns the small authenticated Host bridge
+independent `ts-phone` repository. ResearchAgent owns the small authenticated Host bridge
 and optional browser gateway; it must not add a second Pi renderer, Phone
 broker, or alternate session owner.
 
@@ -114,11 +109,11 @@ broker, or alternate session owner.
 
 | Change | Required updates |
 | --- | --- |
-| TSPi Host protocol or service | `apps/app-server/`, launcher tests, TS Phone client, architecture docs |
-| Workspace schema | Research State runtime contract, bootstrap, validation tests, workspace references |
+| ResearchAgent Host protocol or service | `apps/agent/`, launcher tests, TS Phone client, architecture docs |
+| Workspace schema | Research Memory runtime contract, bootstrap, validation tests, workspace references |
 | Scientific software | Skill scripts/parsers, environment configuration, focused Skill references, tests |
-| Scientific analysis | script, validator/profile manifest when applicable, input and output validation, scientific counterexamples, extension resource digests |
-| Node and Job admission | Research State admission/dependencies, dispatch and receipt transactions, native tools, restart and reconciliation tests |
+| Scientific analysis | script, validator/profile manifest when applicable, input and output validation, scientific counterexamples, execution and Skill resource digests |
+| Job execution and recovery | dispatch and receipt transactions, native tools, restart and reconciliation tests |
 | Package inventory | `package.json`, `scripts/package_inventory.py`, package layout tests |
 | Installer/service path | `scripts/install_wizard.py`, uninstall logic, installation docs |
 

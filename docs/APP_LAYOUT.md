@@ -6,7 +6,7 @@ compatibility link.
 
 ```text
 <install>/
-  ResearchAgent             # sole public client, follows current
+  research-agent             # sole public client, follows current
   uninstall.sh              # independent recovery/uninstall entry
   current -> releases/<id>  # sole active release selection
   releases/<id>/            # immutable application code and complete Skills
@@ -26,19 +26,19 @@ compatibility link.
   workspaces/               # default; an explicit external root is supported
 ```
 
-No root `bin/` or public `ResearchAgentServer` is installed. Systemd invokes
+No root `bin/` or public `research-agentServer` is installed. Systemd invokes
 `current/agent/libexec/research-agent-host` with an explicit installation root.
-Use `ResearchAgent --workspace <name>` for research, and
-`systemctl --user … ts-app-server-tspi.service` for service management.
+Use `research-agent --workspace <name>` for research, and
+`systemctl --user … ts-app-server-research-agent.service` for service management.
 
 Host Conda bases and wheel overlays live under
-`~/soft/tspi/host-envs/<installation-id>/{base,kernels}/<hash>`. The installer
-accepts `TSPI_HOST_ENV_ROOT` for a dedicated alternate store and persists it.
+`~/soft/research-agent/host-envs/<installation-id>/{base,kernels}/<hash>`. The installer
+accepts `RESEARCH_AGENT_HOST_ENV_ROOT` for a dedicated alternate store and persists it.
 Scientific Job environments remain explicitly bound through `etc/job.toml`,
 with separate local and remote paths. Existing Conda prefixes are not moved.
 
 Sockets and process locks use the installation-scoped system runtime directory.
-Durable receipts stay in state. The standard-library-only `tspi_foundation.layout`
+Durable receipts stay in state. The standard-library-only `research_agent.foundation.layout`
 contract is shared by bootstrap, installers and the read-only doctor:
 
 ```bash

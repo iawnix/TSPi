@@ -5,15 +5,15 @@ import { join } from "node:path";
 import { Harness, MemoryStorage, createRegistry, defineExtension, hook, GenerationTask, InboxDoc, LiveDoc } from "@earendil-works/pi-durable";
 import { createModels, fauxProvider, fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { TODO_CONTEXT as context } from "@earendil-works/chord/context";
-import { createMonitorAdmission } from "../../../apps/app-server/monitor-admission.mjs";
-import { createInputAdmission } from "../../../apps/app-server/input-admission.mjs";
-import { recordUserSources } from "../../../apps/app-server/user-sources.mjs";
-import { wakeMessage } from "../../../apps/app-server/pi-monitor-worker.mjs";
+import { createMonitorAdmission } from "../../../apps/agent/host/admission/monitor.mjs";
+import { createInputAdmission } from "../../../apps/agent/host/admission/input.mjs";
+import { recordUserSources } from "../../../apps/agent/tools/user-sources.mjs";
+import { wakeMessage } from "../../../apps/agent/host/monitor/worker.mjs";
 import { pinnedPiSource } from "./test-environment.mjs";
 
 const { admitSubmission } = await import(pathToFileURL(join(pinnedPiSource(), "packages/durable/src/harness/submissions.ts")));
 const token = "fixture-producer-key";
-const request = (requestId = "batch") => ({ requestId, eventIds: ["event_1", "event_2"], token });
+const request = (requestId = "batch") => ({ requestId, eventIds: ["event_1", "event_2"], token, mode: "next_run" });
 
 async function setup(t, { validate = false } = {}) {
   const faux = fauxProvider();
@@ -30,19 +30,18 @@ async function setup(t, { validate = false } = {}) {
   harness = await Harness.open(new MemoryStorage(), { models, registry, settings: {} }, context);
   t.after(() => harness.close(context));
   const conversation = await harness.root(context, { agent: { model: { provider: "faux", modelId: "faux-1" } } });
-  const state = { obsolete: false, assessments: 0, next: null, wait: async () => {} };
+  const state = { obsolete: false, paused: false, assessments: 0, next: null, wait: async () => {} };
   admission = createInputAdmission({ harness, conversation, LiveDoc, InboxDoc, admitSubmission });
   monitor = createMonitorAdmission({ admission, wakeMessage, sessionId: "s", producerToken: token,
     kernel: {
       async execute_command(command, params) {
-        assert.equal(command, "research.monitor_assess");
+        assert.equal(command, "job.monitor_assess");
         assert.equal(params.session_id, "s");
         state.assessments++;
         await state.wait();
-        return { event_id: params.event_id, admitted: !state.obsolete,
-          obsolete: state.obsolete, state_token: "1:checkpoint_1", event: { event_id: params.event_id, state: "failed" } };
+        return { event_id: params.event_id, admitted: !state.obsolete && !state.paused, reason: state.paused ? "paused" : "attention_required",
+          obsolete: state.obsolete, delivery_token: "delivery_identity_1", event: { event_id: params.event_id, state: "failed" } };
       },
-      async read_liveness() { await state.wait(); return { revision: 1, checkpoint_id: "checkpoint_1", continuation: state.next }; },
     } });
   return { harness, conversation, admission, monitor, faux, state };
 }
@@ -80,8 +79,7 @@ test("batch retries recover the same Pi input and reject changed identities", as
 test("untrusted service calls and English event text cannot impersonate Monitor", async t => {
   const f = await setup(t);
   assert.equal((await f.monitor.admit({ ...request(), token: "wrong" }, context)).error.code, "internal_producer_required");
-  assert.equal((await f.monitor.admit({ requestId: "fake", text: "A compute monitor event requires attention.\nevent_id=event_1", token }, context)).error.code, "invalid_monitor_events");
-  assert.equal((await f.monitor.admitContinuation({ requestId: "state-continue:fake" }, context)).error.code, "internal_producer_required");
+  assert.equal((await f.monitor.admit({ requestId: "fake", text: "A compute monitor event requires attention.\nevent_id=event_1", token, mode: "next_run" }, context)).error.code, "invalid_monitor_events");
   assert.equal(f.state.assessments, 0);
 });
 
@@ -106,24 +104,11 @@ test("slow Python assessment never holds Pi transaction or blocks native input",
   await f.conversation.abort(context);
 });
 
-test("State continuation retains durable identity and fails closed on superseded scope", async t => {
-  const f = await setup(t);
-  f.state.next = { admitted: true, request_id: "state-continue:one", session_id: "s" };
-  f.faux.setResponses([fauxAssistantMessage("continued")]);
-  const draft = { requestId: "state-continue:one", token };
-  const first = await f.monitor.admitContinuation(draft, context);
-  assert.equal(first.accepted, true);
-  await f.conversation.waitForIdle(context);
-  f.state.next = null;
-  assert.deepEqual(await f.monitor.admitContinuation(draft, context), first);
-  assert.equal((await f.monitor.admitContinuation({ ...draft, requestId: "state-continue:old" }, context)).error.code, "continuation_superseded");
-});
-
 test("Monitor is reassessed before the first provider request", async t => {
   const f = await setup(t, { validate: true });
   let calls = 0;
   f.faux.setResponses([() => { calls++; return fauxAssistantMessage("should not run"); }]);
-  // Pause automatic scheduling, allowing State to change after the Pi commit.
+  // Pause automatic scheduling, allowing delivery status to change after the Pi commit.
   const resume = f.harness.resume.bind(f.harness);
   f.harness.resume = () => {};
   await f.monitor.admit(request(), context);
@@ -135,4 +120,30 @@ test("Monitor is reassessed before the first provider request", async t => {
   assert.equal(record.status, "unanswered");
   assert.match(record.detail, /monitor_superseded/);
   assert.equal(calls, 0);
+});
+
+ test("Monitor requires next_run; user follow-up modes cannot enter internal scheduling", async t => {
+  const f = await setup(t);
+  for (const mode of [undefined, "follow_up", "auto", "steer"]) {
+    assert.equal((await f.monitor.admit({ ...request(), mode }, context)).error.code, "invalid_monitor_mode");
+  }
+  assert.equal(f.state.assessments, 0);
+  assert.equal(await f.admission.status("batch", context), null);
+});
+
+test("paused delivery makes no model input and resumes the original request", async t => {
+  const f = await setup(t, { validate: true });
+  let calls = 0;
+  f.faux.setResponses([() => { calls++; return fauxAssistantMessage("resumed"); }]);
+  f.state.paused = true;
+  const paused = await f.monitor.admit(request(), context);
+  assert.equal(paused.pending, true);
+  assert.equal(await f.admission.status("batch", context), null);
+  assert.equal(calls, 0);
+  f.state.paused = false;
+  const resumed = await f.monitor.admit(request(), context);
+  assert.equal(resumed.accepted, true);
+  await f.conversation.waitForIdle(context);
+  assert.equal(calls, 1);
+  assert.equal((await f.monitor.admit(request(), context)).operation_id, resumed.operation_id);
 });

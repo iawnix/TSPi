@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CHEMICAL_SKILLS = ROOT / "extensions" / "chemical" / "skills"
+CHEMICAL_SKILLS = ROOT / "domains" / "chemical" / "skills"
 
 
 def test_chemical_execution_skills_use_generic_job_runtime() -> None:
@@ -29,8 +29,8 @@ def test_chemical_execution_skills_use_generic_job_runtime() -> None:
 
 
 def test_job_runtime_contract_accepts_argv_without_scientific_registry() -> None:
-    text = (ROOT / "extensions/core/skills/orchestration/references/compute_tools.md").read_text(
+    text = (ROOT / "skills/research-workflow/references/tools.md").read_text(
         encoding="utf-8"
     )
-    assert "job_start` accepts an arbitrary argv vector" in text
-    assert "not select a scientific method, parse output" in text
+    assert "argv command" in text
+    assert "No research object is required" in text

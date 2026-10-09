@@ -1,0 +1,76 @@
+{
+  "schema_version": "research-agent-source-layout/1",
+  "python": {
+    "project": "backend",
+    "source": "backend/src/research_agent"
+  },
+  "roots": [
+    "apps/agent",
+    "apps/agent-cli",
+    "backend/src/research_agent",
+    "packages/link",
+    "services/relay",
+    "skills",
+    "domains",
+    "prompts",
+    "contracts",
+    "config",
+    "assets",
+    "scripts",
+    "docs"
+  ],
+  "files": [
+    "research-agent",
+    "install.sh",
+    "install-link-relay.sh",
+    "uninstall-link-relay.sh",
+    "libexec/research-agent-host",
+    "LICENSE",
+    "README.md",
+    "README.zh-CN.md",
+    "backend/pyproject.toml",
+    "environment.yml",
+    "environment.lock.txt",
+    "uninstall.sh",
+    "install-configured.sh"
+  ],
+  "exclude": [
+    "scripts/_source_capture.py",
+    "scripts/build_release.py",
+    "scripts/build_package.py",
+    "scripts/build_web.py",
+    "scripts/check_package.py",
+    "scripts/update_*.py",
+    "scripts/update_*.mjs"
+  ],
+  "required": [
+    "research-agent",
+    "libexec/research-agent-host",
+    "apps/agent/main.mjs",
+    "apps/agent/pi/worker.mjs",
+    "apps/agent/host/server.mjs",
+    "apps/agent/bridge/client.mjs",
+    "backend/src/research_agent/application/bridge_worker.py",
+    "backend/src/research_agent/application/command_catalog.json",
+    "config/identity.json",
+    "config/resources.json",
+    "domains/chemical/execution.json",
+    "apps/agent/tools/command-catalog.json",
+    "packages/link/identity.mjs",
+    "contracts/commands/research.json",
+    "contracts/commands/jobs.json",
+    "contracts/commands/artifacts.json",
+    "backend/src/research_agent/application/execution_schema.json",
+    "scripts/package_inventory.py",
+    "environment.lock.txt",
+    "config/name-resolver.example.toml",
+    "scripts/_bootstrap.py",
+    "scripts/_runtime_install.py",
+    "scripts/_wheel.py",
+    "apps/agent-cli/launcher.py",
+    "prompts/research-agent.md"
+  ],
+  "generated": [
+    "python-dist/*.whl"
+  ]
+}

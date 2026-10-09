@@ -1,4 +1,4 @@
-"""Prepare, probe, and publish the managed control runtime used by TSPi."""
+"""Prepare, probe, and publish the managed control runtime used by ResearchAgent."""
 
 from __future__ import annotations
 
@@ -131,7 +131,7 @@ def prepare_runtime(
     if base_action != "reuse" and conda_executable is None:
         raise RuntimeInstallError(
             "conda or mamba not found; set --conda, --conda-root, "
-            "TSPI_CONDA_EXE, or TSPI_CONDA_ROOT"
+            "RESEARCH_AGENT_CONDA_EXE, or RESEARCH_AGENT_CONDA_ROOT"
         )
     base_action = _prepare_base(
         conda_executable,
@@ -159,7 +159,7 @@ def prepare_runtime(
             completed = _pip_install_wheel(paths["kernel_python"], wheel, paths["package_root"])
             if completed.returncode != 0:
                 _remove_managed_kernel(paths["kernel_prefix"], paths["env_store"])
-                raise RuntimeInstallError("failed to install tspi-runtime into the release overlay")
+                raise RuntimeInstallError("failed to install research-agent into the release overlay")
             runtime_probe = _run_runtime_probe(paths["kernel_python"], paths["package_root"])
         else:
             runtime_probe = existing_probe
@@ -392,7 +392,7 @@ def _resolved_wheel(
     if bundled is not None:
         yield bundled
         return
-    with tempfile.TemporaryDirectory(prefix="tspi-install-wheel-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="research-agent-install-wheel-") as temporary:
         wheel_dir = Path(temporary)
         descriptor = build_wheel(package_root, wheel_dir, python=build_python)
         wheel = wheel_dir / descriptor["filename"]
@@ -427,7 +427,7 @@ def _pip_install_wheel(
 
 def _run_runtime_probe(python: Path, package_root: Path) -> dict[str, Any]:
     completed = subprocess.run(
-        [str(python), "-m", "tspi_bootstrap.probe", "--json"],
+        [str(python), "-m", "research_agent.bootstrap.probe", "--json"],
         # Do not run from the source checkout: an ignored ``*.egg-info``
         # directory there can shadow the freshly installed wheel metadata.
         cwd=package_root.parent,
@@ -446,7 +446,7 @@ def _run_base_probe(python: Path, package_root: Path) -> dict[str, Any]:
     program = (
         "import json,sys;"
         "sys.path[:0]=sys.argv[1:];"
-        "from tspi_bootstrap.probe import probe_runtime_capabilities;"
+        "from research_agent.bootstrap.probe import probe_runtime_capabilities;"
         "print(json.dumps(probe_runtime_capabilities(require_distribution=False),sort_keys=True))"
     )
     completed = subprocess.run(
@@ -550,7 +550,7 @@ def _result_payload(
 
 
 def _resolve_conda_root(explicit: str | Path | None) -> Path | None:
-    root = explicit or os.environ.get("TSPI_CONDA_ROOT")
+    root = explicit or os.environ.get("RESEARCH_AGENT_CONDA_ROOT")
     if not root:
         return None
     return Path(root).expanduser().resolve()
@@ -560,7 +560,7 @@ def _resolve_conda(explicit: str | None, conda_root: Path | None) -> str | None:
     candidates = [
         explicit,
         *_conda_root_candidates(conda_root),
-        os.environ.get("TSPI_CONDA_EXE"),
+        os.environ.get("RESEARCH_AGENT_CONDA_EXE"),
         *_conda_root_candidates(_resolve_conda_root(None) if conda_root is None else None),
         shutil.which("mamba"),
         shutil.which("conda"),

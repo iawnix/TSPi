@@ -6,7 +6,7 @@ import sys
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS = ROOT/'extensions/chemical/skills/chemical-input/scripts'
+SCRIPTS = ROOT/'domains/chemical/skills/chemical-input/scripts'
 sys.path.insert(0, str(SCRIPTS))
 spec = importlib.util.spec_from_file_location('chemical_input_helper', SCRIPTS/'prepare.py')
 helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
@@ -49,7 +49,7 @@ def test_opsin_configuration_calls_real_resolver_implementation(tmp_path, monkey
     import name_resolution
     config = tmp_path/'name-resolver.toml'
     config.write_text('default_resolver="opsin"\n[backends.opsin]\nenabled=true\ncache=false\n')
-    monkeypatch.setenv('TSPI_NAME_RESOLVER_CONFIG', str(config))
+    monkeypatch.setenv('RESEARCH_AGENT_NAME_RESOLVER_CONFIG', str(config))
     calls = []
     def reply(url, **kwargs):
         calls.append(url)

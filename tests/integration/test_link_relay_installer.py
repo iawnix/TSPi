@@ -36,7 +36,7 @@ def test_link_relay_public_url_rejects_non_origins(value: str) -> None:
         installer.validate_public_url(value)
 
 
-def test_link_relay_unit_is_independent_from_tspi_host(tmp_path: Path) -> None:
+def test_link_relay_unit_is_independent_from_research_agent_host(tmp_path: Path) -> None:
     args = SimpleNamespace(
         service_scope="system",
         public_url="https://relay.example.test",
@@ -45,15 +45,15 @@ def test_link_relay_unit_is_independent_from_tspi_host(tmp_path: Path) -> None:
     )
     unit = installer.systemd_unit(
         args,
-        tmp_path / "current" / "service",
+        tmp_path / "current" / "services/relay",
         tmp_path / "state",
         None,
         "/usr/bin/node",
     )
 
-    assert "Description=TSPi Link Relay" in unit
-    assert "tspi-link-relay.service" not in unit
-    assert "ts-app-server-tspi.service" not in unit
+    assert "Description=ResearchAgent Link Relay" in unit
+    assert "research-agent-relay.service" not in unit
+    assert "ts-app-server-research-agent.service" not in unit
     assert '--public-url "https://relay.example.test"' in unit
     assert "WantedBy=multi-user.target" in unit
 
@@ -67,7 +67,7 @@ def test_link_relay_unit_escapes_path_directives_for_systemd(tmp_path: Path) -> 
     )
     unit = installer.systemd_unit(
         args,
-        tmp_path / "relay install" / "current" / "service",
+        tmp_path / "relay install" / "current" / "services/relay",
         tmp_path / "relay state",
         None,
         "/usr/bin/node",
@@ -75,14 +75,14 @@ def test_link_relay_unit_escapes_path_directives_for_systemd(tmp_path: Path) -> 
 
     assert "WorkingDirectory=" in unit
     assert "WorkingDirectory=\"" not in unit
-    assert "relay\\x20install/current/service" in unit
+    assert "relay\\x20install/current/services/relay" in unit
     assert "ReadWritePaths=" in unit
     assert "ReadWritePaths=\"" not in unit
 
 
 def test_link_relay_uninstaller_removes_code_and_can_purge_state(tmp_path: Path) -> None:
     install_root = tmp_path / "relay"
-    releases = install_root / "releases" / "commit" / "service"
+    releases = install_root / "releases" / "commit" / "services/relay"
     releases.mkdir(parents=True)
     (install_root / "current").symlink_to("releases/commit")
     state = tmp_path / "state"
@@ -114,9 +114,9 @@ def test_link_relay_uninstaller_removes_unit_when_code_root_is_missing(tmp_path:
     state = tmp_path / "state"
     unit_dir = tmp_path / "systemd-user"
     unit_dir.mkdir(parents=True)
-    unit = unit_dir / "tspi-link-relay.service"
+    unit = unit_dir / "research-agent-relay.service"
     unit.write_text(
-        """[Service]\nDescription=TSPi Link Relay\nWorkingDirectory=%s\n""" % (install_root / "current" / "service"),
+        """[Service]\nDescription=ResearchAgent Link Relay\nWorkingDirectory=%s\n""" % (install_root / "current" / "services/relay"),
         encoding="utf-8",
     )
     monkeypatch.setattr(uninstaller, "service_directory", lambda _scope: unit_dir)
@@ -149,14 +149,14 @@ def test_link_relay_uninstaller_removes_unit_when_code_root_is_missing(tmp_path:
 
 def test_package_uninstaller_recognizes_installation_owned_relay_unit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     home = tmp_path / "home"
-    root = home / "ResearchAgent"
+    root = home / "research-agent"
     unit_dir = home / ".config/systemd/user"
     unit_dir.mkdir(parents=True)
-    unit = unit_dir / "tspi-link-relay.service"
+    unit = unit_dir / "research-agent-relay.service"
     unit.write_text(
-        """[Service]\nDescription=TSPi Link Relay\nWorkingDirectory=%s\n""" % (root / "runtimes/link-relay/current/service"),
+        """[Service]\nDescription=ResearchAgent Link Relay\nWorkingDirectory=%s\n""" % (root / "runtimes/link-relay/current/services/relay"),
         encoding="utf-8",
     )
     monkeypatch.setattr(package_uninstaller.Path, "home", classmethod(lambda _cls: home))
 
-    assert package_uninstaller.service_belongs_to_root("tspi-link-relay.service", root, "user")
+    assert package_uninstaller.service_belongs_to_root("research-agent-relay.service", root, "user")

@@ -2,7 +2,7 @@
 
 [English](TERMINAL.md) | [简体中文](TERMINAL.zh-CN.md)
 
-`ResearchAgent --workspace <name>` 是用户侧统一入口，启动 Pi 官方的远程 `ExperimentalClientTui`，不会替换
+`research-agent --workspace <name>` 是用户侧统一入口，启动 Pi 官方的远程 `ExperimentalClientTui`，不会替换
 Pi 的 editor、transcript 渲染或输入循环。它与普通 Pi 的 InteractiveMode 是两套界面，
 命令和扩展能力以实验性远程客户端为准。选中的 workspace
 绑定到安装级 Pi Harness SQLite durable 会话。
@@ -10,11 +10,11 @@ Pi 的 editor、transcript 渲染或输入循环。它与普通 Pi 的 Interacti
 新工作区可以在入口处显式绑定不可变模式：
 
 ```bash
-./ResearchAgent --workspace quick-task --mode light
-./ResearchAgent --workspace reaction-a --mode research
+./research-agent --workspace quick-task --mode light
+./research-agent --workspace reaction-a --mode research
 ```
 
-`light` 创建最小工作区；`research` 创建 Research State 状态，并在终端会话启动前完成
+`light` 创建最小工作区；`research` 创建 Research Memory 状态，并在终端会话启动前完成
 Host admission。已有框架工作区省略 `--mode` 时使用 manifest 中记录的模式，工作区创建后
 不能在两种模式之间转换。
 
@@ -22,7 +22,7 @@ Host admission。已有框架工作区省略 `--mode` 时使用 manifest 中记�
 
 ```text
 TS Phone/Web ── Link/HTTP ──┐
-Pi 原生 TUI ─ Unix/SSH ─────┼─> TSPi Agent Server / Host API
+Pi 原生 TUI ─ Unix/SSH ─────┼─> ResearchAgent Agent Server / Host API
 Monitor ─ Host RPC ─────────┘       ├─ Root Agent Session
                                     └─ Harness / Pi App Server / SessionWorker
 ```
@@ -33,16 +33,16 @@ transcript 和 SQLite durable lane。Pi 原生 TUI、Phone、Monitor 都是同�
 不会启动第二个 agent loop。
 
 Host client 的 RPC transport 可以是本机 Unix socket，也可以通过 SSH 启动远端
-`tspi-host-proxy`，把同一份 `tspi-host/2` NDJSON 通过 SSH stdin/stdout 转发到远端私有
+`research-agent-host-proxy`，把同一份 `research-agent-host/2` NDJSON 通过 SSH stdin/stdout 转发到远端私有
 socket。SSH transport 只改变连接路径，不改变 workspace、session 或 Agent lane 的拥有者。
 
 连接远端安装时，需要同时提供远端 Host socket 和 proxy 路径：
 
 ```bash
-./ResearchAgent --workspace reaction-a \
+./research-agent --workspace reaction-a \
   --remote-host pi.example \
-  --remote-host-socket /run/user/1000/tspi/host.sock \
-  --remote-proxy-path /opt/tspi/apps/app-server/tspi-host-proxy.mjs \
+  --remote-host-socket /run/user/1000/research-agent/host.sock \
+  --remote-proxy-path /opt/research-agent/apps/agent/transport/ssh.mjs \
   --ssh-config ~/.ssh/config
 ```
 
@@ -52,8 +52,8 @@ Unix endpoint。workspace 和 session 仍由远端 Host 持有；本地目录只
 ## 打开工作区
 
 ```bash
-./ResearchAgent --workspace reaction-a
-./ResearchAgent --workspace reaction-a -c
+./research-agent --workspace reaction-a
+./research-agent --workspace reaction-a -c
 ```
 
 启动器先确保安装级 Host 在线，再请求 session descriptor，直接把 Pi 官方 native client
@@ -64,8 +64,8 @@ Unix endpoint。workspace 和 session 仍由远端 Host 持有；本地目录只
 Host 是安装级服务，会扫描 workspace root 下的直接子工作区。通常使用：
 
 ```bash
-systemctl --user start ts-app-server-tspi.service
-systemctl --user status ts-app-server-tspi.service
+systemctl --user start ts-app-server-research-agent.service
+systemctl --user status ts-app-server-research-agent.service
 ```
 
 system service 去掉 `--user`。Host 私有 socket 位于配置的 runtime 目录。
@@ -73,14 +73,14 @@ system service 去掉 `--user`。Host 私有 socket 位于配置的 runtime 目�
 ## 会话和操作
 
 远程 `ExperimentalClientTui` 提供 `/resume`、`/model`、`/thinking`、`/compact`、
-`/reload` 以及 Native TSPi 命令。`/resume` 只能切换当前 workspace 中的 SQLite durable
+`/reload` 以及 Native ResearchAgent 命令。`/resume` 只能切换当前 workspace 中的 SQLite durable
 session，不会跨 workspace。切换会释放当前 TUI 连接，再附着选中的会话；后台任务继续运行。
 独立 Pi 的其它会话命令在这个远程客户端中不可用。
 
-TSPi 提供以下客户端命令，名称、参数和补全由同一命令目录定义：
+ResearchAgent 提供以下客户端命令，名称、参数和补全由同一命令目录定义：
 
-- `/research [summary|context|liveness|map|decisions|storage|detail <kind> <id>|locate <query>|validate|operations]`：由当前 worker 执行只读查询，包括 SSH 连接的远端工作区。长结果通过 Pi 原生选择器分页查看。
-- `/sys-prompt`：直接读取当前 worker 的 TSPi system prompt manifest 和来源，不调用模型。
+- `/research`：由当前 worker 执行只读查询，查看 Memory 上下文和记录，包括 SSH 连接的远端工作区；具体选项以命令帮助为准。长结果通过 Pi 原生选择器分页查看。
+- `/sys-prompt`：直接读取当前 worker 的 ResearchAgent system prompt manifest 和来源，不调用模型。
 - `/resume [session-id]`：在当前工作区选择或指定会话；取消选择保持当前会话。
 - `/quit`：断开当前终端，保留后台 worker 和任务。
 
@@ -102,11 +102,11 @@ prompt 通过 Host `input/send` 进入同一个 lane，并使用持久回执和�
 
 ## Phone、浏览器与 Monitor
 
-Phone 客户端必须通过 TSPi Link 使用版本化 `tspi-host/2` NDJSON 方法。Relay 只转发不透明
-帧，不拥有 session 或 ResearchMap。可选 browser gateway 只附着一个已经存在的会话，
+Phone 客户端必须通过 ResearchAgent Link 使用版本化 `research-agent-host/2` NDJSON 方法。Relay 只转发不透明
+帧，不拥有 session 或 Research Memory。可选 browser gateway 只附着一个已经存在的会话，
 通过 loopback HTTP/SSE 提供 snapshot 和事件，不启动 Pi 或 worker。
 
-Host 握手仅接受 `protocol: "tspi-host/2"`，v1 客户端必须更新。能力列表与调用方法统一用斜杠。
+Host 握手仅接受 `protocol: "research-agent-host/2"`，v1 客户端必须更新。能力列表与调用方法统一用斜杠。
 会话读取和附着只接受 `after_cursor: {epoch, sequence}`；Host epoch 改变时返回当前快照，
 不重放旧 epoch 的事件。会话创建/恢复及 `model/select` 统一使用 `model: {provider, id}`。
 会话列表只返回 `{sessions: [...]}`，不携带旧 backend 或格式标记。
@@ -114,7 +114,7 @@ Host 握手仅接受 `protocol: "tspi-host/2"`，v1 客户端必须更新。能�
 Host 为 workspace root 启动一个 Monitor worker。Monitor 轮询持久化 Compute 状态，在
 workspace 内写入 event/delivery 回执；wake 与用户通知分别确认，带租约和退避。wake
 只是“已接受的输入”，不代表 agent 已完成；Root Agent 仍须重新读取状态并检查计算。
-Monitor 不会自动 finalize，也不会修改 ResearchMap。
+Monitor 通过 next_run 投递认证执行事件，不发布科学结论或修改 Node 内容。
 
 `workspace_manifest.json` 中的规范 `workspace_id` 同时绑定科学状态与 Host
 路由；不存在独立的科学身份或直接目录 alias 映射。

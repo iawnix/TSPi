@@ -1,0 +1,26 @@
+{
+  "schema_version": "research-memory-response/1",
+  "workspace": {
+    "workspace_id": "example",
+    "label": "Example research"
+  },
+  "snapshot": {
+    "schema_version": "research-snapshot/2",
+    "sequence": 0,
+    "tasks": [],
+    "running_jobs": [],
+    "uncollected_jobs": [],
+    "new_records": [],
+    "bounds": {
+      "omitted": {}
+    },
+    "read_more": {
+      "tasks": {
+        "tool": "research_search",
+        "origin": "user"
+      }
+    },
+    "snapshot_id": "snapshot_example",
+    "nodes": []
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "product": "research-agent",
+  "command": "research-agent",
+  "npm": "@iawnix/research-agent",
+  "python_distribution": "research-agent",
+  "python_namespace": "research_agent",
+  "host_protocol": "research-agent-host/2",
+  "link_protocol": "research-agent-link.v1",
+  "host_token_prefix": "rah_",
+  "device_token_prefix": "rad_",
+  "environment_prefix": "RESEARCH_AGENT_",
+  "host_service": "research-agent.service",
+  "relay_service": "research-agent-relay.service"
+}

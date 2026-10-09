@@ -21,7 +21,7 @@ TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,100}$")
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ts-web")
-    parser.add_argument("--provider", help="Path to the TSPi provider command.")
+    parser.add_argument("--provider", help="Path to the ResearchAgent provider command.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     register = sub.add_parser("register")
@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Allow binding a non-loopback address (authentication remains the operator's responsibility).",
     )
     auth = serve_cmd.add_mutually_exclusive_group()
-    auth.add_argument("--auth-token", default=os.environ.get("TSPI_WEB_AUTH_TOKEN"))
+    auth.add_argument("--auth-token", default=os.environ.get("RESEARCH_AGENT_WEB_AUTH_TOKEN"))
     auth.add_argument("--auth-token-file")
     serve_cmd.add_argument("--port", type=int, default=8766)
     serve_cmd.add_argument("--source-root", action="append", default=[])
@@ -74,11 +74,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("more labels than source roots")
     if not _is_loopback(args.host) and not args.allow_remote:
         parser.error("non-loopback --host requires --allow-remote")
-    if args.auth_token_file and os.environ.get("TSPI_WEB_AUTH_TOKEN"):
-        parser.error("--auth-token-file cannot be combined with TSPI_WEB_AUTH_TOKEN")
+    if args.auth_token_file and os.environ.get("RESEARCH_AGENT_WEB_AUTH_TOKEN"):
+        parser.error("--auth-token-file cannot be combined with RESEARCH_AGENT_WEB_AUTH_TOKEN")
     auth_token = _read_auth_token_file(args.auth_token_file) if args.auth_token_file else args.auth_token
     if not _is_loopback(args.host) and not auth_token:
-        parser.error("non-loopback --host requires --auth-token-file, --auth-token, or TSPI_WEB_AUTH_TOKEN")
+        parser.error("non-loopback --host requires --auth-token-file, --auth-token, or RESEARCH_AGENT_WEB_AUTH_TOKEN")
     if args.source_root:
         client.register(args.source_root, args.label)
     restart = serve(
@@ -97,10 +97,10 @@ def main(argv: list[str] | None = None) -> int:
 def _provider(value: str | None) -> str:
     if value:
         return value
-    configured = os.environ.get("TSPI_WEB_PROVIDER")
+    configured = os.environ.get("RESEARCH_AGENT_WEB_PROVIDER")
     if configured:
         return configured
-    raise SystemExit("ts-web requires --provider or TSPI_WEB_PROVIDER")
+    raise SystemExit("ts-web requires --provider or RESEARCH_AGENT_WEB_PROVIDER")
 
 
 def _entrypoint() -> Path:

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly REPO_URL="${TSPI_INSTALL_REPO:-https://github.com/iawnix/TSPi.git}"
-readonly REPO_REF="${TSPI_INSTALL_REF:-main}"
+readonly REPO_URL="${RESEARCH_AGENT_INSTALL_REPO:-https://github.com/iawnix/TSPi.git}"
+readonly REPO_REF="${RESEARCH_AGENT_INSTALL_REF:-main}"
 SCRIPT_DIR=""
 if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
   SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -17,7 +17,7 @@ else
 fi
 
 fail() {
-  printf '%bTSPi uninstaller failed:%b %s\n' "${BOOTSTRAP_DANGER}" "${BOOTSTRAP_RESET}" "$1" >&2
+  printf '%bResearchAgent uninstaller failed:%b %s\n' "${BOOTSTRAP_DANGER}" "${BOOTSTRAP_RESET}" "$1" >&2
   exit "${2:-1}"
 }
 
@@ -31,10 +31,10 @@ if [[ -f "${SCRIPT_DIR}/runtimes/maintenance/uninstall.py" ]]; then
 fi
 command -v git >/dev/null 2>&1 || fail "Git is required for recovery mode." 127
 
-printf '\n%bTSPi Uninstaller%b\n' "${BOOTSTRAP_ACCENT}" "${BOOTSTRAP_RESET}" >&2
+printf '\n%bResearchAgent Uninstaller%b\n' "${BOOTSTRAP_ACCENT}" "${BOOTSTRAP_RESET}" >&2
 printf 'Preparing source %s (%s)...\n' "${REPO_URL}" "${REPO_REF}" >&2
 
-readonly TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/tspi-uninstaller.XXXXXX")"
+readonly TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/research-agent-uninstaller.XXXXXX")"
 readonly BOOTSTRAP_LOG="${TEMP_ROOT}/bootstrap.log"
 BOOTSTRAP_SPINNER_PID=""
 BOOTSTRAP_ANIMATIONS=true
@@ -133,11 +133,11 @@ git_fetch_revision() {
   return 1
 }
 
-run_bootstrap_step "repository access" git_clone_source "${TEMP_ROOT}/TSPi"
-run_bootstrap_step "revision ${REPO_REF}" git_fetch_revision "${TEMP_ROOT}/TSPi"
-run_bootstrap_step "source checkout" git -C "${TEMP_ROOT}/TSPi" checkout --quiet --detach FETCH_HEAD
+run_bootstrap_step "repository access" git_clone_source "${TEMP_ROOT}/ResearchAgent"
+run_bootstrap_step "revision ${REPO_REF}" git_fetch_revision "${TEMP_ROOT}/ResearchAgent"
+run_bootstrap_step "source checkout" git -C "${TEMP_ROOT}/ResearchAgent" checkout --quiet --detach FETCH_HEAD
 
-uninstaller=(python3 "${TEMP_ROOT}/TSPi/scripts/uninstall.py" "$@")
+uninstaller=(python3 "${TEMP_ROOT}/ResearchAgent/scripts/uninstall.py" "$@")
 if [[ -t 0 ]]; then
   "${uninstaller[@]}"
 elif { true </dev/tty; } 2>/dev/null; then

@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-import research_state.transactions as transactions
-from research_state.transactions import TransactionCoordinator, TransactionError, _atomic_json, _digest
+import research_agent.foundation.transactions as transactions
+from research_agent.foundation.transactions import TransactionCoordinator, TransactionError, _atomic_json, _digest
 
 
 def test_commit_files_is_idempotent_and_replays_same_result(tmp_path: Path) -> None:

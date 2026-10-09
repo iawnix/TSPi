@@ -1,0 +1,11 @@
+{
+  "name": "@iawnix/research-agent-link",
+  "version": "0.18.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./protocol.mjs",
+    "./protocol": "./protocol.mjs",
+    "./backpressure": "./backpressure.mjs"
+  }
+}

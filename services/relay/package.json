@@ -1,0 +1,17 @@
+{
+  "name": "@iawnix/research-agent-relay",
+  "version": "0.18.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "Authenticated WebSocket relay for ResearchAgent Hosts and TS Phone devices.",
+  "bin": {
+    "research-agent-relay": "./cli.mjs"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "dependencies": {
+    "ws": "8.21.2"
+  }
+}

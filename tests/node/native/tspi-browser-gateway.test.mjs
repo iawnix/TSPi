@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';
 import { request } from 'node:http';
 import test from 'node:test';
-import { createBrowserGateway } from '../../../apps/app-server/tspi-browser-gateway.mjs';
+import { createBrowserGateway } from '../../../apps/agent/transport/browser.mjs';
 
 async function fixture(t) {
   const peer = new EventEmitter();
