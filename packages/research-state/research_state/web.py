@@ -7,6 +7,8 @@ research model or renames domain objects for a client.
 
 from __future__ import annotations
 
+from tspi_foundation.protocol import WORKSPACE_ID_PATTERN
+
 import copy
 import json
 import posixpath
@@ -20,22 +22,14 @@ from tspi_foundation.path_safety import has_symlink_component, lexical_path, pat
 from .workspace import WorkspaceModeError, validate_workspace_manifest
 from .projection import research_map_document
 
-from .registry import (
-    ensure_state_dir,
-    find_workspace,
-    list_workspaces,
-    reconcile_workspace_registry,
-    register_workspaces,
-    remove_workspace,
-    workspace_discovery_roots,
-)
+from .workspace_catalog import catalog_for_web, WorkspaceCatalogError
+
 
 
 PROVIDER_PROTOCOL = "research-map-provider/1"
 ERROR_SCHEMA = "research-map-error/1"
 WORKSPACE_LIST_SCHEMA = "research-workspace-list/1"
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,160}$")
-WORKSPACE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 RESEARCH_CONTEXT_COLLECTIONS = (
     "phases", "claims", "nodes", "findings", "gates", "claim_relations",
     "attempts", "artifacts", "evidence_links", "lifecycle_actions",
@@ -58,14 +52,12 @@ def handle_request(
     workspace_roots: Sequence[str | Path] | None = None,
 ) -> Any:
     value = _request_object(request)
-    state = ensure_state_dir(state_dir)
-    roots = workspace_discovery_roots(state, workspace_roots)
-    reconcile_workspace_registry(state, roots)
+    catalog = catalog_for_web(state_dir, workspace_roots)
     operation = value["operation"]
     if operation == "catalog":
-        return _catalog(state)
+        return _catalog(catalog)
     if operation == "remove":
-        return remove_workspace(state, _safe_id(value.get("workspace_id"), "workspace"))
+        return catalog.remove(_safe_id(value.get("workspace_id"), "workspace"))
     if operation != "route":
         raise ResearchWebError(f"unsupported provider operation: {operation!r}")
     workspace_id = _safe_id(value.get("workspace_id"), "workspace")
@@ -73,9 +65,10 @@ def handle_request(
     if not isinstance(route, str) or route.startswith("/") or ".." in route.split("/"):
         raise ResearchWebError("invalid workspace route")
     query = _query_object(value.get("query"))
-    row = find_workspace(state, workspace_id)
-    if row is None:
-        raise ResearchWebError(f"unknown workspace id: {workspace_id}")
+    try:
+        row = catalog.resolve(workspace_id, attach=True)
+    except WorkspaceCatalogError as exc:
+        raise ResearchWebError(f"unknown or invalid workspace id: {workspace_id}") from exc
     source_root = row.get("source_root")
     if not isinstance(source_root, str) or not source_root:
         raise ResearchWebError(f"workspace {workspace_id} has no registered location")
@@ -88,8 +81,9 @@ def register_sources(
     state_dir: str | Path,
     source_roots: Sequence[str | Path],
     labels: Sequence[str] | None = None,
+    *, workspace_roots: Sequence[str | Path] | None = None,
 ) -> list[dict[str, str]]:
-    return register_workspaces(list(source_roots), state_dir, list(labels or []))
+    return catalog_for_web(state_dir, workspace_roots).register(list(source_roots), list(labels or []))
 
 
 def provider_success_payload(request_id: str, payload: Any) -> dict[str, Any]:
@@ -146,8 +140,11 @@ def _query_object(value: object) -> dict[str, str]:
     return result
 
 
-def _catalog(state_dir: Path) -> dict[str, Any]:
-    summaries = [_summary(row) for row in list_workspaces(state_dir)]
+def _catalog(catalog) -> dict[str, Any]:
+    # Listing never parses ResearchMap; the route response supplies live progress.
+    summaries = [{"workspace_id": row["workspace_id"], "label": row["label"],
+                  "available": True, "valid": None, "revision": None, "progress": {}}
+                 for row in catalog.list()]
     available = [row for row in summaries if row["available"]]
     return {
         "schema_version": WORKSPACE_LIST_SCHEMA,

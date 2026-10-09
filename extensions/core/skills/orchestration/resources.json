@@ -1,0 +1,24 @@
+{
+  "schema_version": "skill-resources/1",
+  "base": "extension",
+  "files": {
+    "skills/orchestration/SKILL.md": "sha256:7f4026bd1ccdf9619fa19c8d0c91e384ee90fdd99f7bc746135931370d2560ab",
+    "skills/orchestration/SKILL.zh-CN.md": "sha256:555e96c6d0f03007f5e089c7dcefba4adbf4e2b54c39eea056c3de747df1cb17",
+    "skills/orchestration/references/agent_decision_protocol.md": "sha256:12a784b0890ebbb665bfdfe28e9bd0a45fd070f2bb728f436a9d3691ac673fef",
+    "skills/orchestration/references/agent_decision_protocol.zh-CN.md": "sha256:94b92b55c274f57b95f4a194aea3fec9fbe7a78c634f830ff349c9448627b17f",
+    "skills/orchestration/references/artifact_tools.md": "sha256:1eef571b5bd41f1dec41da6363ac51ebcc141c67b33d4a41956c2f9a2d314efe",
+    "skills/orchestration/references/artifact_tools.zh-CN.md": "sha256:91230037ff0dad2c2837acaea35d9df08303ecc5130618b35a576b6f3de807b7",
+    "skills/orchestration/references/compute_tools.md": "sha256:5b9960ff85aa0b292dfdabe8a8195ccd3e6f9ec55d9764372e4c6429b0f69223",
+    "skills/orchestration/references/compute_tools.zh-CN.md": "sha256:28511350a11c41a6ffc502407da7c23984c27eb95ab80edcc75ca9735ba6ec1f",
+    "skills/orchestration/references/package_sources.md": "sha256:20f19ed50a0f5c73c8322dc764b2d8dd2408c25269b41ad116caae922c163082",
+    "skills/orchestration/references/package_sources.zh-CN.md": "sha256:9a43f8fd7abd7edefed405708043b731fe8b5ebe952d03681950e6dc1239c55f",
+    "skills/orchestration/references/pi_agent_adapter.md": "sha256:790c3d104e97fefe3f350da39f76bec2c5c7b9a420d720b12cf474447e0d68c0",
+    "skills/orchestration/references/pi_agent_adapter.zh-CN.md": "sha256:bff4344b352be26924adef2221e29f292934aff0c0e7aea4a84e9906bd732976",
+    "skills/orchestration/references/program_runtime_failures.md": "sha256:d0836811fabd96f3dc16ea79582233a20d697e4b5b10b18565db3760b5ccd7a1",
+    "skills/orchestration/references/program_runtime_failures.zh-CN.md": "sha256:b3f39ae574fe8ead61b904415a22877fdae284f708f6ca76b1cb5b58a7e06565",
+    "skills/orchestration/references/public_contract.md": "sha256:680ee9a93bf3929cfde338b2c96cc7e0aacc97de87ebcad1888ea60767445a44",
+    "skills/orchestration/references/public_contract.zh-CN.md": "sha256:2df9de39171778cdcdf96ef7ee79dfaf49a20cd4c3d97dba20d88f0b79288a04",
+    "skills/orchestration/references/runtime_boundaries.md": "sha256:db3bf6f1d0ac51307768855c213e738801e526c2c1b7b559ade5695a8ac097c2",
+    "skills/orchestration/references/runtime_boundaries.zh-CN.md": "sha256:702de21177014501d3ca04cda4aa21b5d46f515e215c1339d3b9c3ffea220c40"
+  }
+}

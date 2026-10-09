@@ -26,6 +26,7 @@ def main(argv: list[str] | None = None) -> int:
 
     register = sub.add_parser("register")
     register.add_argument("--state-dir", required=True)
+    register.add_argument("--workspace-root", action="append", default=None)
     register.add_argument("--source-root", action="append", required=True)
     register.add_argument("--label", action="append", default=[])
 
@@ -48,9 +49,11 @@ def main(argv: list[str] | None = None) -> int:
 
     list_cmd = sub.add_parser("list")
     list_cmd.add_argument("--state-dir", required=True)
+    list_cmd.add_argument("--workspace-root", action="append", default=None)
 
     remove_cmd = sub.add_parser("remove")
     remove_cmd.add_argument("--state-dir", required=True)
+    remove_cmd.add_argument("--workspace-root", action="append", default=None)
     remove_cmd.add_argument("--workspace-id", required=True)
 
     args = parser.parse_args(argv)
@@ -97,14 +100,6 @@ def _provider(value: str | None) -> str:
     configured = os.environ.get("TSPI_WEB_PROVIDER")
     if configured:
         return configured
-    component_root = Path(__file__).resolve().parents[1]
-    candidates = (
-        component_root.parent / "agent" / "apps" / "agent-cli" / "research_web_bridge.py",
-        component_root.parent.parent / "apps" / "agent-cli" / "research_web_bridge.py",
-    )
-    for candidate in candidates:
-        if candidate.is_file():
-            return str(candidate)
     raise SystemExit("ts-web requires --provider or TSPI_WEB_PROVIDER")
 
 

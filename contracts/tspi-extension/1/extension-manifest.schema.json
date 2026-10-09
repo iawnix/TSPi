@@ -28,12 +28,6 @@
         "$ref": "#/$defs/skill"
       }
     },
-    "providers": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/provider"
-      }
-    },
     "server": {
       "$ref": "#/$defs/server"
     },
@@ -46,7 +40,8 @@
           "id",
           "version",
           "entry",
-          "sha256"
+          "sha256",
+          "backend"
         ],
         "properties": {
           "id": {
@@ -127,6 +122,13 @@
                 }
               }
             }
+          },
+          "backend": {
+            "type": "string",
+            "minLength": 1
+          },
+          "requirements": {
+            "$ref": "#/$defs/execution_requirements"
           }
         }
       }
@@ -225,6 +227,12 @@
           }
         }
       }
+    },
+    "executors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/executor"
+      }
     }
   },
   "$defs": {
@@ -257,74 +265,6 @@
           "$ref": "#/$defs/sha256"
         }
       }
-    },
-    "provider": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "version",
-        "kind"
-      ],
-      "properties": {
-        "id": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9]*(?:[-._][a-z0-9]+)*$"
-        },
-        "version": {
-          "type": "string",
-          "pattern": "^[0-9]+(?:\\.[0-9]+){0,2}(?:[-+][0-9A-Za-z.-]+)?$"
-        },
-        "kind": {
-          "enum": [
-            "compute",
-            "analysis",
-            "harness",
-            "notification",
-            "render",
-            "report"
-          ]
-        },
-        "descriptor": {
-          "$ref": "#/$defs/relative_path"
-        },
-        "descriptor_sha256": {
-          "$ref": "#/$defs/sha256"
-        },
-        "entry": {
-          "$ref": "#/$defs/relative_path"
-        },
-        "sha256": {
-          "$ref": "#/$defs/sha256"
-        }
-      },
-      "anyOf": [
-        {
-          "required": [
-            "descriptor"
-          ]
-        },
-        {
-          "required": [
-            "entry",
-            "sha256"
-          ]
-        }
-      ],
-      "allOf": [
-        {
-          "if": {
-            "required": [
-              "entry"
-            ]
-          },
-          "then": {
-            "required": [
-              "sha256"
-            ]
-          }
-        }
-      ]
     },
     "server": {
       "type": "object",
@@ -362,6 +302,157 @@
               "model.delegate",
               "notify.send"
             ]
+          }
+        }
+      }
+    },
+    "executor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "skill",
+        "backend",
+        "runtime",
+        "argv",
+        "inputs",
+        "outputs"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "skill": {
+          "type": "string",
+          "minLength": 1
+        },
+        "backend": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runtime": {
+          "enum": [
+            "python",
+            "native"
+          ]
+        },
+        "entry": {
+          "$ref": "#/$defs/relative_path"
+        },
+        "cli": {
+          "$ref": "#/$defs/relative_path"
+        },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "inputs": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/relative_path"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "required",
+              "min_bytes"
+            ],
+            "properties": {
+              "path": {
+                "$ref": "#/$defs/relative_path"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "min_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "media_type": {
+                "type": "string",
+                "minLength": 1
+              },
+              "recursive": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "requirements": {
+          "$ref": "#/$defs/execution_requirements"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "runtime": {
+                "const": "python"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "entry"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "entry"
+              ]
+            },
+            "properties": {
+              "requirements": {
+                "maxProperties": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "execution_requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "python": {
+          "type": "string",
+          "minLength": 1
+        },
+        "packages": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "imports": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)*$"
           }
         }
       }

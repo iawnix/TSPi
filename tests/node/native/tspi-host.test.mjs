@@ -5,13 +5,13 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { startTspiHost } from "../../../apps/app-server/tspi-host.mjs";
-import { connectHost } from "../../../apps/app-server/tspi-host-client.mjs";
+import { connectHost, HOST_PROTOCOL } from "../../../apps/app-server/tspi-host-client.mjs";
 import { create_workspace_initializer } from "../../../packages/agent-core/workspace.mjs";
 
 const TARGET = { workspace_id: "project-a", session_id: "session-a" };
 
 function snapshot() {
-  return { messages: [], online: true, can_prompt: true, read_only: false, is_streaming: false, turn_id: null, receipts: [] };
+  return { messages: [], online: true, can_prompt: true, is_streaming: false, turn_id: null, receipts: [] };
 }
 
 function createBackend(workspaceRoot) {
@@ -22,12 +22,7 @@ function createBackend(workspaceRoot) {
     workspace_id: workspaceId,
     session_id: sessionId,
     cwd: join(workspaceRoot, workspaceId),
-    session_file: null,
-    version: 4,
-    format: "pi-harness",
-    runtime_kind: "pi-harness",
     online: true,
-    read_only: false,
     is_streaming: false,
     turn_id: null,
     created_at: "2026-09-25T00:00:00.000Z",
@@ -49,16 +44,11 @@ function createBackend(workspaceRoot) {
     eventHandler({ workspace_id: workspaceId, session_id: sessionId, session: value.session, snapshot: value.snapshot, event });
   };
   return {
-    kind: "pi-harness",
     setEventHandler(handler) { eventHandler = handler; },
     async listSessions(workspaceId) { return [...sessions.values()].filter((value) => value.session.workspace_id === workspaceId).map((value) => value.session); },
     async readSession(workspaceId, sessionId) {
       const value = ensure(workspaceId, sessionId);
       return { session: value.session, snapshot: value.snapshot, cursor: { sequence: value.sequence } };
-    },
-    async attach(workspaceId, sessionId, { afterSequence = 0 } = {}) {
-      const value = ensure(workspaceId, sessionId);
-      return { session: value.session, snapshot: value.snapshot, cursor: { sequence: value.sequence }, events: value.history.filter((item) => item.sequence > afterSequence) };
     },
     async createSession({ workspace_id: workspaceId, session_id: sessionId }) {
       const value = ensure(workspaceId, sessionId || "session-generated");
@@ -85,7 +75,7 @@ function createBackend(workspaceRoot) {
   };
 }
 
-async function fixture(t, monitorPollMs = 0) {
+async function fixture(t, monitorPollMs = 0, options = {}) {
   const root = await mkdtemp(join(tmpdir(), "tspi-native-host-"));
   const workspaceRoot = join(root, "workspaces");
   const workspace = join(workspaceRoot, "project-a");
@@ -93,10 +83,10 @@ async function fixture(t, monitorPollMs = 0) {
   await initializer.initialize_workspace({ workspace_root: workspace, workspace_id: "project-a", workspace_mode: "research" });
   await initializer.admit_workspace(workspace);
   const backend = createBackend(workspaceRoot);
-  const host = await startTspiHost({ socketPath: join(root, "host.sock"), workspaceRoot, stateRoot: join(root, "state"), sessionBackend: backend, monitorPollMs });
+  const host = await startTspiHost({ socketPath: join(root, "host.sock"), workspaceRoot, stateRoot: join(root, "state"), sessionBackend: backend, monitorPollMs, ...options });
   t.after(async () => { await host.close(); await rm(root, { recursive: true, force: true }); });
   const client = await connectHost({ socketPath: host.socketPath });
-  return { host, client, backend, workspaceRoot };
+  return { host, client, backend, workspaceRoot, root };
 }
 
 test("Host requires the Native Pi Harness backend", async () => {
@@ -106,12 +96,36 @@ test("Host requires the Native Pi Harness backend", async () => {
   );
 });
 
+test("public input cannot impersonate an internal producer", async t => {
+  const { client, backend } = await fixture(t, 0, { monitorToken: 'private-monitor-token' });
+  t.after(() => client.close());
+  const received = [];
+  backend.sendInput = async value => { received.push(value); return { accepted: true }; };
+  const input = { ...TARGET, request_id: 'request-public', client_message_id: 'message-public', text: 'hello' };
+  for (const source of ['monitor', 'state-continuation', 'job']) {
+    await assert.rejects(client.request('input/send', { ...input, source }), { code: 'invalid_input_source' });
+  }
+  for (const token of [undefined, 'wrong']) {
+    await assert.rejects(client.request('internal/monitor-wake', { ...input, token }), { code: 'internal_producer_required' });
+  }
+  await client.request('input/send', { ...input, source: 'phone' });
+  await client.request('internal/monitor-wake', { ...input, token: 'private-monitor-token', event_ids: ['event_' + 'a'.repeat(32)], request_id: 'request-internal', client_message_id: 'message-internal' });
+  assert.deepEqual(received.map(value => value.source), ['user', 'monitor']);
+  assert.equal(received.some(value => 'token' in value), false);
+  await assert.rejects(client.request('turn/interrupt', { ...TARGET, request_id: 'interrupt-without-target' }), { code: 'invalid_identifier' });
+});
+
 test("Native Host exposes only Harness session capabilities and rejects legacy bridge/import RPCs", async (t) => {
   const env = await fixture(t);
-  const hello = await env.client.request("initialize", {});
+  const hello = await env.client.request("initialize", { protocol: HOST_PROTOCOL });
   assert.equal(hello.capabilities.includes("session.import"), false);
-  await assert.rejects(env.client.request("bridge/hello", {}), { code: "bridge_not_used" });
-  await assert.rejects(env.client.request("bridge/event", {}), { code: "bridge_not_used" });
+  assert.ok(hello.capabilities.every(method => method.includes("/") && !method.includes(".")));
+  assert.ok(hello.capabilities.includes("session/create"));
+  await assert.rejects(env.client.request("initialize", {}), { code: "protocol_mismatch" });
+  await assert.rejects(env.client.request("initialize", { protocol: "tspi-host/1" }), { code: "protocol_mismatch" });
+  await assert.rejects(env.client.request("session.list", TARGET), { code: "method_not_found" });
+  await assert.rejects(env.client.request("bridge/hello", {}), { code: "method_not_found" });
+  await assert.rejects(env.client.request("bridge/event", {}), { code: "method_not_found" });
   await assert.rejects(env.client.request("session/import", {}), { code: "method_not_found" });
 });
 
@@ -160,9 +174,13 @@ test("Host client rejects a stale package release", async (t) => {
 
 test("Native Host routes session and input operations through the Harness backend", async (t) => {
   const env = await fixture(t);
-  await env.client.request("initialize", {});
+  await env.client.request("initialize", { protocol: HOST_PROTOCOL });
   const created = await env.client.request("session/create", { ...TARGET, request_id: "create-1" });
-  assert.equal(created.session.runtime_kind, "pi-harness");
+  assert.equal(created.session.online, true);
+  for (const field of ["session_file", "format", "version", "runtime_kind", "read_only"]) {
+    assert.equal(Object.hasOwn(created.session, field), false);
+  }
+  assert.equal(created.cursor.epoch, env.client.hello.epoch);
   const attached = await env.client.request("session/attach", TARGET);
   assert.equal(attached.session.session_id, TARGET.session_id);
   const input = await env.client.request("input/send", { ...TARGET, request_id: "input-1", client_message_id: "message-1", text: "continue" });
@@ -170,7 +188,8 @@ test("Native Host routes session and input operations through the Harness backen
   const read = await env.client.request("session/read", TARGET);
   assert.equal(read.snapshot.messages.at(-1).content, "continue");
   const duplicate = await env.client.request("input/send", { ...TARGET, request_id: "input-retry", client_message_id: "message-1", text: "continue" });
-  assert.equal(duplicate.duplicate, true);
+  assert.equal(duplicate.accepted, true);
+  assert.equal((await env.client.request("session/read", TARGET)).snapshot.messages.length, 2, "Host forwards retries to the authoritative backend");
   assert.equal(env.backend.closed, false);
 });
 
@@ -183,7 +202,7 @@ test("Native Host accepts a manifest-bound research workspace", async (t) => {
     workspace_mode: "research",
   });
   await create_workspace_initializer().admit_workspace(researchRoot);
-  await env.client.request("initialize", {});
+  await env.client.request("initialize", { protocol: HOST_PROTOCOL });
   const listed = await env.client.request("workspace/list", {});
   assert.ok(listed.workspaces.some((workspace) => workspace.workspace_id === "research-a"));
 });
@@ -225,7 +244,7 @@ test("Native Host workspace/create writes the canonical manifest protocol", asyn
   });
   t.after(async () => { await host.close(); await rm(root, { recursive: true, force: true }); });
   const client = await connectHost({ socketPath: host.socketPath });
-  await client.request("initialize", {});
+  await client.request("initialize", { protocol: HOST_PROTOCOL });
   const createdResearch = await client.request("workspace/create", {
     workspace_id: "created-research",
     workspace_mode: "research",
@@ -250,11 +269,14 @@ test("Host relays real Job Monitor events and rejects old or mismatched identiti
   const env = await fixture(t, 20);
   const root = join(env.workspaceRoot, "project-a");
   const { create_python_kernel_bridge } = await import("../../../packages/research-state-bridge/python_kernel_bridge.mjs");
-  const bridge = create_python_kernel_bridge({ workspace_root: root });
+  const jobConfig = join(root, "job.toml");
+  await writeFile(jobConfig, 'default_environment="local"\n[environments.local]\nkind="local"\n');
+  const executionEnv = { ...process.env, TS_JOB_CONFIG: jobConfig };
+  const bridge = create_python_kernel_bridge({ workspace_root: root, env: executionEnv });
   t.after(() => bridge.close());
   await bridge.apply_change({ principal: "root_agent", authority: "kernel_write", operations: [
     { type: "create_claim", id: "claim_monitor", statement: "Observe exit" },
-    { type: "create_node", id: "node_monitor", title: "Monitor", objective: "Observe exit", claim_ids: ["claim_monitor"], completion_exemption: "Synthetic monitor transport fixture" },
+    { type: "create_node", id: "node_monitor", title: "Monitor", objective: "Observe exit", claim_ids: ["claim_monitor"], },
     { type: "create_strategy_plan", id: "strategy_monitor", claim_id: "claim_monitor", node_id: "node_monitor", objective: "Run synthetic process", rationale: "Test observation" },
   ] });
   const notifications = [];
@@ -270,7 +292,7 @@ test("Host relays real Job Monitor events and rejects old or mismatched identiti
   }
   const { execFile } = await import("node:child_process");
   const { promisify } = await import("node:util");
-  await promisify(execFile)(process.env.TSPI_PYTHON, [new URL("../../../apps/agent-cli/monitor.py", import.meta.url).pathname, "tick", "--root", root]);
+  await promisify(execFile)(process.env.TSPI_PYTHON, [new URL("../../../apps/agent-cli/monitor.py", import.meta.url).pathname, "tick", "--root", root], { env: executionEnv });
   for (let poll = 0; poll < 100 && notifications.length === 0; poll++) await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal(notifications.length, 1, "current binding.json and event_* must be scanned");
   const event = notifications[0];
@@ -295,4 +317,79 @@ test("Host relays real Job Monitor events and rejects old or mismatched identiti
   await writeFile(join(oldRoot, "events", "evt_" + "a".repeat(32) + ".json"), JSON.stringify(event));
   await new Promise(resolve => setTimeout(resolve, 150));
   assert.equal(notifications.length, 1);
+});
+
+test("Host owns replay cursors and rejects obsolete spellings", async t => {
+  const { client } = await fixture(t);
+  const created = await client.request("session/create", { ...TARGET, request_id: "create-cursor" });
+  const after = created.cursor;
+  await client.request("input/send", { ...TARGET, request_id: "cursor-message", client_message_id: "cursor-message", text: "new event" });
+  const attached = await client.request("session/attach", { ...TARGET, after_cursor: after });
+  assert.equal(attached.events.length, 1);
+  assert.equal(attached.events[0].snapshot.messages.at(-1).content, "new event");
+  assert.equal(attached.events[0].cursor.epoch, after.epoch);
+  assert.ok(attached.cursor.sequence > after.sequence);
+  assert.deepEqual((await client.request("session/attach", { ...TARGET, after_cursor: attached.cursor })).events, []);
+  for (const params of [
+    { after_sequence: 1 }, { after_epoch: after.epoch },
+    { after_cursor: { sequence: 1 } }, { after_cursor: { epoch: after.epoch, sequence: -1 } },
+    { after_cursor: { ...after, extra: true } }, { after_cursor: after, after_sequence: 1 },
+  ]) await assert.rejects(client.request("session/attach", { ...TARGET, ...params }), { code: "invalid_cursor" });
+});
+
+test("Host restart returns a fresh snapshot without replaying the previous epoch", async t => {
+  const { client, host, workspaceRoot, root } = await fixture(t);
+  const before = await client.request("session/create", { ...TARGET, request_id: "create-before-restart" });
+  client.close();
+  await host.close();
+  const backend = createBackend(workspaceRoot);
+  const restarted = await startTspiHost({ socketPath: host.socketPath, workspaceRoot, stateRoot: join(root, "state"), sessionBackend: backend, monitorPollMs: 0 });
+  t.after(() => restarted.close());
+  const reconnected = await connectHost({ socketPath: restarted.socketPath });
+  t.after(() => reconnected.close());
+  await reconnected.request("input/send", { ...TARGET, request_id: "message-after-restart", client_message_id: "message-after-restart", text: "current snapshot" });
+  const attached = await reconnected.request("session/attach", { ...TARGET, after_cursor: before.cursor });
+  assert.notEqual(attached.cursor.epoch, before.cursor.epoch);
+  assert.equal(attached.cursor.epoch, reconnected.hello.epoch);
+  assert.deepEqual(attached.events, []);
+  assert.equal(attached.snapshot.messages.at(-1).content, "current snapshot");
+});
+
+test("Host uses one model identity object for create, resume and select", async t => {
+  const { client, backend } = await fixture(t);
+  const model = { provider: "fixture", id: "selected-model" };
+  for (const [method, action] of [["session/create", "createSession"], ["session/resume", "resumeSession"], ["model/select", "selectModel"]]) {
+    const calls = [];
+    const previous = backend[action].bind(backend);
+    backend[action] = async params => { calls.push(params); return previous(params); };
+    await client.request(method, { ...TARGET, request_id: method.replace("/", "-"), model });
+    assert.deepEqual(calls[0].model, model);
+    assert.equal(Object.hasOwn(calls[0], "provider"), false);
+    for (const rejected of [{ provider: "fixture", model: "old" }, { model: { provider: "fixture", modelId: "old" } }, { model: { id: "missing-provider" } }]) {
+      await assert.rejects(client.request(method, { ...TARGET, request_id: "invalid-model", ...rejected }), { code: "invalid_model" });
+    }
+    assert.equal(calls.length, 1);
+  }
+});
+
+test("Host derives installed release identity only from the current package layout", async t => {
+  const { client } = await fixture(t, 0, { packageRoot: "/installation/releases/release-current/agent" });
+  assert.equal(client.hello.release_id, "release-current");
+  const legacy = await fixture(t, 0, { packageRoot: "/installation/releases/release-obsolete" });
+  assert.equal(legacy.client.hello.release_id, null);
+});
+
+
+test("fresh attach returns one snapshot and replay is bounded by bytes", async t => {
+  const {client} = await fixture(t);
+  const created = await client.request("session/create", {...TARGET, request_id:"create-large"});
+  for (let i=0;i<30;i++) await client.request("input/send", {...TARGET,
+    request_id:"large-"+i, client_message_id:"large-"+i, text:"x".repeat(100_000)});
+  const fresh = await client.request("session/attach", TARGET);
+  assert.deepEqual(fresh.events, []);
+  assert.equal(fresh.snapshot.messages.length, 30);
+  const resumed = await client.request("session/attach", {...TARGET, after_cursor:created.cursor});
+  assert.equal(resumed.snapshot.messages.length, 30);
+  assert.ok(Buffer.byteLength(JSON.stringify(resumed)) < 8*1024*1024);
+  assert.ok(resumed.events.every(event=>event.cursor.epoch===resumed.cursor.epoch));
 });

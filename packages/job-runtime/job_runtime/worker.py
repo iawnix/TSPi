@@ -1,4 +1,4 @@
-"""Detached local Job supervisor. Uses only stdlib and survives Host restarts."""
+"""Stdlib Job supervisor, launched in a separate unit by the application runtime."""
 from pathlib import Path
 import json
 import os
@@ -6,7 +6,15 @@ import signal
 import subprocess
 import sys
 import time
+import pwd
 from datetime import datetime, timezone
+
+if __package__:
+    from .config_contract import execution_timeout
+    from .process_environment import job_process_environment, minimum_environment
+else:
+    from config_contract import execution_timeout
+    from process_environment import job_process_environment, minimum_environment
 
 
 def now():
@@ -27,12 +35,25 @@ def identity(pid):
     except (OSError,IndexError): return None
 
 
+def supervisor_environment():
+    """Control-plane credentials and interpreter settings never reach a Job."""
+    return minimum_environment(pwd.getpwuid(os.getuid()).pw_dir)
+
+
+def job_environment(root, payload):
+    env, path = job_process_environment(root, payload['receipt']['metadata'], payload['env'],
+                                        home=pwd.getpwuid(os.getuid()).pw_dir)
+    scratch = Path(path)
+    scratch.mkdir(parents=True, exist_ok=True, mode=0o700)
+    return env, scratch
+
+
 def main():
-    payload=json.load(sys.stdin)
+    payload=json.loads(Path(sys.argv[1]).read_text()) if len(sys.argv) == 2 else json.load(sys.stdin)
     root=Path(payload['cwd']); receipt=payload['receipt']
     receipt['pid']=os.getpid()
     receipt['metadata']={**receipt['metadata'],'supervisor_start':identity(os.getpid()),'supervised':True}
-    status={'job_id':receipt['job_id'],'platform':'local','started_at':now()}
+    status={'job_id':receipt['job_id'],'platform':receipt['platform'],'started_at':now()}
     proc=None
     stopping=False
     def stop(*_):
@@ -41,7 +62,9 @@ def main():
     signal.signal(signal.SIGTERM,stop)
     signal.signal(signal.SIGINT,stop)
     try:
-        env=os.environ.copy();env.update(payload['env'])
+        env, scratch = job_environment(root, payload)
+        receipt['metadata']['scratch_path'] = str(scratch)
+        timeout = execution_timeout(payload.get('timeout'), receipt['metadata'].get('resources', {}))
         with (root/'logs/stdout.log').open('wb') as out, (root/'logs/stderr.log').open('wb') as err:
             source=open(payload['stdin'],'rb') if payload.get('stdin') else subprocess.DEVNULL
             try:
@@ -49,7 +72,7 @@ def main():
             finally:
                 if source != subprocess.DEVNULL:source.close()
             write(root/'receipt.json',receipt)
-            deadline=time.monotonic()+payload['timeout'] if payload.get('timeout') else None
+            deadline=time.monotonic()+timeout if timeout is not None else None
             reason=None
             while proc.poll() is None:
                 if stopping or (root/'cancel.request').exists():reason='cancelled'
@@ -69,6 +92,10 @@ def main():
             except ProcessLookupError:pass
             status.update(state=reason or ('succeeded' if proc.returncode==0 else 'failed'),exit_code=proc.returncode)
     except Exception as exc:
+        if proc is not None and proc.poll() is None:
+            try:os.killpg(proc.pid,signal.SIGKILL)
+            except ProcessLookupError:pass
+            proc.wait()
         write(root/'receipt.json',receipt)
         status.update(state='failed',exit_code=None,error=f'{type(exc).__name__}: {exc}')
     finally:

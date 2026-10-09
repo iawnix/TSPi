@@ -1,24 +1,15 @@
-# 运行环境合同
+# 执行环境选择
 
-TSPi 使用由安装管理、供多个 workspace 共享的 Python runtime：科学依赖位于按摘要寻址的
-Conda 环境，所选 `tspi-runtime` wheel 位于 venv。
+`TSPI_PYTHON` 是安装管理的控制解释器，用于准备请求和整理已有证据，不提供科学库。
 
-`scripts/install_env.py` 绑定包根目录、环境 spec 摘要、解释器、必需渲染依赖、runtime
-manifest 与环境前缀。正式 release 包含一个受 manifest 绑定的 `tspi-runtime` wheel；
-安装器重新校验并安装该 wheel，不在只读 release 中构建。作者 checkout 则在临时副本中
-构建 wheel。两条路径都会记录所有已安装模块与包数据的摘要。
+选择已安装的执行入口和 `job.toml` 中的命名环境。入口声明依赖，所选绑定提供目标
+Python 或原生程序。结构准备与化学验证器可共用 `structure.lock` 环境；Gaussian/xTB
+的 Python 包装脚本使用 `wrapper.lock`；CF22D 使用 `cf22d.lock`；分子图像使用
+`render.lock`。这些锁文件位于化学扩展的 `environments` 目录，供安装使用，不决定
+研究应选择哪种科学方法。
 
-RDKit、兼容范围的 NumPy、Matplotlib 和 `xyzrender` 是核心依赖。写入 runtime manifest
-前，安装器会验证 NumPy/RDKit/Matplotlib 导入、SMILES 解析、固定种子的 ETKDG 嵌入、
-UFF 优化和 `xyzrender` 可执行程序，并记录版本与来源。只有源码和已安装 distribution
-摘要仍匹配时，`packages/tspi-bootstrap/tspi_bootstrap/launcher.py` 才接受 manifest。
+准备请求时核验所选目标并固定输入、脚本与环境身份，提交和执行时再次检查。缺失绑定、
+依赖或已核验回执属于安装缺口，不能据此改用 Host 解释器计算或偷偷更换方法。
 
-研究 workspace 保存状态与 Artifact；安装 runtime store 保存 Python 环境；release 目录
-保存有版本的程序文件。
-
-TSPi 将 manifest 选择的解释器导出为 `TSPI_PYTHON`，把其 `bin` 前置到 `PATH`，
-禁用用户 site package，并为 Pi 进程树清除 `PYTHONHOME`。缺失或无效 runtime 通过安装器
-修复。
-
-诊断失败时，分别检查 release、Python payload 摘要、manifest、spec 摘要、解释器、probe
-模块来源和 renderer。重新把所选 release 安装到按摘要寻址的环境，不要就地修改。
+保留未满足的要求，并报告具体缺失的绑定。维护者可通过 `scripts/install_job_environment.py`
+从随包锁文件安装版本化前缀；研究任务不应修改共享环境。维护后，已有 Job 仍保留原身份。

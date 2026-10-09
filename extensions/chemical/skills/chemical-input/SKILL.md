@@ -8,8 +8,9 @@ description: Resolve chemical names, inspect molecular graphs, generate reproduc
 [Chinese version](SKILL.zh-CN.md)
 
 Use this Skill for names, SMILES, structure descriptions, or reaction inputs.
-Use [scripts/prepare.py](scripts/prepare.py) through bash with "$TSPI_PYTHON".
-It requires the installation-owned RDKit environment. Preserve original names,
+Prepare the declared `chemical.resolve`, `chemical.inspect`, `chemical.seed` or
+`chemical.reaction` entry, version `1`, then execute its file through `job_start`.
+These use the selected target's `structure` Python binding with RDKit. Preserve original names,
 structure sources, charge, multiplicity, and the helper JSON as evidence.
 
 For a single molecule, resolve its identity and inspect its graph before seed
@@ -21,10 +22,14 @@ identity merely because an LLM-proposed SMILES passes graph validation.
 User-supplied structures can be inspected directly without name lookup.
 
 ```text
-"$TSPI_PYTHON" <chemical-input>/scripts/prepare.py --output identity.json resolve --name water
-"$TSPI_PYTHON" <chemical-input>/scripts/prepare.py --output graph.json inspect --smiles O
-"$TSPI_PYTHON" <chemical-input>/scripts/prepare.py --output seed.json seed --smiles O --charge 0 --multiplicity 1 --output-dir seeds
+"$TSPI_PYTHON" -m tspi_runtime.executors --config "$TS_JOB_CONFIG" --environment local --executor chemical.resolve --version 1 --output prepared/identity.json -- --name water
+"$TSPI_PYTHON" -m tspi_runtime.executors --config "$TS_JOB_CONFIG" --environment local --executor chemical.inspect --version 1 --output prepared/graph.json -- --smiles O
+"$TSPI_PYTHON" -m tspi_runtime.executors --config "$TS_JOB_CONFIG" --environment local --executor chemical.seed --version 1 --output prepared/seed.json -- --smiles O --charge 0 --multiplicity 1
 ```
+
+Each command only prepares a request. Submit the returned file/digest with the
+owning node_id, then collect the Job. Generated structures and JSON retain the
+Attempt and selected binding; a seed Job collects every generated XYZ.
 
 For reactions, resolve/inspect each species, then check composition, charge,
 explicit atom mapping with the reaction subcommand, which lists bond changes.
@@ -35,7 +40,7 @@ substituents and per-atom H counts; `explicit` supports other declared bond/H ch
 Map explicit hydrogens for proton-transfer studies.
 
 ```text
-"$TSPI_PYTHON" <chemical-input>/scripts/prepare.py --output reaction.json reaction --smiles '<mapped-reactants>><mapped-products>'
+"$TSPI_PYTHON" -m tspi_runtime.executors --config "$TS_JOB_CONFIG" --environment local --executor chemical.reaction --version 1 --output prepared/reaction.json -- --smiles '<mapped-reactants>><mapped-products>'
 ```
 
 An unresolved name or genuinely different identities needs a bounded lookup or

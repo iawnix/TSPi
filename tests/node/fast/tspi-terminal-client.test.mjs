@@ -1,19 +1,65 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { selectSession, sessionActivityAt } from "../../../apps/app-server/session-selection.mjs";
+import { createRpcPeer, HOST_PROTOCOL } from "../../../apps/app-server/tspi-host-client.mjs";
 
 test("default starts fresh even with online sessions; continue uses durable activity", () => {
-  const first = { session_id: "first", format: "pi-harness", online: true, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-03T00:00:00Z" };
+  const first = { session_id: "first", online: true, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-03T00:00:00Z" };
   const second = { ...first, session_id: "second", created_at: "2026-01-02T00:00:00Z", updated_at: "2026-01-02T00:00:00Z" };
   assert.equal(selectSession([second, first], undefined, false), null);
   assert.equal(selectSession([second, first], undefined, true), first);
   assert.equal(selectSession([second, first], "second", false), second);
-  assert.equal(selectSession([{ ...first, read_only: true }], undefined, true), null);
   assert.throws(() => selectSession([first], "missing", false), /not present/);
   const snapshot = { transcript: [{ timestamp: Date.parse(first.updated_at) }] };
   assert.equal(sessionActivityAt(first.created_at, snapshot), "2026-01-03T00:00:00.000Z");
   assert.equal(sessionActivityAt(first.created_at, { transcript: [] }), "2026-01-01T00:00:00.000Z");
+});
+
+test("terminal model flags reach creation and resumption as one identity", { timeout: 20_000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), "tspi-terminal-model-"));
+  const resolverDirectory = join(root, "packages/coding-agent/src/experimental");
+  const clientDirectory = join(root, "apps/app-server");
+  await mkdir(resolverDirectory, { recursive: true });
+  await mkdir(clientDirectory, { recursive: true });
+  await writeFile(join(resolverDirectory, "source-resolver.ts"), "");
+  await writeFile(join(clientDirectory, "pi-native-client.mjs"), "process.exitCode = 0;\n");
+  const requests = [];
+  const peers = new Set();
+  const server = createServer(socket => {
+    const peer = createRpcPeer(socket, { onRequest(method, params) {
+      requests.push({ method, params });
+      if (method === "initialize") return { protocol: HOST_PROTOCOL, release_id: null };
+      if (method === "session/list") return { sessions: [{ session_id: "existing", workspace_id: "work", created_at: "2026-01-01T00:00:00Z" }] };
+      assert.ok(["session/create", "session/resume"].includes(method));
+      return { client: { transport: "unix", socket_path: join(root, "pi.sock"), session_id: "selected" } };
+    } });
+    peers.add(peer);
+  });
+  t.after(async () => {
+    for (const peer of peers) peer.close();
+    await new Promise(resolve => server.close(resolve));
+    await rm(root, { recursive: true, force: true });
+  });
+  await new Promise(resolve => server.listen(join(root, "host.sock"), resolve));
+  for (const flags of [["--provider", "fixture", "--model", "chosen"], ["--continue", "--", "--provider=fixture", "--model=chosen"]]) {
+    requests.length = 0;
+    const child = spawn(process.execPath, ["apps/app-server/tspi-terminal-client.mjs", "--socket-path", join(root, "host.sock"),
+      "--workspace-id", "work", "--workspace-root", root, "--package-root", root, ...flags], {
+      env: { ...process.env, TSPI_PI_RUNTIME_ROOT: root }, stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.on("data", chunk => { stderr += chunk; });
+    const code = await new Promise((resolve, reject) => { child.once("error", reject); child.once("exit", resolve); });
+    assert.equal(code, 0, stderr);
+    assert.deepEqual(requests.map(row => row.method), ["initialize", "session/list", flags[0] === "--continue" ? "session/resume" : "session/create"]);
+    assert.deepEqual(requests.at(-1).params.model, { provider: "fixture", id: "chosen" });
+    assert.equal(Object.hasOwn(requests.at(-1).params, "provider"), false);
+  }
 });
 
 for (const arguments_ of [["-r"], ["--resume"], ["--", "--resume"]]) {

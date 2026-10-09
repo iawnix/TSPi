@@ -1,64 +1,28 @@
-# ChangeSet 合同
+# 记录与修订研究决策
 
-`research_change` 是 `ResearchMap` 唯一的公共变更边界。其公共 payload 包含
-`rationale`、可选 `basis_refs`、可选 `expected_revision` 和非空 `operations` 数组。Host 会在发往
-Research State 的内部请求中附加 `principal=root_agent` 与 `authority=kernel_write`；这两个 authority 字段
-不是公共 tool 参数。
-使用不熟悉的 operation 前，先查询 `research_read mode=operations` 获取当前目录。
+通过 `research_change` 修改研究图。用
+`research_read mode=operations query=<operation>` 查询权威字段、约束与示例。
+沿用现有 ID，将相关操作组织为一个连贯请求；后面的操作可以引用本批次先前创建的对象。
+决策依赖特定快照时使用当前 revision。被拒绝的批次不改变原图，应根据返回的操作位置
+修复原因，通过工具重试，不直接编辑权威文件。
 
-## Operations
+Finding 用于经过核实的输出、有意义的局限或未解决的科学问题。引用已登记证据，
+陈述强度不超过证据支持范围。计划或对象 ID 是决策依据，不是科学材料；这类上下文
+放在请求的决策依据字段中。
 
-每个 operation 使用 `type`；创建对象时还要提供显式的项目本地 `id`。引用使用 map 中
-已有的 ID。
+根据检查过的证据显式评估 Claim。文献与导入数据可以支持评估，不一定要新做计算；
+未执行的计划不能。用 `mode=decisions` 查看理由及证据绑定。证据或附属 Gate 改变后，
+检查需要复核的内容并重新评估，保留之前的决定作为历史。结论待复核期间可继续独立
+工作，但过期结论不能支撑最终成功。
 
-| 类型 | 必需数据 |
-| --- | --- |
-| `create_phase` | `id`、`title`；`objective` 可选 |
-| `create_claim` | `id`、`statement`；`status=proposed`、`predictions`、`falsifiers` 可选 |
-| `create_node` | `id`、`title`、`objective`；`phase_id`、`claim_ids`、`dependency_ids` 可选 |
-| `create_finding` | `id`、`node_id`、`statement`、`kind`（`fact` 或 `issue`）；fact 字段为 `value`、`datatype`、`unit`、`provenance`；issue 字段为 `status`、`severity`、`resolution` |
-| `create_gate` | `id`、`scope`（`node` 或 `claim`）、`target_id`、`criteria` |
-| `evaluate_gate` | `gate_id`、`verdict`、`assessments`；`message`、`evidence_refs` 可选 |
-| `set_node_state` | `node_id`、`state`；关闭时还需要 `outcome` 和 `summary` |
-| `assess_claim` | `id`、`claim_id`、`verdict`、`reason`；`supported`、`contradicted`、`inconclusive` 还需已登记的 `evidence_refs` |
-| `revise_claim` | `source_claim_id`、`target_claim_id`、`revision_id`、`statement`、`reason`；`relation`、`predictions`、`falsifiers` 可选 |
-| `relate_claims` | `source_id`、`target_id`、`relation` |
-| `set_focus` | `claim_ids`、`node_ids` |
+Node 或 Claim 的决策需要显式条件时才附加 Gate，普通 Node 不需要。用户交付要求
+独立于局部 Gate 保留，见[requirements](requirements.zh-CN.md)。机器能确认的事实使用
+Runtime 或已登记验证器，科学解释使用明确的 Agent 判断。修改条件时说明原因，不偷偷
+替换。机器失败不能由自我评估改成通过。
 
-对象 ID 在 map 中必须唯一，引用必须能在拟议变更后的状态中解析。Operation 按顺序运行，
-因此后面的 operation 可以引用同一请求中较早创建的对象。一个 ChangeSet 只包含一项连贯
-的研究变更；无关变更应使用不同请求。
+解释 Attempt 前先检查已收集的输出。该次运行的结果引用其结果回执和直接证据，
+比较与背景材料另行说明。运行观察和执行故障引用 Runtime 的观察记录。通过替代关系
+纠正早先解释；输出改变后必须针对当前版本重新判断。
 
-## 提交规则
-
-Research State 锁定 workspace，加载 canonical context，在存在时检查 `expected_revision`，对独立副本
-应用 operations，运行完整 map validator，递增一次 `revision`，并原子更新 context、liveness、
-memory 与 manifest。被拒绝的请求不会改变之前的 map。不要直接编辑 canonical 文档。
-
-`create_finding` 记录 Node 已核验的输出，不是通用日志项：支持科学陈述的值使用
-`FactFinding`；局限、异常、冲突或未决问题使用 `IssueFinding`。`create_gate` 与
-`evaluate_gate` 构成 Gate 生命周期。Claim status 与 Gate verdict 相互独立；Gate 评估
-不会静默改变 Claim status。新 Claim 从 `proposed` 开始；科学状态通过 `assess_claim` 记录理由与证据，
-不直接设置 status。证据可以是已登记文献、导入数据或计算产物，不要求每次评估都新增计算；
-未经检验的计划不能确立科学结论或 confirmed Finding。
-`current_assessment_id` 指向当前采用的评估；其证据版本和所需 ClaimGate 必须保持有效。
-`assessment_state` 为 `not_assessed`、`current` 或 `needs_review`。证据变化后重新评估，
-不要修改旧记录；没有评估的历史 status 仍显示为 `not_assessed`。
-通过 `research_read mode=decisions claim_id=<claim_id>` 读取评估理由及证据版本绑定。
-新增、修改或重新评估 ClaimGate（包括同版本的新评估）会使当前采用的 `supported` 评估需要复核。
-可以先记录条件变化，再另行提交 `assess_claim`，不要求同一 ChangeSet 完成。
-`needs_review` 阻止显式与自动 terminal 收尾，但独立研究仍可继续。
-
-
-启动计算前，为 Node 登记明确 Gate，或在创建 Node 时用 `completion_exemption` 写出豁免理由。
-每个条件必须有 `id` 和 `source_type`：`runtime_fact`、`validator_result` 或 `agent_assessment`。
-评估通过 `assessments` 覆盖每个条件；机器条件引用真实 `result_receipt_ref`，代理评估必须提供理由。
-修改条件用 `revise_gate` 并提供 `criteria` 与 `reason`；保留旧版本，旧评估不再表示新条件通过。
-
-`context` 是有限决策视图，详情使用 `detail`；证据用 `attempt_id`/`job_id` 过滤，`offset`/`limit` 分页。
-Claim 的 `source_refs` 与 `constraints` 保存目标来源和约束。不要把模型文字登记成计算原始输出。
-最终解释使用 `kind=result`，引用 `job_collect` 返回的回执与直接证据；其他运行放在比较或背景角色。
-`kind=observation`、`execution_issue` 引用运行时 `execution_observation_ref`。
-更正解释使用 `supersedes_id`。输出版本变化会使依赖解释与机器 Gate 评估需要复核。
-
-完成条件同样适用于报告和邮件节点。每个 agent_assessment 对象必须包含 criterion_id、verdict（pass/fail/inconclusive/blocked）、reason；机器评估提供 criterion_id、result_receipt_ref。用 mode=operations query=evaluate_gate 查询完整 schema 和示例。批次失败按 operation_index/target_id 定位，整批回滚不表示前面的 Gate 评估有错。
+原子批次失败不代表所有拟议操作都错误。修复指出的对象，保留有效 Artifact 和副作用
+回执，再提交剩余的连贯决策。交付结果登记失败不构成再次发送的授权。

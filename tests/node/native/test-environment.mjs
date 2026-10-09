@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 // Keep persistent installations separate from short-lived, writable fixtures.
-export const TEST_ROOT = process.env.TSPI_TEST_ROOT || "/tmp/tspi-test-root";
+export const TEST_ROOT = process.env.TSPI_TEST_ROOT || join(process.env.TSPI_TEST_ENV_ROOT || "/home/iaw/debug/tspi-test-env", "n");
 
 export function pinnedPiSource() {
   if (process.env.TSPI_TEST_PI_RUNTIME_ROOT) return process.env.TSPI_TEST_PI_RUNTIME_ROOT;

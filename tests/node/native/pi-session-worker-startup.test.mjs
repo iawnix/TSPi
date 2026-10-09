@@ -30,6 +30,15 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
     } } }));
     process.env.TSPI_PYTHON = managedPython();
     process.env.PYTHONDONTWRITEBYTECODE = "1";
+    // A package-external manifest must be visible to the real Worker's Python
+    // bridge as well as its JS discovery. It needs no scientific imports.
+    const externalManifest = join(root, "manifest.json");
+    const externalProfile = { id: "fixture.material", version: "1", checks: [
+      { id: "material", kind: "registered_artifact" },
+    ] };
+    await writeFile(externalManifest, JSON.stringify({ schema_version: "tspi-extension/1",
+      name: "fixture-extension", version: "1.0.0", skills: [], acceptance_profiles: [externalProfile] }));
+    process.env.TSPI_EXTENSION_MANIFESTS = externalManifest;
     const workspaceRoot = join(root, "workspaces");
     await mkdir(workspaceRoot);
     await execute(process.env.TSPI_PYTHON, [
@@ -40,10 +49,9 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
     backend = await createTspiHarnessBackend({
       sourceRoot, packageRoot, workspaceRoot,
       serverDirectory: join(root, "pi"), sessionDir: join(root, "sessions"),
-      stateRoot: join(root, "state"), provider:"fixture", model:"fixture",
+      stateRoot: join(root, "state"), model: { provider: "fixture", id: "fixture" },
     });
-    const created = await backend.createSession({ workspace_id: "startup", provider:"fixture", model:"fixture" });
-    assert.equal(created.session.runtime_kind, "pi-harness");
+    const created = await backend.createSession({ workspace_id: "startup", model: { provider: "fixture", id: "fixture" } });
     assert.equal(created.session.online, true);
     assert.equal(created.session.is_streaming, false);
     const read = await backend.readSession("startup", created.session.session_id);
@@ -80,6 +88,8 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
       const summary = await queries.research("summary", BACKGROUND_CONTEXT);
       assert.equal(summary.workspace_id, "startup");
       assert.equal(summary.result.schema_version, "research-summary/1");
+      const profiles = await queries.research("profiles", BACKGROUND_CONTEXT);
+      assert.deepEqual(profiles.result.profiles.find(profile => profile.id === externalProfile.id), externalProfile);
       assert.match((await queries.research("storage bootstrap", BACKGROUND_CONTEXT)).error.message, /Usage/);
       const after = await backend.readSession("startup", created.session.session_id);
       assert.deepEqual(after.snapshot.messages, read.snapshot.messages);
@@ -248,7 +258,7 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
         ui.stop();
       }
       assert.equal((await backend.readSession("startup", created.session.session_id)).session.online, true);
-      const second = await backend.createSession({ workspace_id: "startup", session_id: "second", provider: "fixture", model: "fixture" });
+      const second = await backend.createSession({ workspace_id: "startup", session_id: "second", model: { provider: "fixture", id: "fixture" } });
       const { startTspiHost } = await import("../../../apps/app-server/tspi-host.mjs");
       const { connectHost } = await import("../../../apps/app-server/tspi-host-client.mjs");
       const { runTerminalSessions } = await import("../../../apps/app-server/tspi-terminal-session.mjs");

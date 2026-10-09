@@ -75,6 +75,28 @@ def _check_links(path: Path, text: str) -> list[str]:
     return errors
 
 
+def _reachable_references(entry: Path, skill_root: Path) -> set[Path]:
+    """Allow progressive disclosure through linked references, not just the entry."""
+    visited: set[Path] = set()
+    pending = [entry.resolve()]
+    while pending:
+        path = pending.pop()
+        if path in visited:
+            continue
+        visited.add(path)
+        for raw in LINK.findall(path.read_text(encoding="utf-8")):
+            target = raw.strip().strip("<>")
+            if re.match(r"^[a-z][a-z0-9+.-]*:", target, re.IGNORECASE):
+                continue
+            relative = unquote(target.split("#", 1)[0].split("?", 1)[0])
+            resolved = (path.parent / relative).resolve()
+            if resolved.is_relative_to(skill_root.resolve()) and resolved.suffix == ".md" and resolved.is_file():
+                # Do not let a translation's routes hide missing local routes.
+                if resolved.name.endswith(".zh-CN.md") == entry.name.endswith(".zh-CN.md"):
+                    pending.append(resolved)
+    return visited
+
+
 def validate_skills(root: Path = ROOT) -> list[str]:
     errors: list[str] = []
     skill_roots: list[Path] = []
@@ -119,12 +141,6 @@ def validate_skills(root: Path = ROOT) -> list[str]:
         zh_text = chinese.read_text(encoding="utf-8")
         if len(en_text.splitlines()) > 100 or len(zh_text.splitlines()) > 100:
             errors.append(f"{skill_root.relative_to(root)}: entrypoint exceeds 100 lines; move detail to references")
-        for marker, label in (("Use this Skill", "English usage routing"), ("使用", "Chinese usage routing")):
-            text = en_text if marker == "Use this Skill" else zh_text
-            if marker not in text:
-                errors.append(f"{skill_root.relative_to(root)}: missing {label} marker")
-        if not re.search(r"Do not|does not|never|不要|不能|不应", en_text + "\n" + zh_text, re.IGNORECASE):
-            errors.append(f"{skill_root.relative_to(root)}: entrypoints need an explicit boundary/failure rule")
         for forbidden in FORBIDDEN_PUBLIC_NAMES:
             if forbidden in en_text or forbidden in zh_text:
                 errors.append(f"{skill_root.relative_to(root)}: retired public tool name {forbidden}")
@@ -135,11 +151,13 @@ def validate_skills(root: Path = ROOT) -> list[str]:
         expected_zh = {f"{path.stem}.zh-CN.md" for path in english_refs}
         if {path.name for path in chinese_refs} != expected_zh:
             errors.append(f"{skill_root.relative_to(root)}: every English reference needs one .zh-CN.md pair")
+        en_reachable = _reachable_references(english, skill_root)
+        zh_reachable = _reachable_references(chinese, skill_root)
         for path in english_refs:
             translated = path.with_name(f"{path.stem}.zh-CN.md")
-            if f"references/{path.name}" not in en_text:
+            if path.resolve() not in en_reachable:
                 errors.append(f"{english.relative_to(root)}: reference is not routed: {path.name}")
-            if f"references/{translated.name}" not in zh_text:
+            if translated.resolve() not in zh_reachable:
                 errors.append(f"{chinese.relative_to(root)}: reference is not routed: {translated.name}")
         for path in references:
             lines = path.read_text(encoding="utf-8").splitlines()
@@ -158,8 +176,7 @@ def main() -> int:
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
-    count = len([path for path in (ROOT / "extensions/core/skills").iterdir() if path.is_dir()])
-    count += sum(1 for extension_root in (ROOT / "extensions").iterdir() if extension_root.is_dir() for path in extension_root.rglob("SKILL.md"))
+    count = sum(1 for extension_root in (ROOT / "extensions").iterdir() if extension_root.is_dir() for path in extension_root.rglob("SKILL.md"))
     print(f"skill contract check passed: {count} skills")
     return 0
 

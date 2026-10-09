@@ -6,30 +6,32 @@ Accepted.
 
 ## Decision
 
-TSPi uses one domain-neutral Research Turn boundary for ordinary prompts, Monitor wakes,
-recovery, and retries. The Agent is the only scientific decision-maker. Research State is
-the only scientific state authority. Host/Harness owns lifecycle, permissions, workspace and
-session binding, tool contracts, recovery, and bounded follow-up. Monitor only observes external
-Attempts and queues operational wakes. Compute/Workspace Runtime owns Attempt and Artifact
-execution records and never writes scientific Findings or Claims directly.
+The Root Agent makes scientific decisions. Filesystem Research State is the authority for
+ResearchMap facts, evidence references, checkpoints, and liveness. Host/Harness owns input and
+tool admission, permissions, workspace/session binding, recovery, and bounded follow-up.
+Monitor observes external Attempts and submits operational wake inputs. Compute/Workspace
+Runtime owns Attempt and Artifact execution records and never writes scientific Findings or
+Claims directly. Ordinary prompts, Monitor wakes, and recovery use the Host's current Pi
+submission and Worker path; Research State has no generic turn request/result protocol.
 
-The Research State command `research.turn` uses the `research_turn_request` version 1 request
-and `research_turn_result` version 1 result for `start`, `orient`, `checkpoint`, `end`, and `wake`. It records
-operational turn audit under `operations/research_turns.jsonl`; these events are not ResearchMap
-facts. A supplied `request_id` is an idempotency key: an exact retry is marked `replayed` and
-does not append another audit event; reusing that key with a different operation, turn, session,
-trigger, or delivery identity is rejected as a command error.
-
-`research_checkpoint` is the only turn-closing boundary. Its valid dispositions are
+`research_checkpoint` records a durable disposition; its valid values are
 `continue_required`, `waiting_external`, `deferred`, `blocked`, `terminal`, and
-`user_input_required`. `continue_required` means the Agent has recorded an explicit
-next-turn action. Lifecycle actions are State records managed through
-`set_lifecycle_action` and `resolve_lifecycle_action`.
-Monitor records `research.turn(operation=wake)` before acknowledging a wake delivery; a failed
-boundary leaves the delivery pending for retry. `decision_needed` is the only state that requires a bounded Host follow-up. When liveness also reports `execution_ready=true`, an active StrategyPlan covers the focused scope and Host may admit its declared prepare/execute work before the checkpoint; the Agent must still write the checkpoint before ending the turn. Host follow-up may ask the Agent to read bounded state and record a disposition, but may not choose a method,
+`user_input_required`. `continue_required` records an explicit next action. Lifecycle actions,
+when used, are State records managed through `set_lifecycle_action` and
+`resolve_lifecycle_action`. Liveness is a derived read model, not a second write authority.
+When an active scope lacks a disposition, the Native Worker may request a bounded follow-up;
+it may ask the Agent to read state and record a disposition, but may not choose a method,
 Capability, Backend, Skill, parameter, or scientific conclusion.
 
-Research Memory is durable workspace state plus bounded per-turn context. Skill manifests only
+Monitor admission calls the read-only `research.monitor_assess(event_id, session_id)` command.
+Under the workspace lock, Research State checks that the event belongs to the admitted
+workspace and bound session and compares it with current Attempt, Node, interpretation,
+collection, and disposition state. This assessment is not an input receipt or a turn audit.
+Pi submission is the durable input authority: Host stores the accepted submission there and
+repeats the State assessment before first model consumption. A stale or no-longer-eligible
+event is rejected before consumption.
+
+Research Memory is durable workspace state plus bounded per-run context. Skill manifests only
 enter the model-visible prompt; full skill bodies may be cached by the worker but are injected
 only for explicit skill operations. Compute environments are summary first and loaded in detail
 only on demand; list/show expose source and identity digests plus readiness without placing full
@@ -37,12 +39,11 @@ commands or environment variables into the default context. Public tools declare
 workspace/session binding, and error taxonomy and use the common result/error envelopes.
 
 `research_read` (including its bounded `liveness` view) and
-`research_checkpoint` are the canonical Agent/Host interfaces for a turn.
-`research.liveness` is diagnostic only; it does not persist a next step.
-`research_checkpoint` is the canonical checkpoint interface. `research.turn`
-remains the lifecycle boundary that interprets the canonical State records. The
-Native Worker's `before_run_end` boundary invokes the same lifecycle evaluation
-and must not implement a second liveness state machine.
+`research_checkpoint` are the canonical Agent/Host interfaces for research state.
+`research.liveness` is diagnostic and derived; it does not persist a next step. The Native
+Worker reads this same liveness projection after a run yields and may request a bounded
+follow-up when an active scope has no disposition. There is no separate State turn boundary
+or turn-audit store.
 
 Runtime enforcement is centralized at tool admission. Every production tool must expose
 `label`, `description`, a parameter schema, an executable `execute` function, and the exact

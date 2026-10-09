@@ -1,15 +1,14 @@
 import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { delimiter, relative, resolve, sep, join } from "node:path";
 
 const MANIFEST_SCHEMA = "tspi-extension/1";
 const NAME_PATTERN = /^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*$/u;
-const PROVIDER_ID_PATTERN = /^[a-z][a-z0-9]*(?:[-._][a-z0-9]+)*$/u;
-const PROVIDER_KINDS = new Set(["compute", "analysis", "harness", "notification", "render", "report"]);
 const TOOL_PATTERN = /^[a-z][a-z0-9_]*$/u;
 const VALIDATOR_RESERVED_DESTINATIONS = new Set([
   "validator.py", "validator_inputs.json", "validator_result.json", "input_manifest.json",
-  "spec.json", "receipt.json", "status.json", "logs",
+  "spec.json", "receipt.json", "status.json", "logs", ".tspi",
 ]);
 const SERVER_PERMISSIONS = new Set([
   "workspace.read",
@@ -25,29 +24,24 @@ const SERVER_PERMISSIONS = new Set([
  * The package core only supplies the registry shape. An installer supplies
  * absolute manifest paths through TSPI_EXTENSION_MANIFESTS (or the explicit
  * `manifestPaths` option). Each manifest owns its Skill directories and
- * provider metadata; execution adapters remain a separate trusted boundary.
+ * validated execution descriptors; code is never imported during discovery.
  */
 export async function discoverInstalledExtensions(options = {}) {
   const paths = await resolveManifestPaths(options);
   const extensions = [];
   const names = new Set();
-  const providerIds = new Set();
-  const validatorIds = new Set(), profileIds = new Set();
+  const validatorIds = new Set(), profileIds = new Set(), executorIds = new Set();
   const skillNames = new Set();
   for (const manifestPath of paths) {
     const extension = await readExtensionManifest(manifestPath);
     if (names.has(extension.name)) throw new Error(`duplicate installed extension name: ${extension.name}`);
     names.add(extension.name);
-    for (const [entries, seen, label] of [[extension.validators, validatorIds, "validator"], [extension.acceptance_profiles, profileIds, "acceptance profile"]]) {
+    for (const [entries, seen, label] of [[extension.validators, validatorIds, "validator"], [extension.acceptance_profiles, profileIds, "acceptance profile"], [extension.executors, executorIds, "executor"]]) {
       for (const entry of entries) {
         const identity = `${entry.id}@${entry.version}`;
         if (seen.has(identity)) throw new Error(`duplicate installed ${label}: ${identity}`);
         seen.add(identity);
       }
-    }
-    for (const provider of extension.providers) {
-      if (providerIds.has(provider.id)) throw new Error(`duplicate installed provider id: ${provider.id}`);
-      providerIds.add(provider.id);
     }
     for (const skill of extension.skills) {
       if (skill.name && skillNames.has(skill.name)) throw new Error(`duplicate installed skill name: ${skill.name}`);
@@ -56,10 +50,10 @@ export async function discoverInstalledExtensions(options = {}) {
     extensions.push(extension);
   }
   return Object.freeze({
+    schema_version: "tspi-extension-catalog/1",
     manifests: Object.freeze([...paths]),
     extensions: Object.freeze(extensions),
     skillRoots: Object.freeze(extensions.flatMap((extension) => extension.skills.map((skill) => skill.path))),
-    providers: Object.freeze(extensions.flatMap((extension) => extension.providers)),
   });
 }
 
@@ -77,21 +71,22 @@ export async function readExtensionManifest(manifestPath) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || parsed.schema_version !== MANIFEST_SCHEMA) {
     throw new Error(`invalid TSPi extension manifest: ${path}`);
   }
-  assertKnownKeys(parsed, new Set(["schema_version", "name", "version", "skills", "providers", "server", "validators", "acceptance_profiles"]), "extension manifest");
+  assertKnownKeys(parsed, new Set(["schema_version", "name", "version", "skills", "server", "validators", "acceptance_profiles", "executors"]), "extension manifest");
   const name = validateName(parsed.name, "extension");
   const version = validateVersion(parsed.version, `extension ${name}`);
   if (!Array.isArray(parsed.skills)) throw new Error(`extension ${name} skills must be an array`);
-  if (parsed.providers !== undefined && !Array.isArray(parsed.providers)) throw new Error(`extension ${name} providers must be an array`);
   const root = resolve(path, "..");
   const skills = [];
   for (const value of parsed.skills) skills.push(await validateSkill(value, root, name));
-  const providers = [];
-  for (const value of parsed.providers || []) providers.push(await validateProvider(value, root, name));
+  if (parsed.executors !== undefined && !Array.isArray(parsed.executors)) throw new Error("executors must be an array");
+  const executors = (parsed.executors || []).map(value => validateExecutor(value, root, skills));
   const validators = [];
   if (parsed.validators !== undefined && !Array.isArray(parsed.validators)) throw new Error("validators must be an array");
   for (const validator of parsed.validators || []) {
-    assertKnownKeys(validator, new Set(["id", "version", "entry", "sha256", "resources", "input_contract"]), "validator");
+    assertKnownKeys(validator, new Set(["id", "version", "entry", "sha256", "backend", "resources", "input_contract", "requirements"]), "validator");
+    validateExecutionRequirements(validator.requirements ?? {}, "python");
     if (!nonemptyString(validator.id) || !nonemptyString(validator.version)) throw new Error("validator identity is required");
+    if (!nonemptyString(validator.backend)) throw new Error("validator backend binding is required");
     const entry = resolveOwnedPath(root, validator.entry, "validator entry");
     await assertRegularFile(entry, "validator entry");
     await verifyDigest(entry, validator.sha256, "validator");
@@ -151,9 +146,10 @@ export async function readExtensionManifest(manifestPath) {
     name,
     version,
     manifestPath: path,
+    manifestDigest: `sha256:${createHash("sha256").update(await readFile(path)).digest("hex")}`,
     root,
     skills: Object.freeze(skills),
-    providers: Object.freeze(providers),
+    executors: Object.freeze(executors),
     validators: Object.freeze(validators),
     acceptance_profiles: Object.freeze(acceptanceProfiles),
     ...(server ? { server } : {}),
@@ -165,6 +161,18 @@ async function resolveManifestPaths(options) {
     ? (process.env.TSPI_EXTENSION_MANIFESTS || "").split(delimiter).map((value) => value.trim()).filter(Boolean)
     : Array.isArray(options.manifestPaths) ? options.manifestPaths : [options.manifestPaths];
   const paths = configured.map((value) => requireAbsoluteFile(value, "extension manifest"));
+  // Core Skills are part of the installed Harness, including when optional
+  // domain manifests are supplied from outside the package.
+  if (options.packageRoot) {
+    const core = join(requireAbsoluteFile(options.packageRoot, "package root"), "extensions", "core", "manifest.json");
+    try {
+      const info = await lstat(core);
+      if (!info.isFile() || info.isSymbolicLink()) throw new Error("core manifest must be a regular file");
+      paths.unshift(core);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
   if (options.packageRoot && options.manifestPaths === undefined && !process.env.TSPI_EXTENSION_MANIFESTS && !configured.length) {
     const extensionsRoot = join(requireAbsoluteFile(options.packageRoot, "package root"), "extensions");
     const packageManifest = join(extensionsRoot, "manifest.json");
@@ -206,6 +214,7 @@ async function validateSkill(value, root, extensionName) {
   const name = value.name === undefined ? undefined : validateName(value.name, `extension ${extensionName} Skill`);
   if (value.sha256 !== undefined) await verifyDigest(skillFile, value.sha256, `extension ${extensionName} Skill`);
   const resourceFiles = [];
+  const resourceDigests = {};
   if (value.resources_sha256 !== undefined) {
     const indexPath = join(path, "resources.json");
     await assertRegularFile(indexPath, `Skill ${name} resource index`);
@@ -219,109 +228,65 @@ async function validateSkill(value, root, extensionName) {
       await assertRegularFile(resource, `Skill ${name} resource`);
       await verifyDigest(resource, hash, `Skill ${name} resource`);
       resourceFiles.push(resource);
+      resourceDigests[file] = hash;
     }
   }
-  return Object.freeze({ name, path, file: skillFile, resourceFiles: Object.freeze(resourceFiles), ...(value.sha256 === undefined ? {} : { sha256: value.sha256 }) });
+  return Object.freeze({ name, path, file: skillFile, resourceFiles: Object.freeze(resourceFiles), resourceDigests: Object.freeze(resourceDigests), ...(value.sha256 === undefined ? {} : { sha256: value.sha256 }) });
 }
 
-async function validateProvider(value, root, extensionName) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`extension ${extensionName} has an invalid provider descriptor`);
-  assertKnownKeys(value, new Set(["id", "version", "kind", "descriptor", "descriptor_sha256", "entry", "sha256"]), `extension ${extensionName} provider`);
-  const id = value.id;
-  if (typeof id !== "string" || !PROVIDER_ID_PATTERN.test(id)) throw new Error(`extension ${extensionName} provider id is invalid`);
-  const version = validateVersion(value.version, `provider ${id}`);
-  if (typeof value.kind !== "string" || !PROVIDER_KINDS.has(value.kind)) throw new Error(`extension ${extensionName} provider ${id} kind is invalid`);
-  const descriptor = value.descriptor === undefined ? undefined : resolveOwnedPath(root, value.descriptor, `provider ${id} descriptor`);
-  const entry = value.entry === undefined ? undefined : resolveOwnedPath(root, value.entry, `provider ${id} entry`);
-  if (!descriptor && !entry) throw new Error(`extension ${extensionName} provider ${id} must declare descriptor or entry`);
-  let descriptorData;
-  let descriptorDigest;
-  if (descriptor) {
-    await assertRegularFile(descriptor, `provider ${id} descriptor`);
-    if (value.descriptor_sha256 !== undefined) await verifyDigest(descriptor, value.descriptor_sha256, `provider ${id} descriptor`);
-    try {
-      const descriptorBytes = await readFile(descriptor);
-      descriptorDigest = `sha256:${createHash("sha256").update(descriptorBytes).digest("hex")}`;
-      descriptorData = JSON.parse(descriptorBytes.toString("utf8"));
-    } catch (error) {
-      throw new Error(`provider ${id} descriptor is not valid JSON`, { cause: error });
-    }
-    if (!descriptorData || typeof descriptorData !== "object" || Array.isArray(descriptorData)) {
-      throw new Error(`provider ${id} descriptor must contain an object`);
-    }
-  }
-  if (entry) {
-    await assertRegularFile(entry, `provider ${id} entry`);
-    if (value.sha256 === undefined) throw new Error(`provider ${id} entry must declare sha256`);
-    await verifyDigest(entry, value.sha256, `provider ${id}`);
-  }
-  return Object.freeze({
-    id,
-    version,
-    kind: value.kind,
-    ...(descriptor ? { descriptor } : {}),
-    ...(descriptorData ? { descriptor_data: Object.freeze(descriptorData) } : {}),
-    ...(descriptorData ? { capability_descriptors: Object.freeze(toCanonicalDescriptors(descriptorData, id, version, value.kind)) } : {}),
-    ...(descriptorDigest ? { descriptor_digest: descriptorDigest } : {}),
-    ...(entry ? { entry } : {}),
-    ...(value.sha256 === undefined ? {} : { sha256: value.sha256 }),
-    ...(value.descriptor_sha256 === undefined ? {} : { descriptor_sha256: value.descriptor_sha256 }),
-  });
+function validateExecutionRequirements(value, runtime) {
+  assertKnownKeys(value, new Set(["python", "packages", "imports"]), "execution requirements");
+  if (runtime === "native" && Object.keys(value).length) throw new Error("native execution cannot require Python");
+  if (value.python !== undefined && !nonemptyString(value.python)) throw new Error("invalid Python requirement");
+  if (value.packages !== undefined && (!value.packages || typeof value.packages !== "object" || Array.isArray(value.packages)
+      || Object.entries(value.packages).some(([name, spec]) => !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/u.test(name) || !nonemptyString(spec)))) throw new Error("invalid package requirements");
+  if (value.imports !== undefined && (!Array.isArray(value.imports) || new Set(value.imports).size !== value.imports.length
+      || value.imports.some(name => typeof name !== "string" || !/^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$/u.test(name)))) throw new Error("invalid import requirements");
 }
 
-/** Project legacy inventory descriptors into the shared capability envelope.
- *
- * The JSON files are installation inventory and may aggregate aliases. The
- * runtime exposes one canonical descriptor per declared capability for
- * discovery. This metadata projection does not execute providers.
- */
-function toCanonicalDescriptors(data, providerId, providerVersion, kind) {
-  const declarations = Array.isArray(data.capabilities) && data.capabilities.length
-    ? data.capabilities.flatMap((item) => [
-      item,
-      ...(Array.isArray(item.aliases) ? item.aliases.map((id) => ({ id, version: item.version })) : []),
-    ])
-    : [{ id: data.operation || providerId, version: data.version || providerVersion }];
-  return declarations.map((item) => {
-    const capabilityId = item.id;
-    const capabilityVersion = String(item.version || providerVersion);
-    const base = {
-      protocol: "capability_descriptor",
-      version: 1,
-      capability_id: capabilityId,
-      capability_version: capabilityVersion,
-      kind: kind === "harness" ? "artifact" : kind,
-      summary: data.notes || `Provider capability ${capabilityId}.`,
-      input_schema: data.input_schema || { type: "object" },
-      output_schema: data.result_schema || { type: "object" },
-      provider: {
-        provider_id: providerId,
-        provider_version: String(providerVersion),
-        descriptor_digest: "sha256:" + "0".repeat(64),
-      },
-      limits: data.limits || {},
-      effects: Array.isArray(data.effects) ? data.effects : [],
-      extensions: {
-        parameter_schema: data.parameter_schema || { type: "object" },
-        output_roles: Array.isArray(data.output_roles) ? data.output_roles : [],
-        operation: data.operation || capabilityId,
-        aliases: Array.isArray(item.aliases) ? item.aliases : [],
-      },
-    };
-    const digestInput = stableJson({ ...base, provider: { ...base.provider, descriptor_digest: "" } });
-    // Hash the canonical metadata with its digest field empty, so discovery
-    // can identify the descriptor independently of JSON key order.
-    base.provider.descriptor_digest = `sha256:${createHash("sha256").update(digestInput).digest("hex")}`;
-    return Object.freeze(base);
-  });
-}
-
-function stableJson(value) {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
+function validateExecutor(value, root, skills) {
+  assertKnownKeys(value, new Set(["id", "version", "skill", "backend", "runtime", "entry", "cli", "argv", "inputs", "outputs", "requirements"]), "executor");
+  if (!nonemptyString(value.id) || !nonemptyString(value.version) || !nonemptyString(value.backend)
+      || !["python", "native"].includes(value.runtime)) throw new Error("invalid executor identity/binding");
+  validateExecutionRequirements(value.requirements ?? {}, value.runtime);
+  const skill = skills.find(row => row.name === value.skill);
+  if (!skill) throw new Error("executor must reference an installed Skill");
+  for (const key of ["entry", "cli"]) {
+    if (value[key] === undefined) continue;
+    const resource = resolveOwnedPath(root, value[key], `executor ${key}`);
+    if (!skill.resourceFiles.includes(resource)) throw new Error(`executor ${key} must be a pinned Skill resource`);
   }
-  return JSON.stringify(value);
+  if (value.runtime === "python" && !value.entry) throw new Error("Python executor requires an entry");
+  if (value.runtime === "native" && value.entry !== undefined) throw new Error("native executor uses the configured command");
+  const inputs = value.inputs;
+  if (!inputs || typeof inputs !== "object" || Array.isArray(inputs)) throw new Error("executor inputs must be an object");
+  const destinations = new Set(Object.keys(skill.resourceDigests));
+  for (const [role, destination] of Object.entries(inputs)) {
+    if (!/^[a-z][a-z0-9_]*$/u.test(role)) throw new Error("invalid executor input role");
+    const target = relative(root, resolveOwnedPath(root, destination, "executor input"));
+    if (!target || target !== destination || ["spec.json", "receipt.json", "status.json", "input_manifest.json", "logs", ".tspi"].includes(target.split(sep)[0])
+        || [...destinations].some(previous => previous === target || previous.startsWith(target + sep) || target.startsWith(previous + sep))) throw new Error("executor input destinations overlap or are reserved");
+    destinations.add(target);
+  }
+  if (!Array.isArray(value.argv) || !value.argv.length || value.argv.some(arg => !nonemptyString(arg))) throw new Error("invalid executor argv");
+  const placeholders = new Set(["{entry}", "{args}", "{command}", "{executable}", ...Object.keys(inputs).map(role => `{input:${role}}`)]);
+  for (const token of value.argv) {
+    if ((token.startsWith("{") || token.endsWith("}")) && !placeholders.has(token)) throw new Error("unknown executor argv placeholder");
+  }
+  if (value.argv[0] !== (value.runtime === "python" ? "{entry}" : "{command}")
+      || value.argv.filter(token => token === "{args}").length > 1) throw new Error("invalid executor command template");
+  if (!Array.isArray(value.outputs)) throw new Error("executor outputs must be an array");
+  const outputs = new Set();
+  for (const output of value.outputs) {
+    assertKnownKeys(output, new Set(["path", "required", "min_bytes", "media_type", "recursive"]), "executor output");
+    const target = relative(root, resolveOwnedPath(root, output.path, "executor output"));
+    if (!target || target !== output.path || outputs.has(target)
+        || typeof output.required !== "boolean" || !Number.isInteger(output.min_bytes) || output.min_bytes < 0
+        || output.recursive !== undefined && typeof output.recursive !== "boolean"
+        || output.media_type !== undefined && !nonemptyString(output.media_type)) throw new Error("invalid executor output");
+    outputs.add(target);
+  }
+  return Object.freeze(value);
 }
 
 async function validateServer(value, root, extensionName) {
@@ -420,4 +385,12 @@ function nonemptyString(value) {
 function requireAbsoluteFile(value, label) {
   if (typeof value !== "string" || !value.startsWith("/")) throw new Error(`${label} must be an absolute path`);
   return resolve(value);
+}
+
+// Python consumers use this exact discovery/validation boundary as well.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    const packageRoot = process.argv[2] || resolve(fileURLToPath(new URL("../..", import.meta.url)));
+    process.stdout.write(JSON.stringify(await discoverInstalledExtensions({ packageRoot })));
+  } catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }
 }

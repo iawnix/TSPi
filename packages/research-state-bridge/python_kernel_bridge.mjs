@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { require_workspace_id } from "../agent-core/workspace_id.mjs";
 
-export const KERNEL_BRIDGE_PORT_VERSION = "kernel_bridge_port_1";
+export const KERNEL_BRIDGE_PORT_VERSION = "kernel_bridge_port_2";
 export const KERNEL_BRIDGE_METHODS = Object.freeze([
   "execute_command",
   "read_context",
@@ -19,7 +19,6 @@ export const KERNEL_BRIDGE_METHODS = Object.freeze([
   "admit_workspace",
   "apply_change",
   "checkpoint",
-  "turn",
   "transaction_get",
   "transaction_recover",
   "transaction_begin",
@@ -137,7 +136,6 @@ export function create_research_state_bridge({ workspace_root, workspace_id, tra
     admit_workspace: (request = {}) => invoke("admit_workspace", request),
     apply_change: (request = {}) => invoke("apply_change", request),
     checkpoint: (request = {}) => invoke("checkpoint", request),
-    turn: (request = {}) => invoke("turn", request),
     transaction_get: (request = {}) => invoke("transaction_get", request),
     transaction_recover: (request = {}) => invoke("transaction_recover", request),
     transaction_begin: (request = {}) => invoke("transaction_begin", request),
@@ -151,114 +149,6 @@ export function create_research_state_bridge({ workspace_root, workspace_id, tra
   });
 }
 
-const PYTHON_WORKER = String.raw`
-import json
-import sys
-from pathlib import Path
-
-root_dir = Path.cwd().resolve()
-for _source_root in ("tspi-runtime", "tspi-foundation", "research-state", "research-memory", "job-runtime", "artifact-store"):
-    sys.path.insert(0, str(root_dir / "packages" / _source_root))
-
-try:
-    from research_state.agent_workspace import dispatch as dispatch_agent_workspace, has_state_files
-    from research_state.transactions import TransactionCoordinator
-    from research_memory.service import install_state_projection_writer
-    install_state_projection_writer()
-except Exception as agent_workspace_import_error:
-    dispatch_agent_workspace = None
-    has_state_files = None
-    TransactionCoordinator = None
-    _agent_workspace_import_error = agent_workspace_import_error
-
-
-def _object(value, label):
-    if not isinstance(value, dict):
-        raise ValueError(label + " must be an object")
-    return value
-
-
-def dispatch(method, payload):
-    workspace_root = payload.get("workspace_root")
-    if not isinstance(workspace_root, str) or not workspace_root:
-        raise ValueError("workspace_root is required")
-    root = Path(workspace_root).expanduser().resolve()
-    # The bridge is a transport for the canonical Research State filesystem boundary.
-    # A missing or partial marker set is a configuration error; it must never
-    # select the retired JSON/SQLite command service.
-    if has_state_files is None:
-        raise RuntimeError("cannot import research_state.agent_workspace: " + str(_agent_workspace_import_error))
-    if not has_state_files(root):
-        raise ValueError("research workspace requires workspace_manifest.json, research_map/context.json, and lifecycle/liveness.json")
-    if method == "execute_command":
-        command = payload.get("command")
-        params = payload.get("params", {})
-        if not isinstance(command, str) or not command:
-            raise ValueError("command is required")
-        if not isinstance(params, dict):
-            raise ValueError("command params must be an object")
-        from tspi_runtime.api import execute
-        # Bind identity at the transport boundary, without adding transport
-        # fields to each command's closed parameter contract.
-        if payload.get("workspace_id") is not None:
-            manifest = json.loads((root / "workspace_manifest.json").read_text())
-            if manifest.get("workspace_id") != payload["workspace_id"]:
-                raise ValueError("research_workspace_id_mismatch")
-        return execute(command, root, params)
-    if method == "transaction_get":
-        if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
-        request_id = payload.get("request_id")
-        if not isinstance(request_id, str) or not request_id: raise ValueError("request_id is required")
-        return TransactionCoordinator(root).get(request_id) or {"state": "missing", "request_id": request_id}
-    if method == "transaction_recover":
-        if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
-        return TransactionCoordinator(root).recover()
-    if method == "transaction_begin":
-        if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
-        request_id = payload.get("request_id")
-        if not isinstance(request_id, str) or not request_id: raise ValueError("request_id is required")
-        return TransactionCoordinator(root).begin(request_id, payload.get("operation", "agent.operation"), payload.get("payload", {}))
-    if method == "transaction_prepare":
-        if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
-        request_id = payload.get("request_id")
-        if not isinstance(request_id, str) or not request_id: raise ValueError("request_id is required")
-        return TransactionCoordinator(root).prepare(request_id, payload.get("operation"), payload.get("payload"), writes=payload.get("writes", {}), result=payload.get("result"))
-    if method == "transaction_commit":
-        if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
-        return TransactionCoordinator(root).commit(payload.get("request_id"))
-    if method == "transaction_abort":
-        if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
-        return TransactionCoordinator(root).abort(payload.get("request_id"))
-    if method == "transaction_commit_files":
-        if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
-        request_id = payload.get("request_id")
-        operation = payload.get("operation", "agent.operation")
-        writes = payload.get("writes", {})
-        if not isinstance(request_id, str) or not request_id: raise ValueError("request_id is required")
-        if not isinstance(writes, dict): raise ValueError("writes must be an object")
-        return TransactionCoordinator(root).commit_files(request_id, operation, payload.get("payload", {}), writes=writes, result=payload.get("result"))
-    if dispatch_agent_workspace is None:
-        raise RuntimeError("cannot import research_state.agent_workspace: " + str(_agent_workspace_import_error))
-    return dispatch_agent_workspace(root, method, payload)
-
-
-for line in sys.stdin:
-    if not line.strip():
-        continue
-    request_id = None
-    try:
-        request = _object(json.loads(line), "bridge request")
-        request_id = request.get("id")
-        method = request.get("method")
-        if not isinstance(request_id, str) or not request_id:
-            raise ValueError("bridge request id is required")
-        if method not in {"execute_command", "read_context", "read_liveness", "admit_workspace", "apply_change", "checkpoint", "turn", "transaction_get", "transaction_recover", "transaction_begin", "transaction_prepare", "transaction_commit", "transaction_abort", "transaction_commit_files"}:
-            raise ValueError("unsupported kernel bridge method: " + str(method))
-        result = dispatch(method, _object(request.get("payload", {}), "bridge payload"))
-        print(json.dumps({"id": request_id, "ok": True, "result": result}, ensure_ascii=False, separators=(",", ":")), flush=True)
-    except Exception as error:
-        print(json.dumps({"id": request_id, "ok": False, "error": {"code": getattr(error, "code", type(error).__name__), "message": str(error), "details": getattr(error, "details", {})}}, ensure_ascii=False, separators=(",", ":")), flush=True)
-`;
 
 /**
  * Create a persistent JSONL subprocess transport.
@@ -267,11 +157,12 @@ for line in sys.stdin:
  * Python executable and environment instead of inheriting a shell lookup.
  */
 export function create_jsonl_subprocess_transport({
-  command = process.env.TS_PYTHON || "python3",
+  command = process.env.TSPI_PYTHON || "python3",
   args = [],
   cwd = REPOSITORY_ROOT,
   env = process.env,
   timeout_ms = DEFAULT_TIMEOUT_MS,
+  extension_catalog,
 } = {}) {
   if (typeof command !== "string" || command.length === 0) throw new TypeError("subprocess command is required");
   if (!Array.isArray(args) || args.some((item) => typeof item !== "string")) {
@@ -279,7 +170,7 @@ export function create_jsonl_subprocess_transport({
   }
   if (!Number.isInteger(timeout_ms) || timeout_ms <= 0) throw new TypeError("timeout_ms must be positive");
 
-  const child = spawn(command, [...args, "-u", "-c", PYTHON_WORKER], {
+  const child = spawn(command, [...args, "-u", resolve(REPOSITORY_ROOT, "packages/tspi-runtime/tspi_runtime/bridge_worker.py")], {
     cwd: require_workspace_root(cwd),
     env: { ...env },
     shell: false,
@@ -342,7 +233,7 @@ export function create_jsonl_subprocess_transport({
   });
 
   async function request(method, payload = {}) {
-    require_method(method);
+    if (!["configure_extensions", "workspace_catalog", "workspace_initialize", "workspace_attach", "workspace_admit"].includes(method)) require_method(method);
     if (closed) throw new KernelBridgeError("Research State runtime transport is closed", { code: "transport_closed" });
     const id = `bridge_${++sequence}`;
     const message = `${JSON.stringify({ id, method, payload })}\n`;
@@ -369,7 +260,12 @@ export function create_jsonl_subprocess_transport({
     if (!child.killed) child.kill();
   }
 
-  return Object.freeze({ request, close });
+  const ready = extension_catalog ? request("configure_extensions", extension_catalog) : Promise.resolve();
+  // Initialization starts eagerly; callers may not issue their first command
+  // until after a startup error. Keep the rejection observable on that command
+  // without creating an unhandled rejection in the meantime.
+  ready.catch(() => {});
+  return Object.freeze({ request: async (...values) => { await ready; return request(...values); }, close });
 }
 
 /** Build a bridge backed by the local Python JSONL subprocess. */

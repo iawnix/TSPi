@@ -14,7 +14,7 @@ but the main installer can provision it and enroll the Host in one run.
 - A prepared Pi source checkout at the pinned revision (the installer can
   download and patch it automatically).
 - A systemd user or system service is required for a normal installation; a configured TS Web
-  port is optional. Conda/Mamba is required when the managed scientific runtime is created; it is
+  port is optional. Conda/Mamba is required when the managed control runtime is created; it is
   not an optional backend dependency.
 
 The bootstrap uses the public HTTPS repository by default and retries interrupted
@@ -30,7 +30,8 @@ repository:
 
 Run `./install.sh` and confirm the installation directory, TSPi revision,
 workspace root, Conda root, optional TS Web component, and service policy. Core
-Agent, scientific runtime, and molecular rendering are always installed.
+Agent and its control runtime are always installed. Scientific computation,
+validation, and rendering depend on separately configured execution environments.
 
 `install-configured.sh` provisions the local Relay by default during the same
 non-interactive installation, creates a one-time enrollment code, and enrolls
@@ -96,56 +97,50 @@ metadata below `<install>/var/state/installation/python`. Runtime caches are pri
 under `<install>/var/cache`; they can be removed and recreated without
 touching workspace data.
 
-The scientific runtime probe executes reaction parsing and an ASE thermal-model
-check in addition to geometry and rendering checks. The pinned Pi source runtime
+Host installation uses the exact Conda builds in `environment.lock.txt` without
+solving `environment.yml` again. The base identity includes both files; the Python
+overlay identity binds the base and release payload. The Host probe checks JSON
+Schema, version constraints, and the installed wheel's origin. Scientific
+dependencies are declared by extension entries and verified on their local or
+remote `job.toml` targets. The pinned Pi source runtime
 also needs hydrated model data and built workspace dependencies;
 `scripts/prepare_pi_source.py --install` prepares both when missing. See
 [scientific operations](SCIENTIFIC_CAPABILITIES_OPERATIONS.md) for capability
 discovery, Node pause/resume, and opt-in remote/model smoke commands.
 
-The same step verifies the pinned Pi v1 runtime and its single TSPi integration patch.
+The same step verifies the pinned Pi runtime and its documented TSPi patch set.
 The runtime uses the new workspace-scoped SQLite session layout described below.
 
-## Configure Remote Execution (Compute Backends)
+## Configure execution targets
 
-Local calculation runs the selected backend in a durable Attempt-local
-subprocess. Remote execution mirrors inputs temporarily and collects results
-back locally. Both are selected from the same compute environment model; only a
-remote environment carries SSH/Torque transport fields.
+Local Jobs run in independent systemd user services. SSH/Torque or PBS targets
+stage inputs and return declared outputs. All targets use
+`job_start/job_status/job_collect`; select a configured environment with the
+Job's `platform` field. No implicit local fallback or remote alias is added.
 
-The installer accepts one TOML file for compute backends. During an interactive
-install, enter its path when prompted; for a non-interactive install, pass
-`--compute-config /absolute/path/compute.toml`. The project template is
-`config/compute.example.toml`. Copy it, edit the local and/or remote backend bindings
-available on the target machine, and pass the edited file to the installer. The
-installed copy is `<install>/etc/job.toml` and is written with mode `0600`.
+Copy `config/compute.example.toml`, edit target paths and bindings, and pass it
+with `--job-config /absolute/path/job.toml`. The installation keeps its private
+copy at `<install>/etc/job.toml`. SSH credentials remain in SSH configuration.
+TSPi does not install site-managed Gaussian or xTB binaries.
 
-Local and remote calculations share one public lifecycle through `job_start/job_status/job_collect`; choose
-`execution_target.kind = "local"` or `"remote"` and, when using the unified file,
-its environment name in the calculation intent. SSH keys and other credentials stay in
-the SSH configuration and are never copied into this TOML. TSPi does not install
-Gaussian or other site-managed native chemistry software.
+The chemical extension ships fixed wrapper, structure/validation, CF22D and
+rendering environment locks. Provision the needed targets with
+`scripts/install_job_environment.py` before installing or updating the Host;
+see the [target environment instructions](../extensions/chemical/environments/README.md).
+The sample paths are placeholders, and remote locks must match the remote OS
+and CPU. A native execution entry does not require Python.
 
-`/compute` and the `compute.environments` command list the configured local and
-remote environments. Remote scheduler checks remain available to the execution
-layer when a remote calculation is prepared; they are not a separate
-remote-only command surface.
-Add `--probe-remote` when installation should run `ResearchAgent --check-remote` and fail
-unless SSH, the scheduler, writable remote root, and configured software probes
-are ready. Without that flag the summary reports `not_probed` rather than
-claiming remote readiness.
-The current remote contract supports Torque/PBS only (`scheduler = "torque"`).
-The environment must describe SSH, a writable remote root, allowed queues, and the
-site-managed Gaussian/xTB/CREST/ASE-NEB commands. Restrict the file to mode 0600,
-then run:
+Installation checks the common configuration contract and then probes every
+configured execution entry on its actual target. For a maintenance check, use:
 
 ```bash
-./ResearchAgent --check-remote
+"$TSPI_PYTHON" -m tspi_runtime.environment_check --config "$TS_JOB_CONFIG"
 ```
 
-Remote execution code and software environments belong to the configured compute
-node; the App Server submits and records jobs but does not copy credentials into
-the mobile client.
+The report distinguishes verified and unconfigured entries. A configured but
+unusable target fails verification. Probe success is not scientific validation;
+run a bounded Job to verify a method. The [scientific operations guide](SCIENTIFIC_CAPABILITIES_OPERATIONS.md)
+describes resource, scratch, cancellation and recovery behavior.
 
 ## Installation Logs
 
@@ -265,11 +260,6 @@ The fixed Pi checkout lives at `<install>/runtimes/pi/<commit>`.
 Session storage is installation-owned; separate runtime injection, HTTP session
 stores and `.pi/research-agent/server.json` configuration have been removed.
 
-`apps/app-server/server.mjs` is an optional loopback HTTP adapter to an existing
-Host socket. Set `TSPI_HOST_SOCKET` to that socket when running it. It accepts
-`GET /health_read` and `POST /rpc` with `{ "method": "workspace.list", "params": {} }`.
-It does not start an Agent runtime. Remote Phone/Web connections use Link.
-
 Create a new conversation or continue the latest conversation in a project:
 
 ```bash
@@ -278,7 +268,7 @@ Create a new conversation or continue the latest conversation in a project:
 ```
 
 The Host identity is `<install>/var/state/host/server-id`; request receipts,
-scheduler leases, Monitor health, and the canonical Pi SQLite durable session repository
+internal producer identity, Monitor health, and the canonical Pi SQLite durable session repository
 live below the same directory. Each session is stored under `var/state/pi/sessions/<workspace-id>/<session-id>/` with `meta.json` and `session.sqlite`. Workspace `.pi/sessions` files are not accepted by
 Native Pi Harness. A workspace is restricted to a validated direct child of the
 configured workspace root.
@@ -324,7 +314,7 @@ An internal client can use the SSH transport to reach a remote Host. The remote
 installation must include `apps/app-server/tspi-host-proxy.mjs`; the client
 starts that proxy over SSH for both Host and Pi sockets, without opening a
 public TCP listener. OpenSSH performs host-key verification while TSPi still
-performs `tspi-host/1` protocol negotiation. Use `--ssh-option` for repeatable
+performs `tspi-host/2` protocol negotiation. Use `--ssh-option` for repeatable
 OpenSSH options such as `-i`.
 
 The installer can persist this profile for later `ResearchAgent --workspace`
@@ -426,27 +416,32 @@ TSPi session.
 
 Run `./install.sh` again and choose the same installation root. The installer
 downloads or builds a new content-addressed release, validates its package
-inventory, and switches `current` atomically. Existing
-workspaces, App Server identities, and TS Web credentials are retained.
-The launcher exports the pinned Pi checkout as the internal `TSPI_PI_RUNTIME_ROOT`
-variable for the Native client; users should not set it manually. If an older
-release reports `TSPI_PI_RUNTIME_ROOT is required for the native Pi client`, upgrade
-the installation so the launcher can select `<install>/runtimes/pi`
-from `config/pi-source.json`.
+inventory, and switches `current` atomically. Model configuration and credentials
+are retained. This release accepts only current workspace and session contracts;
+use fresh workspaces and sessions when replacing an incompatible release. The
+installer does not import or convert previous research state or Web registries.
 
-## Rollback
+The installer serializes upgrades and stops managed Host/Web writers before
+release activation. Independently owned calculation services keep running.
+Configuration and environment checks finish before service startup; readiness
+checks verify the selected Host release and the Web State bridge. Keep the
+existing service scope when updating an installation.
 
-The installer has a transaction rollback for failed upgrades: the selected
-release, launchers, runtime manifest, credentials, backend files, Phone
-manifest, and managed service units are restored together. There is no separate
-rollback selector in the current CLI. To move to an older release, run the
-installer with the desired pinned revision and let it perform a normal,
-validated upgrade; never edit a release directory in place or hand-edit the
-`current` pointer.
+## Installation Failure Recovery
+
+Before service activation, a caught failure restores the previous program and
+configuration snapshot. Once services may have accepted new work, failures keep
+the selected release and stop services; rerun the installer to repair forward.
+An interrupted installer also requires forward repair because the original
+in-memory snapshot is no longer available.
+
+`var/state/installation/maintenance.json` records that boundary without storing
+credentials. Normal launch is blocked during unfinished maintenance. This
+protects current-version writes; it does not migrate historical data.
 
 ## Operational Recovery
 
-If the Host exits, restart the single Host service. The Root lock is released by
+For sessions created under the current contract, if the Host exits, restart the single Host service. The Root lock is released by
 process exit and Pi SQLite sessions remain intact. Local calculation workers use
 independent transient user services when available, so a Host restart does not
 normally interrupt them; check the calculation status after recovery. A
@@ -473,8 +468,8 @@ is removed even when its code path no longer exists.
 
 ## Scientific binding readiness
 
-The installation uses `<install>/etc/job.toml`. Keep the reinstall source synchronized after intentional binding maintenance; reinstalling from an older source can otherwise restore obsolete bindings. The installer checks declared local scientific backends before installing: structured Conda binding, environment receipt, explicit lock and pinned dependencies, CF22D runtime imports, and executable availability after activation. An environment-level Python binding may be overridden per backend. Remove legacy pyscf.command.
+The installation uses `<install>/etc/job.toml`. Keep the reinstall source synchronized after binding maintenance. Before installation, the shared contract checks configuration. After installing the control runtime and extensions, the installer probes every configured local and SSH target using the declared executor and validator requirements: explicit locks, installation receipts, package versions, module imports, activation files, and program digests. Environment-level Python bindings may be overridden per backend; native executors need no Python binding.
 
-The summary separates configuration import from local_ready, static_valid, remote_not_probed, invalid, and not_probed backend states. Nondefault remote gaps are reported without contacting remote hosts; an invalid default target or declared local scientific backend fails installation. A readiness record with configuration digest and prior digest is saved at `var/state/installation/job-readiness.json`. These checks do not submit calculations; validate actual execution with a bounded scientific Job.
+The summary separates configuration import from `configuration_validated`, `verified`, and `not_configured` entry states. Missing capabilities do not prevent research requirement registration. A configured target that fails verification fails installation. `var/state/installation/job-readiness.json` records per-target, per-entry readiness and configuration digests. These probes do not submit calculations; validate execution with a bounded scientific Job. A healthy Host does not imply that molecular rendering or any solver is available.
 
 Reports and email check/prepare/send/status run through native bash; job_* manages scientific computation. Email retains installation credentials and durable delivery receipts.

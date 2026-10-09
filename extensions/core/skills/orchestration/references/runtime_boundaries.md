@@ -1,43 +1,32 @@
 # Runtime, Research State and Monitor boundaries
 
-Research State is the sole authority for Claims, Nodes, dependencies, strategies,
-checkpoints and workspace research liveness. Use the registered research tools;
-never maintain a second workflow state file. Session memory is conversation
-history; memory/index.json is a rebuildable State projection.
+Research State owns user requirements, research decisions and liveness. Read its
+current projection to decide what work is ready or blocked. Use public tools for
+changes; conversation history and memory projections do not replace State.
 
-Host binds workspace/session identity, queues inputs and executes the Pi loop.
-State returns durable tool admission; the Harness serializes tool calls and records phase labels without a second workflow admission graph.
-Read the State-provided ready_node_ids and blocked_node_ids before continuing.
-Do not reconstruct lifecycle rules from chat history or old status aliases.
+Host owns identity, client connections and routing. Pi Harness/Worker owns input
+admission, queues, interruption and durable submissions. This shared admission
+path receives terminal, phone and authenticated internal events. State supplies
+research admission decisions; Skills explain choices within those decisions.
 
-Job Runtime owns process/scheduler identity, logs, status, cancellation and file
-collection. The State bridge links Jobs to Attempts. Skill scripts own scientific
-input generation, parsing and validation. artifact_derive records a descriptor;
-it does not execute analysis. Run analysis scripts and register their real files.
+Job Runtime owns processes, schedulers, logs, cancellation and file collection.
+The State bridge associates each Job with its Attempt. Domain extensions declare
+scientific executors and validators; their Skills explain method choice and result
+interpretation. An artifact_derive descriptor describes analysis but does not run
+it. Execute the analysis as a Job before using its outputs as evidence.
 
-Monitor observes Job changes and queues a deduplicated next_run event to the
-owning session. It does not collect scientific outputs, interpret results, change
-research Nodes, choose calculations or send email. State decides wake admission;
-a deferred event remains pending until State changes, without repeated prompts.
-After a wake, read State, then use job_status/job_collect/job_reconcile as needed.
+Monitor observes Job changes and places events in the owning session's outbox.
+Worker admits an event against current State and records the Pi submission. A
+pending event is not proof that the model has consumed it. Monitor does not collect
+outputs, interpret science, select methods or send email. After a wake, inspect
+State and use job_status, job_collect or job_reconcile as appropriate.
 
-Block a Node requiring user input with research_change and give a concrete
-reason. Independent Nodes may continue. If other Attempts run, use
-waiting_external with their real Attempt IDs. A global user_input_required
-checkpoint is valid only when scoped Nodes are blocked/closed and no independent
-ready or running work remains. An email recipient is not a calculation dependency.
-Use a recovery checkpoint after the actual user decision, then update Nodes.
+State owns explicit continuation requests and their budget. Worker admits them
+through the same durable input path. Neither Host nor Skill reconstructs a second
+research scheduler. See the [generated public contract](public_contract.md) for
+available tools and checkpoint dispositions.
 
-The public tool schema is the interface contract. Read [public_contract.md](public_contract.md)
-for generated tool names and dispositions; Skills describe how to use that contract,
-not a separate scheduler or capability registry.
-
-
-State persists `continuation` in its liveness projection only for an explicit
-continue_required checkpoint with an owning session. Host consumes that outbox
-through its existing durable input receipts. Unchanged revisions cannot create
-new wakes; continuation budget is State-owned. Monitor remains responsible only
-for Job changes and configured queue-wait threshold events. `eligible_node_ids`
-means dependency/strategy admission; `ready_node_ids` excludes running scopes.
-An independent work_id can admit another Job in an eligible running scope without
-making it an automatically ready plan. Neither Skill nor Host reconstructs this rule.
+Scope blockers to the work they affect. Missing delivery details need not stop
+independent calculations. Continue ready work, wait for actual running Attempts,
+and request user input when a decision is needed to proceed. After the user's
+answer, record recovery and update the affected Nodes before restarting work.

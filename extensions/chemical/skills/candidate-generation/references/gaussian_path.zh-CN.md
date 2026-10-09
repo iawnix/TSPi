@@ -24,8 +24,10 @@
 下列命令使用系统列出的真实 Skill 路径和工作区路径：
 
 ```text
-"$TSPI_PYTHON" <candidate-generation>/scripts/prepare_path.py candidates --spec <workspace>/spec.json --output-dir <workspace>/candidates --enumerate-stereo --conformers 2
+"$TSPI_PYTHON" -m tspi_runtime.executors --config "$TS_JOB_CONFIG" --environment local --executor chemical.path-candidates --version 1 --input spec=<workspace>/spec.json --input-artifact <spec-ref> --output <workspace>/candidates-request.json -- --enumerate-stereo --conformers 2
 ```
+
+将返回的 request_file/request_sha256 与 node_id 提交并收集后，再检查候选。入口使用目标 structure 绑定，每个生成文件均保留 Attempt 来源。
 
 `candidates.json` 保留每个成功或失败分支。成功分支含带摘要的 `spec.json`、`atom_order.json`、
 `reactants.xyz`、`product.xyz` 和 `ts.gjf`。helper 嵌入产物构象，构建 s-cis 二烯，按原子对应
@@ -38,20 +40,22 @@
 使用既有 method-selection helper 准备 TS 请求：
 
 ```text
-"$TSPI_PYTHON" <method-selection>/scripts/prepare_job.py --root <workspace> --config <installation>/job.toml --environment local --backend gaussian --skill gaussian --input-gjf <branch>/ts.gjf --collect ts.chk --output <workspace>/ts-request.json -- --method M062X --basis '6-31G**' --threads 12 --memory-mb 4000 --validation saddle
+"$TSPI_PYTHON" -m tspi_runtime.executors --config <installation>/job.toml --environment local --executor chemical.gaussian-input --version 1 --input input=<branch>/ts.gjf --collect results/ts.chk --output <workspace>/ts-request.json -- --method M062X --basis '6-31G**' --threads 12 --memory-mb 4000 --validation saddle
 ```
 
-将返回的 `prepared_ref` 连同所属 `node_id` 交给 `job_start`，在 Job 终止后收集结果。
+将返回的 `request_file` 和 `request_sha256` 连同所属 `node_id` 交给 `job_start`，在 Job 终止后收集结果。
 runner 成功不是科学结论：用已注册鞍点验证器检查收集的原始 `gaussian.out`。检查通过后，
 从该 Job 收集的 `ts.chk` 准备正反 IRC 输入：
 
 ```text
-"$TSPI_PYTHON" <candidate-generation>/scripts/prepare_path.py irc --spec <branch>/spec.json --checkpoint <collected-ts.chk> --output-dir <workspace>/irc
+"$TSPI_PYTHON" -m tspi_runtime.executors --config "$TS_JOB_CONFIG" --environment local --executor chemical.path-irc --version 1 --input spec=<branch>/spec.json --input checkpoint=<collected-ts.chk> --input-artifact <spec-ref> --input-artifact <checkpoint-ref> --output <workspace>/irc-request.json
 ```
 
-每个方向使用 `prepare_job.py --input-gjf <workspace>/irc/forward.gjf`（另一个为 `reverse.gjf`），
+先提交并收集 IRC 输入准备 Job，再使用其生成的输入和检查点。
+
+每个方向使用 `-m tspi_runtime.executors --executor chemical.gaussian-input --version 1 --input input=<workspace>/irc/forward.gjf`（另一个为 `reverse.gjf`），
 传入 `--dependency <workspace>/irc/ts.chk=ts.chk`，并声明
-`--collect irc_path_summary.json --collect irc_path_points.json --collect gaussian_endpoint.xyz`。
+`--collect results/irc_path_summary.json --collect results/irc_path_points.json --collect results/gaussian_endpoint.xyz`。
 保持相同方法和资源，`--` 后使用 `--validation irc`。分别提交返回引用、收集结果，再验证连通性。
 
 通过 `job_start(validator_id=..., input_artifact_ids=[...])` 执行注册验证器：

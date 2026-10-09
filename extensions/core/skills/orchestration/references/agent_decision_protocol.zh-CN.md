@@ -1,54 +1,25 @@
-# Root Agent 变更协议
+# 研究决策过程
 
-Root 负责科学判断，Research State 负责结构有效性与原子存储；两者职责必须分开。
+先使用已提供的 State 快照，只查询缺失或过期的信息。修改前明确问题、不确定性、
+负责的 Node 和支持证据。重试沿用 Node；问题或交付物改变时创建后继 Node。
+用户要求独立于所选计划保留。
 
-## 变更前
+根据现有证据选择下一步。记录科学结论前检查真实输出及其执行记录。运行故障可能
+只需要恢复，不必生成科学 Finding；经过核实且有助后续判断的结果或局限才值得登记。
 
-使用当前 State 快照；信息缺失或过期时才读取最小范围的 `research_read` 视图。
-对象详情用 `detail`，来源记录用 `evidence`，当前决策用 `context`/`liveness`，不必依次全读。
+一个 ChangeSet 表达一个连贯决策并说明理由。使用
+`research_read mode=operations query=<operation>` 查询当前字段及示例；
+[Research State 决策指导](../../research-state/references/decision_contract.zh-CN.md)
+解释证据与重新评估。批次被拒绝时没有操作提交，应修复指出的前置条件而不重复外部副作用。
 
-明确问题、当前不确定性、负责该工作的 Node，以及支持拟议变更的来源记录。复用已有 ID。
-当问题、交付物或 Claim 范围发生变化时创建新的依赖 Node；重试同一个计算仍是在同一
-Node 下新增 Attempt。
+修改后依据返回的 State 继续独立就绪工作、等待正在运行的任务或说明剩余阻塞。
+Node 完成、Claim 评估和 requirement 满足回答不同问题。阶段工作完成后，用户要求
+仍可能未满足，报告中应保留这个区别。
 
-## 变更中
+结束前记录与实际剩余工作一致的 checkpoint。
+[生成的公共契约](public_contract.zh-CN.md) 提供当前 disposition。
+能继续则继续授权工作；缺失决定阻止后续进展时请求用户输入。以 State 返回的准入
+结果判断续跑或等待是否获准。Monitor 唤醒提醒检查执行事实，不负责选择科学方法。
 
-提交一个带具体理由和有序 operations 的 `research_change` 请求。用 `create_finding` 记录已核验
-的 Node 输出，并选择 `kind=fact` 或 `kind=issue`。Finding 的 statement 应保持单一、
-明确，并通过 `source_refs` 引用 Artifact ID 等来源。只有某项标准需要在 map 中可见时才
-使用 `create_gate`，然后用当前证据引用调用 `evaluate_gate`。
-`source_refs` 只能填写已登记的 Artifact 或 EvidenceLink ID；strategy plan、Claim、Node
-和普通 request ID 不是证据。若要说明某个 ChangeSet/strategy 的决策依据，使用请求级
-`basis_refs`，不要把 strategy ID 填入 Finding 的 `source_refs`。
-
-不要从工具成功返回推断科学结论。先检查主要 Artifact 和执行记录。调度器或解析器失败
-属于运行信息；只有其科学影响已经确定时才记录 IssueFinding。
-
-## 变更后
-
-读取返回的 revision，并在需要时读取 `research_read mode=summary`。只有完成标准已满足且所附每个
-NodeGate 的最新评估均为 `pass` 时，Node 才能以 `completed` 关闭。问题未解决时使用
-`inconclusive` 或 `stopped`。科学 Claim 状态通过带理由和已登记证据的 `assess_claim` 更新；Node 状态与 Claim 状态互不隐含。
-
-对于新问题，创建依赖于先前 Node 的后继 Node，并在同一个或后续 ChangeSet 中设置焦点。
-保留旧 Node、Finding、Gate、Artifact 和 Attempt 作为历史。
-
-## Research Turn 收尾
-
-研究回合结束时使用最新快照，信息缺失或过期时才读取 `context` 或 `liveness`，在需要时记录 strategy 或
-Attempt interpretation，然后使用 `research_checkpoint` 写入明确 disposition：
-`continue_required`、`waiting_external`、`deferred`、`blocked`、`terminal` 或
-`user_input_required`。`research_checkpoint` 是规范的 turn
-边界。解析完成或运行记录完成本身不能关闭科学问题。`decision_needed` 要求 Root Agent 继续并记录
-checkpoint；如果 liveness 同时返回 `execution_ready=true`，说明 focus 已有 active StrategyPlan，
-Root Agent 可以在该 checkpoint 前执行已声明的计划，但 Host 仍要求 turn 结束前写入 checkpoint。
-`continue_required` 是合法的下一轮计划，不能由 Harness 在本轮强制执行。Harness 的 follow-up 只用于
-修复缺少 disposition 的边界，不能替 Root 选择方法。Monitor 的 `next_run` 只是运行时唤醒。
-
-## Review
-
-Review 是隔离的建议性评估，不能写入 map。只向 Review 提供所需的 Claim 和已登记 Artifact。
-它不能改变 Claim、Node、Finding、Gate，不能选择方法、启动/取消 Compute，也不能单独充当证据。
-通过 `research_interpretation` 回答后，再使用普通 map operation 记录 Root 接受、拒绝或附带条件的解释。
-
-`artifact_derive` 只记录派生描述。实际分析通过 Skill 脚本和 Job Runtime 执行，再登记其产物。
+围绕具体不确定性请求咨询审查，提供有关 Claim 和已登记证据，再由研究 Agent 记录
+接受、拒绝或限定的解释。审查意见本身不是证据，也不能替代实际执行。

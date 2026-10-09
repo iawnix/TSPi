@@ -8,6 +8,7 @@ import re
 import sys
 from pathlib import Path
 from typing import List, Tuple
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_shared"))
 
 def write_json(path, value):
     path = Path(path)
@@ -32,94 +33,8 @@ ROUTE_KEYWORDS_WITH_KNOWN_LINE_WRAPS = (
 )
 
 
-PERIODIC_TABLE = [
-    "",
-    "H", "He",
-    "Li", "Be", "B", "C", "N", "O", "F", "Ne",
-    "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar",
-    "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn",
-    "Ga", "Ge", "As", "Se", "Br", "Kr",
-    "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd",
-    "In", "Sn", "Sb", "Te", "I", "Xe",
-    "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy",
-    "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt",
-    "Au", "Hg", "Tl", "Pb", "Bi", "Po", "At", "Rn",
-]
-
-
-
-
-
-
-def read_xyz_frames(path: Path) -> list[Frame]:
-    lines = path.read_text(encoding="utf-8").splitlines()
-    if not lines:
-        raise ValueError(f"{path} is empty")
-
-    frames: list[Frame] = []
-    i = 0
-    while i < len(lines):
-        while i < len(lines) and not lines[i].strip():
-            i += 1
-        if i >= len(lines):
-            break
-        try:
-            natoms = int(lines[i].strip())
-        except ValueError as exc:
-            raise ValueError(
-                f"{path} is not a standard XYZ/extXYZ file: line {i + 1} is not an atom count"
-            ) from exc
-        if natoms <= 0:
-            raise ValueError(f"Bad atom count on line {i + 1}: {natoms}")
-
-        title_line = i + 1
-        title = lines[title_line].strip() if title_line < len(lines) and lines[title_line].strip() else path.stem
-        coord_start = i + 2
-        coord_end = coord_start + natoms
-        if coord_end > len(lines):
-            raise ValueError(f"Frame {len(frames)} expected {natoms} atoms, but file ended early")
-
-        coords: list[Coord] = []
-        for lineno, line in enumerate(lines[coord_start:coord_end], start=coord_start + 1):
-            parts = line.split()
-            if len(parts) < 4:
-                raise ValueError(f"Bad coordinate line {lineno}: {line!r}")
-            try:
-                coords.append((parts[0], float(parts[1]), float(parts[2]), float(parts[3])))
-            except ValueError as exc:
-                raise ValueError(f"Bad coordinate value on line {lineno}: {line!r}") from exc
-        frames.append((title, coords))
-        i = coord_end
-
-    if not frames:
-        raise ValueError(f"{path} does not contain any XYZ frames")
-    return frames
-
-
-def select_frame(frames: list[Frame], selector: str) -> tuple[int, str, list[Coord]]:
-    selector = selector.strip().lower()
-    if selector == "only":
-        if len(frames) != 1:
-            raise ValueError(
-                f"Input contains {len(frames)} XYZ frames; use --frame first, --frame last, "
-                "or --frame <zero-based-index> to choose the TS candidate explicitly"
-            )
-        index = 0
-    elif selector == "first":
-        index = 0
-    elif selector == "last":
-        index = len(frames) - 1
-    else:
-        try:
-            index = int(selector)
-        except ValueError as exc:
-            raise ValueError("Frame selector must be 'only', 'first', 'last', or an integer index") from exc
-        if index < 0:
-            index += len(frames)
-        if not 0 <= index < len(frames):
-            raise ValueError(f"Frame index {selector!r} is out of range for {len(frames)} frames")
-    title, coords = frames[index]
-    return index, title, coords
+# Validators stage this module together with the same shared XYZ reader.
+from xyz import PERIODIC_TABLE, read_xyz_frames, select_frame
 
 
 def read_xyz(path: Path, frame: str = "only") -> tuple[int, str, list[Coord]]:

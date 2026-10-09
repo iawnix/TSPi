@@ -5,6 +5,7 @@ import json
 import math
 import shutil
 import sys
+from xyz import read_xyz, validate_electronic_state
 
 
 def digest(path):
@@ -19,23 +20,6 @@ def write_json(path, value):
     temporary.replace(path)
 
 
-def read_xyz(path):
-    lines = Path(path).read_text().splitlines()
-    count = int(lines[0])
-    if count < 1 or len(lines) < count + 2 or any(x.strip() for x in lines[count+2:]):
-        raise ValueError('expected exactly one complete XYZ structure')
-    atoms = []
-    for line in lines[2:count+2]:
-        parts = line.split()
-        if len(parts) != 4 or not parts[0].isalpha():
-            raise ValueError('invalid XYZ atom')
-        xyz = tuple(float(x) for x in parts[1:])
-        if not all(math.isfinite(x) for x in xyz):
-            raise ValueError('non-finite XYZ coordinates')
-        atoms.append((parts[0], *xyz))
-    return atoms
-
-
 def finite_energy(value):
     if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value):
         raise ValueError('missing or non-finite electronic energy')
@@ -45,15 +29,21 @@ def finite_energy(value):
 def prepare(args, method, basis=None):
     source = Path(args.xyz).resolve()
     atoms = read_xyz(source)
+    validate_electronic_state(atoms, args.charge, args.multiplicity)
     out = Path(args.output_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
     if any(out.iterdir()):
         raise ValueError('output directory must be empty; use a new attempt directory')
     shutil.copyfile(source, out / 'input.xyz')
-    result = {'schema_version': 'science-result/1', 'method': method, 'basis': basis,
-              'charge': args.charge, 'spin': args.spin, 'input_sha256': digest(source),
-              'geometry_unit': 'angstrom', 'energy_unit': 'hartree', 'steps': [], 'validated': False}
+    result = new_result(args, method, basis, source)
     return out, atoms, result
+
+
+def new_result(args, method, basis, source):
+    return {'schema_version': 'science-result/2', 'method': method, 'basis': basis,
+            'charge': args.charge, 'multiplicity': args.multiplicity, 'input_sha256': digest(source),
+            'geometry_unit': 'angstrom', 'energy_unit': 'hartree', 'steps': [],
+            'checks_passed': False, 'scientific_validation': 'not_assessed'}
 
 
 def provenance(script):
@@ -64,7 +54,7 @@ def provenance(script):
 
 
 def finish(out, result, script, error=None):
-    result['validated'] = error is None
+    result['checks_passed'] = error is None
     result['scripts'] = provenance(script)
     receipt = Path(sys.prefix) / 'tspi-environment.json'
     result['runtime'] = {'python': sys.executable, 'prefix': sys.prefix, 'version': sys.version,

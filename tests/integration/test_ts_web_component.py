@@ -17,6 +17,41 @@ ROOT = Path(__file__).resolve().parents[2]
 COMPONENT_ROOT = ROOT / "components" / "ts-web"
 
 
+def test_web_cli_uses_explicit_provider_and_shared_catalog(tmp_path: Path, monkeypatch) -> None:
+    from research_state.workspace import initialize_workspace, admit_research_workspace
+    from research_state.workspace_catalog import WorkspaceCatalog
+
+    monkeypatch.delenv("TSPI_WEB_PROVIDER", raising=False)
+    external = tmp_path / "external"
+    initialize_workspace(external, "study", "research")
+    admit_research_workspace(external)
+    workspace_root = tmp_path / "projects"
+    state_dir = tmp_path / "web-state"
+    entry = [sys.executable, str(COMPONENT_ROOT / "bin/ts-web")]
+    provider = str(ROOT / "apps/agent-cli/research_web_bridge.py")
+
+    def invoke(command: str, *arguments: str) -> object:
+        result = subprocess.run(
+            [*entry, "--provider", provider, command, "--state-dir", str(state_dir),
+             "--workspace-root", str(workspace_root), *arguments],
+            capture_output=True, text=True, check=True,
+        )
+        return json.loads(result.stdout)
+
+    invoke("register", "--source-root", str(external), "--label", "External study")
+    catalog = WorkspaceCatalog(workspace_root)
+    assert catalog.resolve("study")["source_root"] == str(external)
+    assert invoke("list")["workspaces"][0]["workspace_id"] == "study"
+    invoke("remove", "--workspace-id", "study")
+    assert catalog.list() == []
+    assert external.is_dir()
+    missing_provider = subprocess.run(
+        [*entry, "list", "--state-dir", str(state_dir)], capture_output=True, text=True,
+    )
+    assert missing_provider.returncode != 0
+    assert "requires --provider or TSPI_WEB_PROVIDER" in missing_provider.stderr
+
+
 def test_web_component_source_has_no_private_tspi_runtime_imports() -> None:
     for path in COMPONENT_ROOT.rglob("*.py"):
         source = path.read_text(encoding="utf-8")

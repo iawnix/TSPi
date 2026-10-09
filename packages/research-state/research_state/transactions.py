@@ -27,6 +27,7 @@ from typing import Any, Iterator
 _LOCAL = threading.local()
 _STAGING: ContextVar[tuple[Path, dict[str, Any]] | None] = ContextVar("state_transaction_staging", default=None)
 _TRANSACTION_SCHEMA = "agent_transaction/2"
+_WRITER_VERSION = 3
 _RECOVERY_INDEX = "operations/transactions/recovery/index.json"
 _WRITER_MARKER = "operations/transactions/writer-version.json"
 
@@ -54,6 +55,16 @@ def _digest(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
 
 
+def writer_marker():
+    return {"schema_version": _TRANSACTION_SCHEMA, "state": "committed",
+            "operation": "transaction.writer_version", "request_id": f"transaction-writer-version:{_WRITER_VERSION}",
+            "result": {"minimum_writer_version": _WRITER_VERSION}}
+
+
+def recovery_index():
+    return {"schema_version": "transaction-recovery-index/1", "writer_version": _WRITER_VERSION}
+
+
 def _safe_path(root: Path, relative: str) -> Path:
     if not isinstance(relative, str) or not relative or Path(relative).is_absolute() or ".." in Path(relative).parts:
         raise TransactionError("transaction_path_invalid")
@@ -67,6 +78,15 @@ def _safe_path(root: Path, relative: str) -> Path:
         current /= component
         if current.is_symlink():
             raise TransactionError("transaction_path_symlink")
+    return path
+
+
+def _safe_write_path(root: Path, relative: str) -> Path:
+    path = _safe_path(root, relative)
+    canonical = path.relative_to(root).as_posix()
+    if (canonical == ".ts-workspace.lock" or canonical == "operations/transactions"
+            or canonical.startswith("operations/transactions/")):
+        raise TransactionError("transaction_reserved_path")
     return path
 
 
@@ -130,13 +150,20 @@ class TransactionCoordinator:
 
     @contextmanager
     def locked(self) -> Iterator[None]:
+        with self._exclusive() as outer:
+            if outer:
+                self._recover_locked()
+            yield
+
+    @contextmanager
+    def _exclusive(self) -> Iterator[bool]:
         """Reentrant per thread; a crashed process cannot leave a stale lock."""
         held = getattr(_LOCAL, "locks", None)
         if held is None:
             held = _LOCAL.locks = {}
         key = str(self.root)
         if key in held:
-            yield
+            yield False
             return
         self.root.mkdir(parents=True, exist_ok=True)
         path = _safe_path(self.root, ".ts-workspace.lock")
@@ -147,8 +174,7 @@ class TransactionCoordinator:
             os.fchmod(descriptor, 0o600)
             flock(descriptor, LOCK_EX)
             held[key] = descriptor
-            self._recover_locked()
-            yield
+            yield True
         finally:
             held.pop(key, None)
             flock(descriptor, LOCK_UN)
@@ -166,7 +192,7 @@ class TransactionCoordinator:
             value = json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return None
-        if not isinstance(value, dict) or value.get("schema_version") not in {"agent_transaction/1", _TRANSACTION_SCHEMA}:
+        if not isinstance(value, dict) or value.get("schema_version") != _TRANSACTION_SCHEMA:
             raise TransactionError("transaction_journal_invalid")
         return value
 
@@ -178,8 +204,11 @@ class TransactionCoordinator:
         writes = record.get("writes")
         if not isinstance(writes, dict) or _digest(writes) != record.get("writes_digest"):
             raise TransactionError("transaction_writes_corrupt")
+        # Validate the complete write set before replaying any public file.
+        for relative in writes:
+            _safe_write_path(self.root, relative)
         for relative, value in writes.items():
-            _atomic_json(_safe_path(self.root, relative), value)
+            _atomic_json(_safe_write_path(self.root, relative), value)
         committed = {**record, "state": "committed", "committed_at": _now()}
         _atomic_json(path, committed)
         self._clear_recovery_pointer(path)
@@ -201,26 +230,20 @@ class TransactionCoordinator:
         recovered = []
         index_path = _safe_path(self.root, _RECOVERY_INDEX)
         if not index_path.exists():
-            # One upgrade scan recovers pre-index journals. Publishing a v2
-            # marker first makes old v1 writers reject mixed-version access:
-            # they scan every journal and cannot silently create unindexed
-            # committing decisions after this upgrade.
-            for path in sorted(journal.glob("*.json")):
-                record = self._read(path)
-                if record and record.get("state") == "committing":
-                    recovered.append(self._replay(path, record))
-            _atomic_json(_safe_path(self.root, _WRITER_MARKER), {
-                "schema_version": _TRANSACTION_SCHEMA, "state": "committed",
-                "operation": "transaction.writer_version", "request_id": "transaction-writer-version:2",
-                "result": {"minimum_writer_version": 2},
-            })
-            _atomic_json(index_path, {"schema_version": "transaction-recovery-index/1", "writer_version": 2})
+            # Only an empty journal may initialize during ordinary access.
+            # Existing journals must use the current transaction contract.
+            if any(path.name != "writer-version.json" for path in journal.glob("*.json")):
+                raise TransactionError("unsupported_transaction_journal")
+            marker_path = _safe_path(self.root, _WRITER_MARKER)
+            marker = self._read(marker_path)
+            if marker is not None and marker != writer_marker():
+                raise TransactionError("unsupported_transaction_journal")
+            _atomic_json(marker_path, writer_marker())
+            _atomic_json(index_path, recovery_index())
         index = read_json(index_path)
         marker = self._read(_safe_path(self.root, _WRITER_MARKER))
-        if (index != {"schema_version": "transaction-recovery-index/1", "writer_version": 2}
-                or not marker or marker.get("schema_version") != _TRANSACTION_SCHEMA
-                or marker.get("result") != {"minimum_writer_version": 2}):
-            raise TransactionError("transaction_recovery_index_invalid")
+        if index != recovery_index() or marker != writer_marker():
+            raise TransactionError("unsupported_transaction_journal")
         pending = _safe_path(self.root, "operations/transactions/recovery/pending")
         for pointer in sorted(pending.glob("*.json")):
             if pointer.is_symlink() or not re.fullmatch(r"[0-9a-f]{64}\.json", pointer.name):
@@ -265,9 +288,7 @@ class TransactionCoordinator:
             if not isinstance(writes, dict):
                 raise TransactionError("transaction_writes_invalid")
             for relative in writes:
-                _safe_path(self.root, relative)
-                if relative.startswith("operations/transactions/") or relative == ".ts-workspace.lock":
-                    raise TransactionError("transaction_reserved_path")
+                _safe_write_path(self.root, relative)
             record = {
                 "schema_version": _TRANSACTION_SCHEMA, "transaction_id": f"txn_{_digest(request_id)}",
                 "request_id": request_id, "operation": operation, "request_digest": request_digest,

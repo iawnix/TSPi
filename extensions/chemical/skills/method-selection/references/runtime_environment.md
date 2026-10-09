@@ -1,30 +1,22 @@
-# Runtime Environment Contract
+# Execution environment selection
 
-TSPi uses an installation-managed Python runtime shared by workspaces: a
-hash-addressed Conda environment for scientific dependencies and a venv for the
-selected `tspi-runtime` wheel.
+`TSPI_PYTHON` is the installation's control interpreter. Use it to prepare
+requests and format existing evidence. It does not supply scientific libraries.
 
-`scripts/install_env.py` binds package root, environment-spec digest,
-interpreter, required render dependencies, runtime manifest, and environment
-prefix. A formal release contains one manifest-bound `tspi-runtime` wheel;
-the installer revalidates and installs that wheel without building in the
-read-only release. An authored checkout instead builds the wheel in a temporary
-copy. Both paths record a digest of all installed modules and package data.
-RDKit, a compatible NumPy range, Matplotlib, and `xyzrender` are core
-dependencies. Before writing the runtime manifest, the installer proves
-NumPy/RDKit/Matplotlib imports, SMILES parsing, fixed-seed ETKDG embedding, UFF
-optimization, and the `xyzrender` executable, recording versions and origins.
-`packages/tspi-bootstrap/tspi_bootstrap/launcher.py` accepts the manifest only when
-the source and installed distribution digests still match.
+Select an installed executor and a named environment from `job.toml`. The
+executor declares its dependencies; the selected binding supplies the target
+Python or native program. Structure preparation and chemical validators can
+share the `structure.lock` environment. Gaussian/xTB Python wrappers use
+`wrapper.lock`; CF22D uses `cf22d.lock`; molecular rendering uses `render.lock`.
+These locks are installation resources under the chemical extension's
+`environments` directory. They do not prescribe which scientific method to use.
 
-Research workspaces store state and artifacts. The installation runtime store
-holds Python environments, and release directories hold versioned program files.
+Preparation checks the selected target and fixes input, script and environment
+identities. Submission and execution recheck that identity. A missing binding,
+dependency or verified receipt is an installation gap, not permission to run
+science in the Host interpreter or silently choose another method.
 
-TSPi exports the manifest-selected interpreter as `TSPI_PYTHON`, prepends
-its `bin` to `PATH`, disables user site packages, and clears `PYTHONHOME` for
-the Pi process tree. A missing or invalid runtime is repaired through the installer.
-
-When diagnosing failure, check release, Python payload digest, manifest, spec
-digest, interpreter, probe module origins, and renderer separately.
-Reinstall the selected release into the hash-addressed environment rather than
-modifying it ad hoc.
+Record the unmet requirement and report the concrete missing binding. An
+operator can install a versioned prefix from the shipped lock with
+`scripts/install_job_environment.py`; a research task must not modify shared
+environments. Existing jobs retain their original identities after maintenance.

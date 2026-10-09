@@ -21,6 +21,8 @@ all pending patches can be checked before changing files.
 | 005-client-history | Populate input history from accepted user entries in the active transcript | Pi presentation/history tests; each session gets a new editor |
 | 006-tool-presentation | Register compact tool renderers and connect Ctrl+O expansion | Native tool card rendering and retained full results |
 | 007-client-status | Local footer/activity components and a dismissible document surface | Native status, document, resize, session-switch and disposal tests |
+| 008-request-admission | Fail-closed generation hooks and one bounded compaction attempt | Request admission failure, context budget and compaction outcome tests |
+| 009-input-identity | Native clients supply stable request IDs; AgentController preserves them and specific admission errors | Real native-controller and common input-admission tests |
 
 Application integration lives outside these patches. The worker publishes the
 `tspi.client-queries` service, bound to its workspace, session, kernel bridge, and
@@ -51,10 +53,16 @@ ordinary Pi's full command set to the experimental TUI.
 Monitor admission is implemented in TSPi's worker service rather than another
 Pi source patch. `monitor-admission.mjs` uses the pinned
 `packages/durable/src/harness/submissions.ts` transaction primitive
-`admitSubmission`: checking the run/inbox, reassessing Research State and placing
-input must share one Pi commit. Native tests cover busy rejection, batch
-idempotency, concurrent native input and obsolete legacy queue removal. Recheck
-this internal API on every Pi pin update.
+`admitSubmission`: run/inbox checks, immutable input provenance and placement
+share one short Pi commit. All State/Python assessment runs outside that commit.
+The Worker reassesses internal input before its first model consumption and
+records the State basis against the submission, across generation task changes.
+An authenticated producer submits structured event IDs; message text and ID
+prefixes never establish provenance. Monitor acknowledges consumption, retaining
+pending or deferred events and earlier identities when State supersedes an input.
+Native tests cover busy rejection, batch idempotency, a slow bridge racing native
+input, consumption reassessment, and real Worker/Host restart recovery. Recheck
+the internal Pi API on every pin update.
 
 The TSPi footer shows model, thinking level, workspace/session, estimated context
 and cumulative model tokens. `/usage` opens provider-reported input/output/cache
@@ -71,6 +79,5 @@ snapshots on reconnect and every five seconds. Monitor status includes an
 observational pending-delivery summary; reading it never claims or batches an
 outbox entry. Counts are scoped to the attached session, while worker health is
 shared. Host `next_run` is not a Pi inbox enum: accepted queued messages use
-`followUp`. Only recognizable Monitor follow-ups are labelled as queued wakes;
-ordinary user follow-ups retain Pi's own queue display. Monitor currently waits
+`followUp`. User input retains Pi's own queue display. Monitor waits
 for idle admission, so busy-session wakes normally remain pending delivery.

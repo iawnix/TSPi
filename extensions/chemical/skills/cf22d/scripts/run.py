@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from dataclasses import replace
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_shared"))
-from science import prepare, digest, finite_energy, finish
+from science import prepare, digest, finite_energy, finish, read_xyz
 
 from runner import build_config, run_pyscf
 
@@ -24,7 +24,7 @@ def main(argv: list[str] | None = None) -> int:
         geometry = out / "input.xyz"
         for task in (["opt", "sp"] if original_task == "opt-sp" else [original_task]):
             args.task = task
-            config = replace(build_config(args), xyz=geometry, output_dir=out/task, keep_scratch=True)
+            config = replace(build_config(args), xyz=geometry, output_dir=out/task, keep_scratch=False)
             config.output_dir.mkdir()
             # PySCF's scientific log remains distinct from Job stdout/stderr.
             with (config.output_dir/"pyscf.out").open("w") as log:
@@ -38,6 +38,8 @@ def main(argv: list[str] | None = None) -> int:
                 if summary["optimization_converged"] is not True:
                     raise ValueError("CF22D optimization did not converge")
                 next_geometry = config.output_dir/"pyscf_geometry.xyz"
+                if [atom[0] for atom in read_xyz(next_geometry)] != [atom[0] for atom in atoms]:
+                    raise ValueError("optimized geometry atom order changed")
             else:
                 next_geometry = geometry
             result["steps"].append({"task":task, "input_sha256":digest(geometry),

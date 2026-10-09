@@ -2,14 +2,16 @@
   "schema_version": "skill-resources/1",
   "base": "extension",
   "files": {
-    "skills/xtb/scripts/cli.py": "sha256:d0cdc8fdd3ff386cf4e0155b9581dfcc2f5610819274c67cc0c5ee95642b1d2f",
-    "skills/xtb/scripts/parser.py": "sha256:58aa901014a4dc68224e4ee66652e3e76a105c10a0d8c5ac0a2848441621d404",
-    "skills/xtb/scripts/run.py": "sha256:5e06f83f0ff2120452fa54ebee7f0108aaa6252a353a1d0cdb40ab44fb303aca",
-    "skills/xtb/scripts/xtb_scan.py": "sha256:676f29c2343872f70a433ce07e2f4236bb0306e2b3d7a16327b89d8eace4c6c2",
-    "skills/xtb/scripts/xyz.py": "sha256:19377522138a2501fcb2441f55ec4f80a0a36cfe4f5d3c9a259eca9bc8830ab9",
-    "skills/_shared/execution_bindings.py": "sha256:4e77463dd31654b872bf5167050ac9844977d7a744c863cf303dc343204b04d1",
+    "skills/xtb/SKILL.md": "sha256:144b4c02854f955915f76184951c4a7560d001152c2d91f697c537e5313c02b8",
+    "skills/xtb/SKILL.zh-CN.md": "sha256:5cb240363282275557ed7e7f9cf3bb69bc8f31048835abf388694cf10c9bd7ef",
+    "skills/xtb/references/xtb_executor.md": "sha256:3caf3391664fe4ece0c58b12b648bff98125ac44977a4607a1b4b9d23cf3ccf8",
+    "skills/xtb/references/xtb_executor.zh-CN.md": "sha256:75ce03ee435e1a1d74bc52a0faf6dd80e6784304f18fffb5cb7ecc0a052d17d3",
+    "skills/xtb/scripts/cli.py": "sha256:c1dec3cb29f2e30a5bcc66180efc793e9f3dd30fa542bc215fd7ef850decc016",
+    "skills/xtb/scripts/parser.py": "sha256:5922d0093eddf05b166d11be7b17220dc2da30e5d78a36ce887bfd67c34fc677",
+    "skills/xtb/scripts/run.py": "sha256:0d42f9865ff3fdbf18e0cb84f1c3aeaa1aae48aba8532a85f4215b006b2a2114",
     "skills/_shared/path_validation.py": "sha256:8efad83c1e4d98a128551f6519ba09cb8e35bf9efb7f05b223e0e9f68a384987",
     "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
-    "skills/_shared/science.py": "sha256:dfd52085de07e1a7a75315cb50225021fd397f438c1544c67266c79809affc5b"
+    "skills/_shared/science.py": "sha256:8db57aa3b1a9961b5f82d0952ff2ea4c56ed9abf5447a6be91ab86c2035c3f34",
+    "skills/_shared/xyz.py": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9"
   }
 }

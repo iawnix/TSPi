@@ -1,0 +1,84 @@
+--- a/packages/coding-agent/src/experimental/services/agent-controller.ts
++++ b/packages/coding-agent/src/experimental/services/agent-controller.ts
+@@ -7,6 +7,8 @@
+ }
+ 
+ export interface AgentPromptRequest {
++	/** Stable business input identity, preserved across transport retries. */
++	requestId: string;
+ 	message: string;
+ 	images: AgentPromptImage[] | null;
+ }
+--- a/packages/coding-agent/src/experimental/services/agent-controller-provider.ts
++++ b/packages/coding-agent/src/experimental/services/agent-controller-provider.ts
+@@ -24,7 +24,7 @@
+ 		context: Context,
+ 	): Promise<AgentQueueResponse> => {
+ 		try {
+-			const submission = await conversation.submit({ type: "input", content: toInput(request), whenBusy }, context);
++			const submission = await conversation.submit({ type: "input", requestId: request.requestId, content: toInput(request), whenBusy }, context);
+ 			return { accepted: true, entryId: String(submission.id), error: null };
+ 		} catch (error) {
+ 			return { accepted: false, entryId: null, error: toAgentError(error) };
+@@ -35,7 +35,7 @@
+ 		async prompt(request, context) {
+ 			try {
+ 				const submission = await conversation.submit(
+-					{ type: "input", content: toInput(request), whenBusy: "reject" },
++					{ type: "input", requestId: request.requestId, content: toInput(request), whenBusy: "reject" },
+ 					context,
+ 				);
+ 				return { accepted: true, operationId: String(submission.id), error: null };
+@@ -124,5 +124,7 @@
+ 
+ function toAgentError(error: unknown): AgentOperationError {
+ 	if (error instanceof ConversationBusy) return { code: "busy", message: error.message };
+-	return { code: "operation_failed", message: error instanceof Error ? error.message : String(error) };
++	const code = error instanceof Error && "code" in error && typeof error.code === "string"
++		? error.code : "operation_failed";
++	return { code, message: error instanceof Error ? error.message : String(error) };
+ }
+--- a/packages/coding-agent/src/experimental/client-tui.ts
++++ b/packages/coding-agent/src/experimental/client-tui.ts
+@@ -1,3 +1,4 @@
++import { randomUUID } from "node:crypto";
+ import { resolve } from "node:path";
+ import {
+ 	combineFacetLoaders,
+@@ -765,8 +766,9 @@
+ 		const running = view !== undefined && liveOf(view).run !== undefined;
+ 		this.#status = running ? "Queueing steering message…" : "Running turn…";
+ 		this.#rebuild();
+-		if (running) this.#reportQueue(await controller.steer({ message: prompt, images: null }, BACKGROUND_CONTEXT));
+-		else this.#reportOperation(await controller.prompt({ message: prompt, images: null }, BACKGROUND_CONTEXT));
++		const request = { requestId: randomUUID(), message: prompt, images: null };
++		if (running) this.#reportQueue(await controller.steer(request, BACKGROUND_CONTEXT));
++		else this.#reportOperation(await controller.prompt(request, BACKGROUND_CONTEXT));
+ 	}
+ 
+ 	async #queueFollowUp(text: string): Promise<void> {
+@@ -775,7 +777,7 @@
+ 		try {
+ 			this.#status = "Queueing follow-up…";
+ 			this.#rebuild();
+-			this.#reportQueue(await controller.followUp({ message: text, images: null }, BACKGROUND_CONTEXT));
++			this.#reportQueue(await controller.followUp({ requestId: randomUUID(), message: text, images: null }, BACKGROUND_CONTEXT));
+ 		} catch (error) {
+ 			this.#status = `Error: ${message(error)}`;
+ 			this.#rebuild();
+--- a/packages/coding-agent/src/experimental/client.ts
++++ b/packages/coding-agent/src/experimental/client.ts
+@@ -1,3 +1,4 @@
++import { randomUUID } from "node:crypto";
+ import { resolve } from "node:path";
+ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+ import type { ClientCommand } from "../cli/experimental/commands/client.ts";
+@@ -75,7 +76,7 @@
+ 			return { kind: "attached", serverId: match.route.serverId, sessionId };
+ 		}
+ 
+-		const response = await match.agent.prompt({ message: command.prompt, images: null }, BACKGROUND_CONTEXT);
++		const response = await match.agent.prompt({ requestId: randomUUID(), message: command.prompt, images: null }, BACKGROUND_CONTEXT);
+ 		if (!response.accepted) throw new Error(response.error.message);
+ 		const result = await match.agent.waitForPrompt(response.operationId, BACKGROUND_CONTEXT);
+ 		if (result.status === "unanswered") throw new Error(`Prompt was not answered: ${result.reason}`);

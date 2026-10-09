@@ -6,6 +6,7 @@ import os
 import io
 import stat
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1039,6 +1040,9 @@ def test_component_summary_exposes_app_server_and_phone_connection(tmp_path: Pat
     assert components["app_server"]["start"] == "systemctl --user start ts-app-server-tspi.service"
     assert components["phone"]["tool_access"] == "same_as_terminal"
     assert components["phone"]["protocol"] == "tspi-link.v1"
+    assert components["runtime"]["status"] == "not_probed"
+    assert components["job"]["status"] == "not_configured"
+    assert "render" not in components
 
 
 def test_custom_workspace_root_flows_into_host_and_web_services(tmp_path: Path) -> None:
@@ -1263,6 +1267,31 @@ def test_configured_install_checks_science_before_relay_or_secret_copy(tmp_path,
     monkeypatch.setattr(install_configured, "_relay_install", unexpected)
     monkeypatch.setattr(install_configured, "build_command", unexpected)
     assert install_configured.main(["--config-dir", str(source), "--install-root", str(tmp_path / "install")]) == 1
+
+
+def test_installed_execution_readiness_probes_unregistered_native_binding(tmp_path, monkeypatch):
+    root = tmp_path / 'install'
+    config = root / 'etc/job.toml'
+    config.parent.mkdir(parents=True)
+    binary = tmp_path / 'native-program'
+    binary.write_text('#!/bin/sh\nexit 0\n'); binary.chmod(0o700)
+    config.write_text('default_environment="local"\n[environments.local]\nkind="local"\n'
+                      '[environments.local.backends.fixture_native]\ncommand=' + json.dumps(str(binary)) + '\n')
+    monkeypatch.setenv('PYTHONPATH', os.pathsep.join(sys.path))
+    # The installer returns a suite root whose Agent component owns extensions.
+    suite_root = tmp_path / 'suite'
+    suite_root.mkdir()
+    (suite_root / 'agent').symlink_to(ROOT, target_is_directory=True)
+    installed = {'runtime': {'python_executable': sys.executable}, 'package_root': str(suite_root)}
+    backends = {'job': {'status': 'configured', 'path': str(config)}}
+    wizard.verify_job_bindings(SimpleNamespace(install_root=str(root)), installed, backends)
+    row = backends['job']['readiness']['local']['binding:fixture_native']
+    assert row['status'] == 'verified'
+    assert row['environment_evidence']['observation']['files']['executable']['path'] == str(binary)
+    assert (root / 'var/state/installation/job-readiness.json').is_file()
+    binary.unlink()
+    with pytest.raises(RuntimeError, match='environment verification failed'):
+        wizard.verify_job_bindings(SimpleNamespace(install_root=str(root)), installed, backends)
 
 
 def test_name_resolver_toml_is_validated_and_written_private(tmp_path: Path) -> None:

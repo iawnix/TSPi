@@ -186,7 +186,7 @@ def build_decision_context(root, *, max_bytes=16000, event_ids=()):
         "goals": [{**{k: c.get(k) for k in ("id", "statement", "status", "predictions", "falsifiers", "source_refs", "constraints")},
                    "assessment_state": claim_review_state(state, c)}
                   for c in state.get("claims", []) if c["id"] in focus.get("claim_ids", [])],
-        "nodes": [{k: n.get(k) for k in ("id", "objective", "state", "outcome", "gate_ids", "completion_exemption", "dependency_ids", "dependencies", "consumes")}
+        "nodes": [{k: n.get(k) for k in ("id", "objective", "state", "outcome", "gate_ids", "dependencies", "consumes")}
                   for n in state.get("nodes", []) if n["id"] in focus_nodes],
         "related_nodes": [],
         "issues": validate_context(state)["issues"],
@@ -210,9 +210,9 @@ def build_decision_context(root, *, max_bytes=16000, event_ids=()):
             visited.add(node_id)
             node = nodes_by_id[node_id]
             if node_id not in included:
-                view["related_nodes"].append({k: node.get(k) for k in ("id", "state", "outcome", "dependency_ids")})
+                view["related_nodes"].append({k: node.get(k) for k in ("id", "state", "outcome", "dependencies")})
                 included.add(node_id)
-            pending.extend(node.get("dependency_ids", []))
+            pending.extend(row["node_id"] for row in node.get("dependencies", []))
 
     include_nodes(sorted(focus_nodes))
     def add(name, values):

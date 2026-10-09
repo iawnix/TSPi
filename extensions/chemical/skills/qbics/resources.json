@@ -1,0 +1,8 @@
+{
+  "schema_version": "skill-resources/1",
+  "base": "extension",
+  "files": {
+    "skills/qbics/SKILL.md": "sha256:93770dddf0cb45af8a186623f5a3d49e2ac810279a16172d16b82f016df935d8",
+    "skills/qbics/SKILL.zh-CN.md": "sha256:dcd6a10cf48ad7ca80ed4f476b06ad6f624ad2a8df13d29b5e7324cae2b2be49"
+  }
+}

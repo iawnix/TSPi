@@ -1,6 +1,6 @@
 # 名称解析
 
-使用 chemical-input 的 scripts/prepare.py resolve --name 原文；可加 --lookup-name 规范化名称。
+按 Skill 中的通用准备命令生成 chemical.resolve@1 Job，传 --name 原文；可加 --lookup-name 规范化名称。
 全局参数 --output 指定 JSON，--config 指定绝对路径的名称解析 TOML。
 默认依次读取 TSPI_NAME_RESOLVER_CONFIG 或 TSPI_INSTALL_ROOT/etc/name-resolver.toml。
 支持已启用的 PubChem、OPSIN 后端，保存请求来源、时间、响应摘要和候选。

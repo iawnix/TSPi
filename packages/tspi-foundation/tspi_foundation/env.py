@@ -21,15 +21,15 @@ DISABLE_REEXEC = "TSPI_DISABLE_RUNTIME_REEXEC"
 ENV_ROOT_OVERRIDE = "TSPI_ENV_ROOT"
 RUNTIME_HOME_OVERRIDE = "TSPI_RUNTIME_HOME"
 RUNTIME_MANIFEST_OVERRIDE = "TSPI_RUNTIME_MANIFEST"
-PACKAGE_ROOT_OVERRIDE = "TS_PACKAGE_ROOT"
+PACKAGE_ROOT_OVERRIDE = "TSPI_PACKAGE_ROOT"
 WORKSPACE_ROOT_OVERRIDE = "TS_WORKSPACE_ROOT"
 MANIFEST_VERSION = "agent-runtime/3"
-RUNTIME_PROBE_VERSION = "ts-runtime-probe/3"
+RUNTIME_PROBE_VERSION = "tspi-runtime-probe/4"
 PACKAGE_NAMESPACE = "tspi"
 CORE_SKILL_NAME = "research-state"
 BASE_ENV_DIRECTORY = "base"
 KERNEL_ENV_DIRECTORY = "kernels"
-PACKAGE_SKILL_PATH = Path("skills") / CORE_SKILL_NAME / "SKILL.md"
+PACKAGE_SKILL_PATH = Path("extensions/core/skills") / CORE_SKILL_NAME / "SKILL.md"
 PYTHON_DISTRIBUTION = "tspi-runtime"
 PYTHON_SOURCE_ROOTS = {
     "tspi_runtime": Path("packages") / "tspi-runtime" / "tspi_runtime",
@@ -146,18 +146,18 @@ def environment_spec_path(package_root: str | Path | None = None) -> Path:
     return root / "environment.yml"
 
 
-def runtime_requirements_path(package_root: str | Path | None = None) -> Path:
+def environment_lock_path(package_root: str | Path | None = None) -> Path:
     root = resolve_package_root(package_root)
-    return root / "requirements-runtime.txt"
+    return root / "environment.lock.txt"
 
 
 def spec_sha256(package_root: str | Path | None = None) -> str:
     environment_spec = environment_spec_path(package_root)
-    pip_requirements = runtime_requirements_path(package_root)
+    lock = environment_lock_path(package_root)
     return payload_records_sha256(
         [
             (environment_spec.name, environment_spec.read_bytes()),
-            (pip_requirements.name, pip_requirements.read_bytes()),
+            (lock.name, lock.read_bytes()),
         ]
     )
 
@@ -302,14 +302,17 @@ def default_kernel_prefix(
     workspace_root: str | Path | None = None,
     payload_sha256: str | None = None,
 ) -> Path:
-    """Return the release overlay path for one exact Python payload."""
+    """Bind the release overlay to its Python payload and control base."""
 
     root = resolve_package_root(package_root)
     store = Path(env_root).expanduser().resolve() if env_root else default_env_store(root, workspace_root)
     digest = payload_sha256 or python_payload_sha256(root)
     if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
         raise RuntimeEnvironmentError("Python payload digest is not a lowercase SHA-256 value")
-    return store / KERNEL_ENV_DIRECTORY / digest[:16]
+    identity = payload_records_sha256([
+        ("python_payload", digest.encode()), ("control_base", spec_sha256(root).encode()),
+    ])
+    return store / KERNEL_ENV_DIRECTORY / identity[:16]
 
 
 def env_python(env_prefix: str | Path) -> Path:
@@ -426,8 +429,8 @@ def _manifest_matches_spec(package_root: str | Path | None, manifest: dict[str, 
     if not isinstance(expected, str) or not expected:
         return False
     spec = environment_spec_path(package_root)
-    requirements = runtime_requirements_path(package_root)
-    if not spec.exists() or not requirements.exists():
+    lock = environment_lock_path(package_root)
+    if not spec.exists() or not lock.exists():
         return False
     source_payload = manifest.get("python_payload_sha256")
     if not isinstance(source_payload, str) or not source_payload:
@@ -446,13 +449,7 @@ def _manifest_matches_spec(package_root: str | Path | None, manifest: dict[str, 
     if probe.get("schema_version") != RUNTIME_PROBE_VERSION or probe.get("ok") is not True:
         return False
     capabilities = probe.get("capabilities")
-    required = (
-        "rdkit_smiles_parse",
-        "rdkit_etkdg_embed",
-        "rdkit_uff_optimize",
-        "matplotlib_render",
-        "xyzrender_cli",
-    )
+    required = ("json_schema_validation", "version_constraints")
     if not isinstance(capabilities, dict) or not all(
         capabilities.get(name) is True for name in required
     ):
@@ -464,7 +461,6 @@ def _manifest_matches_spec(package_root: str | Path | None, manifest: dict[str, 
     probe_python = probe.get("python")
     modules = probe.get("modules")
     distribution = probe.get("distribution")
-    commands = probe.get("commands")
     if not all(
         isinstance(value, str) and value
         for value in (
@@ -492,7 +488,6 @@ def _manifest_matches_spec(package_root: str | Path | None, manifest: dict[str, 
         or not executable.is_relative_to(kernel_prefix)
         or not isinstance(modules, dict)
         or not isinstance(distribution, dict)
-        or not isinstance(commands, dict)
     ):
         return False
     if (
@@ -507,7 +502,7 @@ def _manifest_matches_spec(package_root: str | Path | None, manifest: dict[str, 
         return False
     if not Path(distribution_root).expanduser().resolve().is_relative_to(kernel_prefix):
         return False
-    for name in ("numpy", "rdkit", "matplotlib"):
+    for name in ("jsonschema", "packaging"):
         module = modules.get(name)
         if not isinstance(module, dict):
             return False
@@ -518,16 +513,6 @@ def _manifest_matches_spec(package_root: str | Path | None, manifest: dict[str, 
         module_path = Path(origin).expanduser().resolve()
         if not module_path.is_file() or not module_path.is_relative_to(prefix):
             return False
-    xyzrender = commands.get("xyzrender")
-    if not isinstance(xyzrender, dict):
-        return False
-    renderer_path = xyzrender.get("path")
-    renderer_version = xyzrender.get("version")
-    if not isinstance(renderer_path, str) or not isinstance(renderer_version, str) or not renderer_version:
-        return False
-    renderer = Path(renderer_path).expanduser().resolve()
-    if not renderer.is_file() or not os.access(renderer, os.X_OK) or not renderer.is_relative_to(prefix):
-        return False
     return True
 
 

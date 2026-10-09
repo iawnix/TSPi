@@ -20,7 +20,7 @@ export async function admitStateTool({ call, metadata, lifecycle, readLiveness, 
       code: "research_liveness_unavailable", reason: String(error?.message || error), tool_name: call.name }) };
   }
   const admission = lifecycle.admitTool({ runId, toolName: call.name, toolCallId: call.id, args: call.arguments });
-  return admission.accepted ? { arguments: call.arguments } : { block: JSON.stringify({
+  return admission.accepted ? { arguments: args } : { block: JSON.stringify({
     schema_version: "tspi-lifecycle-admission-error/1", code: admission.code || "tool_phase_transition_denied",
     reason: admission.reason, tool_name: call.name }) };
 }
@@ -35,6 +35,6 @@ export async function finishStateYield({ checkpoint, prune, onError = () => {} }
     onError(error);
     return undefined;
   }
-  try { await prune(); } catch (error) { onError(error); }
+  try { await prune?.(); } catch (error) { onError(error); }
   return follow?.followUp ? { continue: follow.followUp } : undefined;
 }

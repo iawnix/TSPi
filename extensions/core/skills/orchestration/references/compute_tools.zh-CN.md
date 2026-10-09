@@ -9,13 +9,17 @@ job_probe -> job_start -> job_status -> job_collect
                          └-> job_reconcile
 ```
 
-`job_start` 接受任意 argv 和工作目录，创建持久化 receipt，并捕获 stdout 与
+`job_start` 接受任意 argv 向量和 workspace 相对工作目录，不需要科学工具注册表。
+对于领域扩展声明的执行器，先通过原生 bash 准备入口，再将返回的 `request_file`、
+`request_sha256` 与 `node_id` 传给 `job_start`。执行身份和参数已经固定在文件内，
+提交时再添加 request_id 或 work_id 会被拒绝。其它输入形式以工具参数契约为准。
+Job 创建持久化 receipt，并捕获 stdout 与
 stderr。它不会选择科学方法、解析输出、验证 Claim，也不会自动创建 Finding。
 
 任务运行时使用 `job_status`。Monitor 唤醒或服务重启后状态不确定时使用
-`job_reconcile`。只有任务进入终态后才能使用 `job_collect`。每个有意义的输出都
-应使用 `artifact_register` 注册，再通过 `research_change` 创建 Finding，并引用
-对应 Artifact。
+`job_reconcile`。任务终态后使用 `job_collect`，它登记已声明输出并返回 Artifact 引用。
+检查输出后，记录有意义的 Finding 并引用这些证据。导入数据、外部报告等未经过收集的
+材料使用 `artifact_register` 登记。
 
 Skill 可以描述 Gaussian、xTB、PySCF 或其他程序，也可以提供脚本和验证参考。这些
 内容由 Root 在普通 Pi loop 中读取，不是 provider descriptor 或 capability gate。

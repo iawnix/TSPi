@@ -49,7 +49,7 @@ status back into canonical state.
 ### ResearchNode
 
 A ResearchNode owns one bounded objective and principal deliverable. It records
-an optional `phase_id`, `claim_ids`, `dependency_ids`, `finding_ids`, `gate_ids`,
+an optional `phase_id`, `claim_ids`, `dependencies`, `finding_ids`, `gate_ids`,
 `attempt_refs`, `artifact_refs`, an explicit state, and an optional terminal
 outcome. Node dependencies alone express branches, merges, and backtracking.
 Retries that preserve the objective stay under

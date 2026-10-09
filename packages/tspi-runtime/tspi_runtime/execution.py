@@ -17,15 +17,17 @@ from research_state.transactions import TransactionCoordinator, state_transactio
 _JOB_ID = re.compile(r"^job_[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$")
 
 
-_RUNTIMES: dict[str, JobRuntime] = {}
+_RUNTIMES: dict[tuple[str, str], JobRuntime] = {}
 
 def _runtime(root: Path) -> JobRuntime:
-    key = str(root)
+    configured = os.environ.get("TS_JOB_CONFIG")
+    if not configured:
+        raise ValueError("job_config_required: configure the installation job.toml explicitly")
+    config = Path(configured).expanduser()
+    if not config.is_file():
+        raise ValueError(f"explicit job configuration is missing: {config}")
+    key = (str(root), hashlib.sha256(config.read_bytes()).hexdigest())
     if key not in _RUNTIMES:
-        configured = os.environ.get("TS_JOB_CONFIG")
-        config = Path(configured).expanduser() if configured else None
-        if config is not None and not config.is_file():
-            raise ValueError(f"explicit job configuration is missing: {config}")
         try:
             platforms, default = platforms_from_config(config)
         except (OSError, TypeError, ValueError) as exc:
@@ -136,8 +138,18 @@ def _spec(root: Path, params: dict[str, Any]) -> JobSpec:
     input_files = {str(f.relative_to(cwd)):hashlib.sha256(f.read_bytes()).hexdigest()
         for path in inputs for f in (sorted(path.rglob("*")) if path.is_dir() else [path]) if f.is_file()}
     (cwd / "input_manifest.json").write_text(json.dumps(input_files, indent=2)+"\n")
+    input_basis = None
+    if params.get("input_artifact_ids"):
+        from research_state.agent_workspace import read_context
+        from research_state.assessments import bind_evidence
+        state = read_context(root)
+        input_basis = bind_evidence(root, state, params["input_artifact_ids"], "")
+        artifacts = {row["id"]: row for row in state["artifacts"]}
+        if any(artifacts[ref]["sha256"].removeprefix("sha256:") not in input_files.values()
+               for ref in params["input_artifact_ids"]):
+            raise ValueError("job_input_not_staged: each declared input Artifact must match an actual staged file")
     outputs = tuple(JobOutput(
-        str(row["path"]), bool(row.get("required", False)), row.get("media_type"), int(row.get("min_bytes", 0))
+        str(row["path"]), bool(row.get("required", False)), row.get("media_type"), int(row.get("min_bytes", 0)), row.get("recursive", False)
     ) for row in params.get("outputs", []))
     configured_env = params.get("environment")
     process_env = params.get("env")
@@ -155,7 +167,9 @@ def _spec(root: Path, params: dict[str, Any]) -> JobSpec:
         command=tuple(command), cwd=cwd, job_id=job_id,
         env=process_env, inputs=tuple(inputs), outputs=outputs,
         timeout_seconds=params.get("timeout_seconds"),
-        metadata={**(params.get("metadata") or {}), **({"work_id": params["work_id"]} if params.get("work_id") else {})}, workspace_id=workspace_id,
+        metadata={**(params.get("metadata") or {}),
+                  **({"input_evidence_basis": input_basis, "input_artifact_ids": params["input_artifact_ids"]} if input_basis else {}),
+                  **({"work_id": params["work_id"]} if params.get("work_id") else {})}, workspace_id=workspace_id,
         node_id=params.get("node_id"), attempt_id=params.get("attempt_id"),
     )
 
@@ -196,16 +210,35 @@ def dispatch(operation: str, params: dict[str, Any]) -> dict[str, Any]:
     from .api import validate_command_params
     validate_command_params("job." + operation, params, transport_fields=("root", "workspace_root"))
     root = _root(params)
-    if operation == "start" and params.get("prepared_ref"):
-        from research_state.references import resolve_prepared_job
+    preparation = None
+    if operation == "start" and (params.get("prepared_ref") or params.get("request_file")):
+        from research_state.references import read_prepared_file, resolve_prepared_job
         transport = {key: params[key] for key in ("root", "workspace_root", "session_id") if key in params}
-        params = {**resolve_prepared_job(root, {key: value for key, value in params.items() if key != "session_id"}), **transport}
+        controls = {key: params[key] for key in ("node_id", "timeout_seconds", "repeat") if key in params}
+        allowed = {*transport, *controls, "prepared_ref"} if params.get("prepared_ref") else {
+            *transport, *controls, "request_file", "request_sha256"}
+        overrides = sorted(set(params) - allowed)
+        if overrides:
+            raise ValueError(
+                "prepared_override_forbidden: remove top-level " + ", ".join(overrides)
+                + "; the prepared request already owns its execution fields and request_id/work_id. "
+                "Submit request_file + request_sha256 (or prepared_ref), with node_id if needed. "
+                "To change execution parameters, run the preparer again; do not strip fields from its output."
+            )
+        if params.get("prepared_ref"):
+            request = resolve_prepared_job(root, {key: value for key, value in params.items() if key != "session_id"})
+        else:
+            if not isinstance(params.get("request_sha256"), str):
+                raise ValueError("prepared_request_digest_required")
+            preparation = read_prepared_file(root, params)
+            request = preparation["request"]
+        params = {**request, **controls, **transport}
     if operation == "start" and params.get("input_artifact_ids"):
         from research_state.references import resolve_artifact_reference
         params = {**params, "input_artifact_ids": [resolve_artifact_reference(root, ref) for ref in params["input_artifact_ids"]]}
     runtime = _runtime(root)
     if operation == "start":
-        return _start(root, runtime, params)
+        return _start(root, runtime, params, preparation=preparation)
     if operation == "probe":
         # Probe is a capability query and intentionally does not require a
         # command or a workspace job directory.
@@ -299,7 +332,7 @@ def _request_digest(params):
     return hashlib.sha256(json.dumps(semantic, sort_keys=True, default=str).encode()).hexdigest()
 
 
-def _prepare_start(root, runtime, params):
+def _admit_start(root, params):
     job_id = _job_id(params)
     request_id = params.get("request_id")
     if request_id:
@@ -320,13 +353,25 @@ def _prepare_start(root, runtime, params):
         fingerprint = _request_digest(params)
         if old.get("request_digest") != fingerprint: raise ValueError("job ID reused with different parameters")
         path = _receipt_path(root, job_id)
-        if path.is_file(): return _receipt(root, params).__dict__
+        if path.is_file(): return {**_receipt(root, params).__dict__, **({"prepared_ref": old["prepared_ref"]} if old.get("prepared_ref") else {})}
         return {"job_id":job_id,"state":"unknown","attempt_id":old.get("attempt_id"),"error":"dispatch already attempted; reconcile before resubmitting"}
     from research_state.agent_workspace import has_state_files, read_liveness
-    if has_state_files(root) and (params.get("node_id")):
+    if has_state_files(root):
         decision = read_liveness(root, {"tool": {"name": "job_start", "effect": "execution_control", "args": params}})["tool_admission"]
         if not decision["accepted"]:
             raise ValueError(decision["code"] + ": " + decision["reason"])
+
+
+def _prepare_start(root, runtime, params, preparation=None, prepared_params=None):
+    replay = _admit_start(root, params)
+    if replay is not None:
+        return replay
+    job_id = _job_id(params)
+    intent_request_id = (params.get("request_id") or f"job.start:{job_id}") + ":intent"
+    coordinator = TransactionCoordinator(root)
+    previous = root / _intent_path(root, job_id)
+    from .execution_environment import check_configuration
+    check_configuration(prepared_params)
     staging_root = root / "runs/jobs" / job_id
     marker = root / "operations/staging" / f"{job_id}.json"
     ownership = {"schema_version": "job_staging/1", "job_id": job_id,
@@ -342,7 +387,7 @@ def _prepare_start(root, runtime, params):
             shutil.rmtree(staging_root)
     write_json(marker, ownership)
     try:
-        result = _stage_start(root, runtime, params, job_id)
+        result = _stage_start(root, runtime, params, job_id, preparation, prepared_params)
     except Exception:
         transaction = coordinator.get(intent_request_id)
         if not previous.exists() and not transaction:
@@ -354,15 +399,23 @@ def _prepare_start(root, runtime, params):
     return result
 
 
-def _stage_start(root, runtime, params, job_id):
+def _stage_start(root, runtime, params, job_id, preparation=None, prepared_params=None):
     staging_root = root / "runs/jobs" / job_id
+    if "input_evidence_basis" in (params.get("metadata") or {}):
+        raise ValueError("job_input_basis_runtime_only: declare input_artifact_ids and stage their actual files")
     if params.get("validator_id"):
-        from .validators import prepare
-        prepared_params = prepare(root, params)
-    else:
-        if (params.get("metadata") or {}).get("validator"):
-            raise ValueError("validator_source_forbidden: use a registered validator_id")
-        prepared_params = params
+        from .validators import check_current_inputs
+        check_current_inputs(root, prepared_params)
+    metadata = dict(prepared_params.get('metadata') or {})
+    if not metadata.get('execution_binding'):
+        from job_runtime.config_contract import SUBMISSION_FIELDS, load_job_config, resolve_submission
+        # Registered entries carry their already resolved, verified submission.
+        # Raw Jobs receive the same resolver before Attempt/fingerprint commit.
+        submission = resolve_submission(load_job_config(os.environ['TS_JOB_CONFIG']),
+            _platform_name(prepared_params) or runtime.default,
+            requested={key: value for key, value in metadata.items() if key in SUBMISSION_FIELDS})
+        metadata.update(submission)
+        prepared_params = {**prepared_params, 'metadata': metadata}
     try:
         spec = _spec(root, prepared_params)
     except Exception:
@@ -373,9 +426,11 @@ def _stage_start(root, runtime, params, job_id):
     input_manifest = json.loads((spec.cwd / "input_manifest.json").read_text())
     execution_content = {"command": list(spec.command), "inputs": input_manifest,
         "environment_digest": hashlib.sha256(json.dumps(dict(spec.env), sort_keys=True).encode()).hexdigest(),
-        "outputs": params.get("outputs", []), "timeout_seconds": spec.timeout_seconds,
-        "platform": _platform_name(params) or runtime.default,
-        "configuration": spec.metadata.get("configuration_sha256"), "resources": spec.metadata.get("resources_sha256")}
+        "outputs": [output.__dict__ for output in spec.outputs], "timeout_seconds": spec.timeout_seconds,
+        "platform": _platform_name(prepared_params) or runtime.default,
+        "configuration": spec.metadata.get("configuration_sha256"), "resources": spec.metadata.get("resources_sha256"),
+        "submission": {key: spec.metadata[key] for key in ('queue', 'queue_wait_seconds', 'resources') if key in spec.metadata},
+        "execution_environment": spec.metadata.get("execution_environment", {}).get("sha256")}
     execution_fingerprint = "sha256:" + hashlib.sha256(json.dumps(execution_content, sort_keys=True).encode()).hexdigest()
     prior_intents = [json.loads(path.read_text()) for path in (root / "operations/jobs").glob("*.json")]
     duplicates = [i for i in prior_intents if i.get("execution_fingerprint") == execution_fingerprint]
@@ -399,7 +454,7 @@ def _stage_start(root, runtime, params, job_id):
         "request_digest": _request_digest(params),
         "command": list(spec.command), "cwd": str(spec.cwd), "workspace_id": spec.workspace_id,
         "node_id": spec.node_id, "attempt_id": spec.attempt_id,
-        "platform": _platform_name(params) or runtime.default,
+        "platform": _platform_name(prepared_params) or runtime.default,
     }
     # A durable dispatching intent is committed before spawning. If the
     # Agent Server dies after this point, reconcile reports unknown rather
@@ -407,7 +462,7 @@ def _stage_start(root, runtime, params, job_id):
     prepared = _commit_dispatch(root, {"request_id": f"{request_id}:intent", "intent": intent,
         "spec": {"node_id": spec.node_id, "attempt_id": spec.attempt_id, "job_id": spec.job_id,
                  "command": list(spec.command), "metadata": dict(spec.metadata)},
-        "session_id": params.get("session_id")})
+        "session_id": params.get("session_id"), "preparation": preparation})
     return replace(spec, attempt_id=prepared["attempt_id"]), prepared, request_id
 
 
@@ -417,6 +472,10 @@ def _commit_dispatch(root, request):
     from .job_state import register_attempt
     from .job_monitor import bind
     intent = request["intent"]
+    if request.get("preparation") is not None:
+        from research_state.references import register_prepared_payload
+        ref = register_prepared_payload(root, request["preparation"])["prepared_ref"]
+        intent = {**intent, "prepared_ref": ref}
     attempt_id = register_attempt(root, SimpleNamespace(**request["spec"]), intent["platform"])
     intent = {**intent, "attempt_id": attempt_id}
     write_json(root / _intent_path(root, intent["job_id"]), intent)
@@ -424,17 +483,35 @@ def _commit_dispatch(root, request):
     return intent
 
 
-def _start(root, runtime, params):
+def _start(root, runtime, params, preparation=None):
     coordinator = TransactionCoordinator(root)
     with coordinator.locked():
-        prepared = _prepare_start(root, runtime, params)
+        replay = _admit_start(root, params)
+    if replay is not None:
+        return replay
+    # Target subprocesses and SSH must never hold the State transaction lock.
+    if params.get("validator_id"):
+        from .validators import prepare
+        prepared_params = prepare(root, params)
+    else:
+        if (params.get("metadata") or {}).get("validator"):
+            raise ValueError("validator_source_forbidden: use a registered validator_id")
+        prepared_params = params
+    from .execution_environment import check_binding
+    # Validator expansion just observed the target; file/ref submissions carry
+    # an older observation and require a new probe here.
+    check_binding(prepared_params, probe=not bool(params.get("validator_id")))
+    runtime = _runtime(root)
+    with coordinator.locked():
+        prepared = _prepare_start(root, runtime, params, preparation, prepared_params)
     if isinstance(prepared, dict):
         return prepared
     spec, intent, request_id = prepared
     receipt = None
     try:
-        receipt = runtime.job_start(spec, platform=_platform_name(params))
-        result = {**receipt.__dict__, "command": list(receipt.command)}
+        receipt = runtime.job_start(spec, platform=intent["platform"])
+        result = {**receipt.__dict__, "command": list(receipt.command),
+                  **({"prepared_ref": intent["prepared_ref"]} if intent.get("prepared_ref") else {})}
         committed = {**intent, "state": "submitted", "receipt": result}
         coordinator.commit_files(f"{request_id}:receipt", "job.receipt", result, writes={_intent_path(root, spec.job_id): committed}, result=result)
         from .job_monitor import bind

@@ -51,7 +51,7 @@ def test_python_payload_digest_covers_code_and_runtime_data() -> None:
         "packages/artifact-store/artifact_store/__init__.py",
         "packages/job-runtime/job_runtime/runtime.py",
         "packages/research-state/research_state/contracts/operations.json",
-        "packages/research-state/research_state/contracts/workspace.schema.json",
+        "packages/tspi-foundation/tspi_foundation/protocol.json",
         "packages/research-state/research_state/operational_ids.py",
         "packages/research-state/research_state/operation_registry.py",
     }

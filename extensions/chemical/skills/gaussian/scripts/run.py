@@ -25,7 +25,7 @@ def validate(summary, task, method, basis):
 def main():
     a = parse_arguments(); out = None
     try:
-        if a.spin < 0 or a.threads < 1 or a.memory_mb < 1: raise ValueError('invalid spin/resources')
+        if a.multiplicity < 1 or a.threads < 1 or a.memory_mb < 1: raise ValueError('invalid multiplicity/resources')
         if not all(re.fullmatch(r'[A-Za-z0-9+*(),._-]+', v) for v in [a.method,a.basis]):
             raise ValueError('method/basis must be single Gaussian route tokens')
         if a.input_gjf:
@@ -39,7 +39,7 @@ def main():
             step=out/task; step.mkdir()
             shutil.copyfile(geometry,step/'input.xyz')
             route=f'#p {a.method}/{a.basis} '+('Opt=Tight' if task=='opt' else 'SP')+' SCF=Tight Int=UltraFine'
-            write_gjf(step/'input.gjf','Skill calculation',read_xyz(geometry),route,a.charge,a.spin+1,a.threads,f'{a.memory_mb}MB','wavefunction.chk',[])
+            write_gjf(step/'input.gjf','Skill calculation',read_xyz(geometry),route,a.charge,a.multiplicity,a.threads,f'{a.memory_mb}MB','wavefunction.chk',[])
             with (step/'input.gjf').open('rb') as source, (step/'gaussian.out').open('wb') as log:
                 run=subprocess.run([executable],cwd=step,stdin=source,stdout=log,stderr=subprocess.STDOUT)
             if run.returncode: raise RuntimeError(f'Gaussian {task} exited {run.returncode}')

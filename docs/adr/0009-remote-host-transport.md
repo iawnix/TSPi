@@ -6,7 +6,7 @@ Accepted; the SSH stream transport and terminal proxy path are implemented.
 
 ## Decision
 
-The `tspi-host/1` NDJSON RPC is independent of its byte transport. Clients may use a private Unix
+The `tspi-host/2` NDJSON RPC is independent of its byte transport. Clients may use a private Unix
 socket or start `tspi-host-proxy` over SSH, allowing the proxy to forward stdin/stdout bytes to the
 remote Host Unix socket. Phone continues to use the TSPi Link WSS Relay. All three transports use
 the same Host RPC and never create a second Agent lane.

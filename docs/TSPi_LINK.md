@@ -84,7 +84,7 @@ Host and device tokens are random 256-bit values stored as SHA-256 hashes by
 the Relay. Long-lived tokens are never put in pairing codes or systemd
 environment variables. WSS protects both network legs, but Link 1 does not add
 application-level end-to-end encryption. A Relay operator can observe the
-forwarded `tspi-host/1` NDJSON bytes, so use trusted infrastructure or a private
+forwarded `tspi-host/2` NDJSON bytes, so use trusted infrastructure or a private
 network.
 
 The wire contract is documented in

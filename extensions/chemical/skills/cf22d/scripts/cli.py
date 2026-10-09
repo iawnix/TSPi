@@ -9,7 +9,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", default=".")
     parser.add_argument("--basis", default="def2-tzvp")
     parser.add_argument("--charge", type=int, default=0)
-    parser.add_argument("--spin", type=int, default=0)
+    parser.add_argument("--multiplicity", type=int, default=1, help="spin multiplicity 2S+1")
     parser.add_argument("--unit", choices=("angstrom",), default="angstrom")
     parser.add_argument("--verbose", type=int, default=4)
     parser.add_argument("--xc", default="CF22D")
@@ -33,5 +33,5 @@ def parse_arguments(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.xc.upper() != "CF22D": parser.error("CF22D Skill only permits xc=CF22D")
-    if args.spin < 0 or args.threads < 1 or args.memory_mb < 1: parser.error("invalid spin/resources")
+    if args.multiplicity < 1 or args.threads < 1 or args.memory_mb < 1: parser.error("invalid multiplicity/resources")
     return args

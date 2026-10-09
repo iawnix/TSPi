@@ -15,11 +15,7 @@ function digest(bytes) {
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "tspi-extension-"));
   await mkdir(join(root, "skills", "amber"), { recursive: true });
-  await mkdir(join(root, "providers"), { recursive: true });
   await writeFile(join(root, "skills", "amber", "SKILL.md"), "---\nname: amber\ndescription: Amber workflow.\n---\nUse Amber.\n");
-  await writeFile(join(root, "providers", "amber.json"), JSON.stringify({ capability: "amber.md", version: "1" }));
-  const entry = join(root, "providers", "amber.mjs");
-  await writeFile(entry, "export function createProvider() {}\n");
   const serverEntry = join(root, "server.mjs");
   await writeFile(serverEntry, `export function createServerExtension() { return { tools: [{
     name: "amber_run",
@@ -34,14 +30,6 @@ async function fixture() {
     name: "amber-tools",
     version: "1.2.0",
     skills: [{ name: "amber", path: "skills/amber" }],
-    providers: [{
-      id: "amber.md",
-      version: "1",
-      kind: "compute",
-      descriptor: "providers/amber.json",
-      entry: "providers/amber.mjs",
-      sha256: digest(await readFile(entry)),
-    }],
     server: {
       entry: "server.mjs",
       sha256: digest(await readFile(serverEntry)),
@@ -54,25 +42,20 @@ async function fixture() {
   return { root, manifestPath };
 }
 
-test("extension discovery inventories Skills and providers without importing provider code", async () => {
+test("extension discovery inventories Skills and execution metadata without importing extension code", async () => {
   const { root, manifestPath } = await fixture();
   try {
     const discovered = await discoverInstalledExtensions({ manifestPaths: [manifestPath] });
     assert.deepEqual(discovered.manifests, [manifestPath]);
     assert.equal(discovered.extensions[0].name, "amber-tools");
     assert.equal(discovered.extensions[0].skills[0].name, "amber");
-    assert.equal(discovered.providers[0].id, "amber.md");
-    assert.equal(discovered.providers[0].kind, "compute");
-    assert.equal(discovered.providers[0].entry, join(root, "providers", "amber.mjs"));
-    assert.equal(discovered.providers[0].descriptor_data.capability, "amber.md");
-    assert.match(discovered.providers[0].descriptor_digest, /^sha256:[0-9a-f]{64}$/u);
     assert.equal(discovered.extensions[0].server.tools[0], "amber_run");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("extension discovery fails closed for duplicate providers and escaped paths", async () => {
+test("extension discovery fails closed for duplicate Skills and escaped paths", async () => {
   const { root, manifestPath } = await fixture();
   try {
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
@@ -81,9 +64,9 @@ test("extension discovery fails closed for duplicate providers and escaped paths
     await assert.rejects(readExtensionManifest(manifestPath), /escaped extension root/);
 
     manifest.skills[0].path = "skills/amber";
-    manifest.providers.push(manifest.providers[0]);
+    manifest.skills.push(manifest.skills[0]);
     await writeFile(manifestPath, JSON.stringify(manifest));
-    await assert.rejects(discoverInstalledExtensions({ manifestPaths: [manifestPath] }), /duplicate installed provider id/);
+    await assert.rejects(discoverInstalledExtensions({ manifestPaths: [manifestPath] }), /duplicate installed skill name/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -93,7 +76,6 @@ test("empty explicit extension configuration leaves the core package unchanged",
   const discovered = await discoverInstalledExtensions({ manifestPaths: [] });
   assert.deepEqual(discovered.extensions, []);
   assert.deepEqual(discovered.skillRoots, []);
-  assert.deepEqual(discovered.providers, []);
 });
 
 test("package-owned manifest is optional and discovered when present", async () => {
@@ -105,22 +87,11 @@ test("package-owned manifest is optional and discovered when present", async () 
       name: "package-addon",
       version: "1.0.0",
       skills: [],
-      providers: [],
     }));
     const discovered = await discoverInstalledExtensions({ packageRoot: root });
     assert.equal(discovered.extensions[0].name, "package-addon");
     const explicitlyEmpty = await discoverInstalledExtensions({ packageRoot: root, manifestPaths: [] });
     assert.deepEqual(explicitlyEmpty.extensions, []);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("provider descriptors are validated before inventory is exposed", async () => {
-  const { root, manifestPath } = await fixture();
-  try {
-    await writeFile(join(root, "providers", "amber.json"), "not-json");
-    await assert.rejects(readExtensionManifest(manifestPath), /descriptor is not valid JSON/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -203,12 +174,37 @@ test("Skill-only extension rejects a changed executable resource", async () => {
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("core references remain pinned when optional manifests are selected", async () => {
+  const { root, manifestPath } = await fixture();
+  try {
+    const core = join(root, "extensions", "core");
+    const skill = join(core, "skills", "research-state");
+    await mkdir(join(skill, "references"), { recursive: true });
+    const content = "---\nname: research-state\ndescription: Preserve research evidence\n---\n";
+    const reference = "Preserve unresolved requirements.\n";
+    await writeFile(join(skill, "SKILL.md"), content);
+    await writeFile(join(skill, "references", "requirements.md"), reference);
+    const index = JSON.stringify({ schema_version: "skill-resources/1", base: "extension",
+      files: { "skills/research-state/references/requirements.md": digest(reference) } });
+    await writeFile(join(skill, "resources.json"), index);
+    await writeFile(join(core, "manifest.json"), JSON.stringify({ schema_version: "tspi-extension/1",
+      name: "core", version: "1.0.0", skills: [{ name: "research-state", path: "skills/research-state",
+        sha256: digest(content), resources_sha256: digest(index) }] }));
+    const catalog = await discoverInstalledExtensions({ packageRoot: root, manifestPaths: [manifestPath] });
+    assert.equal(catalog.extensions[0].name, "core");
+    assert.equal(catalog.extensions.length, 2);
+    assert.equal((await discoverInstalledExtensions({ packageRoot: root, manifestPaths: [] })).extensions.length, 1);
+    await writeFile(join(skill, "references", "requirements.md"), "Drop missing requirements.\n");
+    await assert.rejects(discoverInstalledExtensions({ packageRoot: root, manifestPaths: [manifestPath] }), /integrity/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 async function validatorFixture() {
   const value = await fixture();
   const manifest = JSON.parse(await readFile(value.manifestPath, "utf8"));
   await writeFile(join(value.root, "validate.py"), "raise RuntimeError('inventory must never execute a validator')\n");
   await writeFile(join(value.root, "helper.py"), "VERSION = 1\n");
-  manifest.validators = [{ id: "amber.geometry", version: "1", entry: "validate.py",
+  manifest.validators = [{ id: "amber.geometry", version: "1", entry: "validate.py", backend: "validation",
     sha256: digest(await readFile(join(value.root, "validate.py"))),
     resources: { "lib/helper.py": { path: "helper.py", sha256: digest(await readFile(join(value.root, "helper.py"))) } },
     input_contract: { schema_version: "validator-input/1", roles: [
@@ -223,6 +219,39 @@ async function validatorFixture() {
   await writeFile(value.manifestPath, JSON.stringify(manifest));
   return { ...value, manifest };
 }
+
+test("executor discovery validates templates and pinned entry ownership without running code", async () => {
+  const {root, manifestPath} = await fixture();
+  try {
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    const program = "raise RuntimeError('discovery cannot execute science')\n";
+    await writeFile(join(root, "run.py"), program);
+    const resources = JSON.stringify({schema_version:"skill-resources/1", base:"extension", files:{"run.py":digest(program)}});
+    await writeFile(join(root, "skills/amber/resources.json"), resources);
+    manifest.skills[0].resources_sha256 = digest(resources);
+    const executor = {id:"amber.energy", version:"1", skill:"amber", backend:"amber", runtime:"python", entry:"run.py",
+      argv:["{entry}", "--input", "{input:geometry}", "{args}"], inputs:{geometry:"geometry.xyz"},
+      outputs:[{path:"energy.json", required:true, min_bytes:2}]};
+    manifest.executors = [executor];
+    const save = () => writeFile(manifestPath, JSON.stringify(manifest));
+    await save();
+    const catalog = await discoverInstalledExtensions({manifestPaths:[manifestPath]});
+    assert.deepEqual(catalog.extensions[0].executors, [executor]);
+    assert.equal(catalog.extensions[0].skills[0].resourceDigests["run.py"], digest(program));
+    for (const [patch, error] of [
+      [{entry:"server.mjs"}, /pinned Skill resource/],
+      [{argv:["{entry}", "{input:unknown}"]}, /unknown executor argv/],
+      [{inputs:{geometry:"run.py"}}, /overlap/],
+      [{inputs:{geometry:"receipt.json"}}, /reserved/],
+      [{argv:["{command}", "{args}"]}, /command template/],
+    ]) {
+      manifest.executors = [{...executor, ...patch}]; await save();
+      await assert.rejects(discoverInstalledExtensions({manifestPaths:[manifestPath]}), error);
+    }
+    manifest.executors = [executor, executor]; await save();
+    await assert.rejects(discoverInstalledExtensions({manifestPaths:[manifestPath]}), /duplicate installed executor/);
+  } finally { await rm(root, {recursive:true, force:true}); }
+});
 
 test("extension discovery validates bound validator resources and acceptance profiles without running code", async () => {
   const { root, manifestPath } = await validatorFixture();

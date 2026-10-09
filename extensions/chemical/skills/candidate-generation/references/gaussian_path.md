@@ -26,8 +26,10 @@ Create and register a `chemical-path-spec/1` JSON artifact, for example:
 Use the actual listed Skill paths and workspace paths in these commands:
 
 ```text
-"$TSPI_PYTHON" <candidate-generation>/scripts/prepare_path.py candidates --spec <workspace>/spec.json --output-dir <workspace>/candidates --enumerate-stereo --conformers 2
+"$TSPI_PYTHON" -m tspi_runtime.executors --config "$TS_JOB_CONFIG" --environment local --executor chemical.path-candidates --version 1 --input spec=<workspace>/spec.json --input-artifact <spec-ref> --output <workspace>/candidates-request.json -- --enumerate-stereo --conformers 2
 ```
+
+Submit the returned request_file/request_sha256 with node_id and collect the Job before inspecting candidates. The entry uses the target structure binding; all generated files are collected with Attempt provenance.
 
 `candidates.json` lists every prepared or failed branch. Each successful branch
 contains `spec.json`, `atom_order.json`, `reactants.xyz`, `product.xyz` and `ts.gjf`
@@ -44,21 +46,23 @@ Keep that title in the TS input and checkpoint; raw TS and IRC logs must echo it
 Prepare a TS request with the existing method-selection helper:
 
 ```text
-"$TSPI_PYTHON" <method-selection>/scripts/prepare_job.py --root <workspace> --config <installation>/job.toml --environment local --backend gaussian --skill gaussian --input-gjf <branch>/ts.gjf --collect ts.chk --output <workspace>/ts-request.json -- --method M062X --basis '6-31G**' --threads 12 --memory-mb 4000 --validation saddle
+"$TSPI_PYTHON" -m tspi_runtime.executors --config <installation>/job.toml --environment local --executor chemical.gaussian-input --version 1 --input input=<branch>/ts.gjf --collect results/ts.chk --output <workspace>/ts-request.json -- --method M062X --basis '6-31G**' --threads 12 --memory-mb 4000 --validation saddle
 ```
 
-Submit the returned `prepared_ref` through `job_start` with the owning `node_id`.
+Submit the returned `request_file` and `request_sha256` through `job_start` with the owning `node_id`.
 Collect the terminal Job. A successful runner is not a scientific verdict:
 validate the raw collected `gaussian.out` with the registered saddle validator.
 After its checks pass, prepare IRC inputs from that Job's collected `ts.chk`:
 
 ```text
-"$TSPI_PYTHON" <candidate-generation>/scripts/prepare_path.py irc --spec <branch>/spec.json --checkpoint <collected-ts.chk> --output-dir <workspace>/irc
+"$TSPI_PYTHON" -m tspi_runtime.executors --config "$TS_JOB_CONFIG" --environment local --executor chemical.path-irc --version 1 --input spec=<branch>/spec.json --input checkpoint=<collected-ts.chk> --input-artifact <spec-ref> --input-artifact <checkpoint-ref> --output <workspace>/irc-request.json
 ```
 
-For each direction, use `prepare_job.py --input-gjf <workspace>/irc/forward.gjf`
+Submit and collect the IRC-input Job before using its generated inputs and checkpoint.
+
+For each direction, use `-m tspi_runtime.executors --executor chemical.gaussian-input --version 1 --input input=<workspace>/irc/forward.gjf`
 (or `reverse.gjf`), `--dependency <workspace>/irc/ts.chk=ts.chk`, and
-`--collect irc_path_summary.json --collect irc_path_points.json --collect gaussian_endpoint.xyz`.
+`--collect results/irc_path_summary.json --collect results/irc_path_points.json --collect results/gaussian_endpoint.xyz`.
 Keep the same method/resources and use `--validation irc` after `--`.
 Submit each returned reference, collect both results, then validate connectivity.
 

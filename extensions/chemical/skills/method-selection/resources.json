@@ -2,10 +2,23 @@
   "schema_version": "skill-resources/1",
   "base": "extension",
   "files": {
-    "skills/method-selection/scripts/prepare_job.py": "sha256:037a1181b6fa68814bd4755f57a4277fdc4a3c7c729a0defafd4a786be4bbd2d",
-    "skills/_shared/execution_bindings.py": "sha256:4e77463dd31654b872bf5167050ac9844977d7a744c863cf303dc343204b04d1",
+    "skills/method-selection/SKILL.md": "sha256:a916bda212009e29866f9e6f82b4fc38cd3561e1984c18fd19c68af4d6f16899",
+    "skills/method-selection/SKILL.zh-CN.md": "sha256:4b53bfae2d3fa3cb3dc831327d65cb6dfcc801fdd21c4037c3d7275e79b23277",
+    "skills/method-selection/references/backend_contract.md": "sha256:4c9f2963bc8eb1669e2ab99b45ff04ce05967d592eddc324c26c2dcbe879a479",
+    "skills/method-selection/references/backend_contract.zh-CN.md": "sha256:984c713e3efa2b11642a15fd3710827019d66d04f0e0852d0e4eddb9d49522e6",
+    "skills/method-selection/references/job_probes.md": "sha256:8d3d84748978aecdbd2dd9b27bb178da0b39be6329bad410cf3e60c825d343a2",
+    "skills/method-selection/references/job_probes.zh-CN.md": "sha256:019ba5447abbc495c56649f03f3ae78132e487c9ea64f2fed11d9d5e70f9d7f2",
+    "skills/method-selection/references/method_selection.md": "sha256:7492c8fa04c78fb66b1d5b815a2bf04b23909d6ec43c700e37481cff64c3c303",
+    "skills/method-selection/references/method_selection.zh-CN.md": "sha256:bd0b82af703d84dc8d682d7b7aba7b9206247adb4b2940cf16632cabbb5889e0",
+    "skills/method-selection/references/request_preparation.md": "sha256:0a9e9f02fd50ae6e42790119ef06d252c73ef762cb7ed0a1b007d68f0daabfd8",
+    "skills/method-selection/references/request_preparation.zh-CN.md": "sha256:50f1381d8ed89b46d3ea550605efd200e9335c3159bcfe21f48e5b68a854fb52",
+    "skills/method-selection/references/runner_results.md": "sha256:58992fe1f080ab8944102d35ac9fbf7a3863ceda69825dfd437e477ee689deec",
+    "skills/method-selection/references/runner_results.zh-CN.md": "sha256:3373112f211316a8b94d74ceaf867e5d1ebc9d7e9e8490a644a3adf404b9c504",
+    "skills/method-selection/references/runtime_environment.md": "sha256:275f606ca24453256c964fd4961cbe3ef6732eb13123984b4248bc186e05d5ad",
+    "skills/method-selection/references/runtime_environment.zh-CN.md": "sha256:5d7e006933ff3aafd75aba9e511f9a64f7a45ae469dd4fbf780d1aecf65e5f1a",
     "skills/_shared/path_validation.py": "sha256:8efad83c1e4d98a128551f6519ba09cb8e35bf9efb7f05b223e0e9f68a384987",
     "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
-    "skills/_shared/science.py": "sha256:dfd52085de07e1a7a75315cb50225021fd397f438c1544c67266c79809affc5b"
+    "skills/_shared/science.py": "sha256:8db57aa3b1a9961b5f82d0952ff2ea4c56ed9abf5447a6be91ab86c2035c3f34",
+    "skills/_shared/xyz.py": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9"
   }
 }

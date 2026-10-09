@@ -33,6 +33,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.test.manifest import suite_paths
+from tools.test import environment as test_environment
 
 RESULT_SCHEMA_VERSION = "ts-source-test/1"
 
@@ -45,12 +46,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--env-root",
         default=os.environ.get("TSPI_TEST_ENV_ROOT", "/home/iaw/debug/tspi-test-env"),
-        help="Directory containing the shared scientific base.",
+        help="Directory containing the separate test environment.",
     )
-    parser.add_argument("--base-prefix", help="Explicit healthy scientific base to reuse.")
+    parser.add_argument("--base-prefix", help="Explicit healthy test environment to reuse.")
     parser.add_argument("--conda", help="Path to conda or mamba executable.")
     parser.add_argument("--conda-root", help="Root directory of an existing Conda or Mamba installation.")
-    parser.add_argument("--force-base", action="store_true", help="Refresh the selected scientific base first.")
+    parser.add_argument("--force-base", action="store_true", help="Refresh the selected test environment first.")
     parser.add_argument("--result-path", help="Path for the machine-readable test record.")
     parser.add_argument("pytest_args", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
@@ -65,14 +66,13 @@ def main(argv: list[str] | None = None) -> int:
     base_prefix = (
         Path(args.base_prefix).expanduser().resolve()
         if args.base_prefix
-        else runtime.default_env_prefix(package_root, env_store)
+        else test_environment.default_prefix(package_root, env_store)
     )
     base_python = runtime.env_python(base_prefix)
     result_path = (
         Path(args.result_path).expanduser().resolve()
         if args.result_path
-        else package_root
-        / ".runtime"
+        else env_store
         / "test-results"
         / f"source-test-{runtime.python_payload_sha256(package_root)[:16]}.json"
     )
@@ -86,9 +86,9 @@ def main(argv: list[str] | None = None) -> int:
         "schema_version": RESULT_SCHEMA_VERSION,
         "ok": False,
         "package_root": str(package_root),
-        "environment_spec": str(package_root / "environment.yml"),
-        "runtime_requirements": str(package_root / "requirements-runtime.txt"),
-        "spec_sha256": runtime.spec_sha256(package_root),
+        "environment_spec": str(package_root / "tools/test/environment.yml"),
+        "environment_lock": str(test_environment.lock_path(package_root)),
+        "spec_sha256": test_environment.spec_sha256(package_root),
         "python_payload_sha256": runtime.python_payload_sha256(package_root),
         "base_env_prefix": str(base_prefix),
         "base_python_executable": str(base_python),
@@ -103,21 +103,23 @@ def main(argv: list[str] | None = None) -> int:
         base_action = _base_action(base_prefix, base_python, args.force_base)
         if base_action != "reuse" and conda is None:
             raise RuntimeInstallError(
-                "the scientific base is unavailable and conda or mamba could not be resolved"
+                "the test environment is unavailable and conda or mamba could not be resolved"
             )
         base_action = _prepare_base(
             conda,
             base_prefix,
             base_python,
-            package_root / "environment.yml",
-            package_root / "requirements-runtime.txt",
+            test_environment.lock_path(package_root),
             package_root,
             base_action,
         )
+        if not test_environment.probe(base_python):
+            raise RuntimeInstallError("test dependencies are missing; use --force-base or select a test environment")
         record["base_action"] = base_action
         record["conda_executable"] = conda
 
-        with tempfile.TemporaryDirectory(prefix="tspi-source-test-") as temporary:
+        env_store.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="tspi-source-test-", dir=env_store) as temporary:
             temporary_root = Path(temporary)
             wheel_dir = temporary_root / "wheel"
             overlay = temporary_root / "kernel"
@@ -135,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
             record["runtime_probe"] = probe
 
             environment = _clean_python_environment()
-            environment["TS_PACKAGE_ROOT"] = str(package_root)
+            environment[runtime.PACKAGE_ROOT_OVERRIDE] = str(package_root)
             environment["PATH"] = os.pathsep.join(
                 [str(overlay / "bin"), str(base_prefix / "bin"), environment.get("PATH", "")]
             )
@@ -223,11 +225,11 @@ def _validate_test_layout(probe: dict[str, Any], base_prefix: Path, overlay: Pat
     python = probe.get("python")
     if not isinstance(modules, dict) or not isinstance(distribution, dict) or not isinstance(python, dict):
         raise RuntimeInstallError("test runtime probe has an invalid layout")
-    for name in ("numpy", "rdkit"):
+    for name in ("jsonschema", "packaging"):
         module = modules.get(name)
         origin = module.get("origin") if isinstance(module, dict) else None
         if not isinstance(origin, str) or not Path(origin).resolve().is_relative_to(base_prefix):
-            raise RuntimeInstallError(f"{name} did not load from the scientific base")
+            raise RuntimeInstallError(f"{name} did not load from the test environment")
     distribution_root = distribution.get("root")
     executable = python.get("executable")
     if not isinstance(distribution_root, str) or not Path(distribution_root).resolve().is_relative_to(overlay):

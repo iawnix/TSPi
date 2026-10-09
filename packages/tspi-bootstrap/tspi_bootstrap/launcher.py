@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from tspi_foundation.layout import paths
+from tspi_foundation.protocol import HOST_PROTOCOL, WORKSPACE_ID_PATTERN
 
 import fcntl
 import hashlib
@@ -42,14 +43,11 @@ from .session_guard import (
 PACKAGE_NAME = "@iawnix/tspi"
 SUITE_PACKAGE_NAME = "@iawnix/tspi"
 SUITE_SCHEMA_VERSIONS = ("tspi-package-release/4",)
-WORKSPACE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 SESSION_ID = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,158}[A-Za-z0-9])?$")
 APP_SERVER_ID = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 )
 NOTIFICATION_CLAWEMAIL_FIELDS = {"enabled", "recipient", "clawemail_root"}
-# Kept for callers that imported the original launcher constant.
-NOTIFICATION_FIELDS = NOTIFICATION_CLAWEMAIL_FIELDS
 NOTIFICATION_SMTP_FIELDS = {
     "enabled",
     "provider",
@@ -95,7 +93,6 @@ APP_SERVER_SERVICE = "ts-app-server-tspi.service"
 HOST_START_TIMEOUT_SECONDS = 15
 HOST_READY_TIMEOUT_SECONDS = 10.0
 HOST_READY_POLL_SECONDS = 0.1
-HOST_PROTOCOL = "tspi-host/1"
 HOST_IDENTITY_TIMEOUT_SECONDS = 0.75
 
 
@@ -576,7 +573,7 @@ def normalize_proxy_environment() -> None:
 
 
 def prepare_workspace(installation: Installation, workspace_name: str) -> Path:
-    if not WORKSPACE_NAME.fullmatch(workspace_name):
+    if not WORKSPACE_ID_PATTERN.fullmatch(workspace_name):
         raise TSPiHostError(
             f"invalid workspace name: {workspace_name}\n"
             "ResearchAgent: use 1-80 letters, digits, dots, underscores, or hyphens; start with a letter or digit"
@@ -608,7 +605,7 @@ def prepare_workspace(installation: Installation, workspace_name: str) -> Path:
 
 
 def resolve_existing_workspace(installation: Installation, workspace_name: str) -> Path:
-    if not WORKSPACE_NAME.fullmatch(workspace_name):
+    if not WORKSPACE_ID_PATTERN.fullmatch(workspace_name):
         raise TSPiHostError(f"invalid workspace name: {workspace_name}", exit_code=2)
     container = installation.workspaces_root
     requested = container / workspace_name
@@ -1009,55 +1006,6 @@ def configure_host_process_environment(installation: Installation) -> None:
     os.environ["PYTEST_ADDOPTS"] = f"{existing} {cache_option}".strip()
 
 
-def ensure_workspace_sqlite(workspace: Path) -> dict[str, object]:
-    """Reject the retired SQLite bootstrap entry point.
-
-    Canonical workspaces use ``research_map/context.json`` plus the Research State
-    liveness and memory projections. Creating ``research.db`` here would
-    reintroduce a second authority after installation, so callers must use
-    the Host workspace initializer and Research State filesystem boundary instead.
-    """
-
-    raise TSPiHostError(
-        "SQLite ResearchMap storage is retired; initialize and admit the canonical "
-        "Research Agent workspace instead"
-    )
-
-
-def has_legacy_research_storage(workspace: Path) -> bool:
-    """Return whether the historical ResearchState layout is present.
-
-    New Research Agent workspaces use ``research_map/context.json`` as their
-    sole write authority. The retired JSON/SQLite files are rejected and must
-    not be created by opening a filesystem workspace.
-    """
-
-    return any(
-        (workspace / name).exists()
-        for name in ("workspace.json", "research_map.json", "research.db", "transactions.jsonl")
-    )
-
-
-def check_research_workspace_storage(workspace: Path) -> dict[str, object]:
-    """Run the read-only dual-storage doctor before starting a research TUI."""
-
-    from research_state.doctor import inspect_workspace
-
-    result = inspect_workspace(workspace)
-    if result.get("valid") is not True:
-        errors = [
-            f"{item.get('code')}: {item.get('message')}"
-            for item in result.get("findings", [])
-            if item.get("severity") == "error"
-        ]
-        detail = "; ".join(errors) or "unknown storage inconsistency"
-        raise TSPiHostError(
-            f"ResearchMap storage is inconsistent for {workspace}: {detail}\n"
-            "ResearchAgent: run `workspace doctor --root <workspace>` and migrate the workspace explicitly."
-        )
-    return result
-
-
 def bind_workspace_mode(workspace: Path, workspace_name: str) -> dict[str, object]:
     """Create/attach the framework manifest before the Pi client starts.
 
@@ -1432,7 +1380,6 @@ def launch_harness_client(installation: Installation, request: LaunchRequest, wo
     os.environ["TSPI_PACKAGE_ROOT"] = str(installation.package_root)
     os.environ["PI_SESSION_WORKER_ENTRY"] = str(installation.package_root / "apps/app-server/pi-session-worker.mjs")
     os.environ["TSPI_WORKSPACE_ROOT"] = str(installation.workspaces_root)
-    os.environ["TSPI_NATIVE_WRITES"] = "1"
     os.environ.pop("TSPI_CUSTOM_UI", None)
     exec_pi(build_harness_client_command(installation, request), workspace)
 
@@ -1581,7 +1528,7 @@ def _private_socket_directory(
     last_error: OSError | None = None
     for base in bases:
         directory = base / key
-        longest_socket = directory / f"server-{'0' * 36}-{'0' * 12}.sock"
+        longest_socket = directory / "pi" / f"server-{'0' * 36}-{'0' * 12}.sock"
         if len(os.fsencode(longest_socket)) >= 108:
             if configured:
                 raise TSPiHostError(
@@ -1637,12 +1584,6 @@ def launch_terminal(installation: Installation, request: LaunchRequest, workspac
     """
     if request.session_id and not SESSION_ID.fullmatch(request.session_id):
         raise TSPiHostError("invalid session identity", exit_code=2)
-    backend = os.environ.get("TSPI_HOST_BACKEND", "harness").strip().lower()
-    if backend != "harness":
-        raise TSPiHostError(
-            f"unsupported TSPI_HOST_BACKEND={backend!r}; Native Pi Harness is the only supported backend",
-            exit_code=2,
-        )
     os.environ["TSPI_PI_RUNTIME_ROOT"] = str(resolve_pi_source(installation))
     os.environ["TSPI_HOST_STATE_ROOT"] = str(paths(installation.root).host_state)
     os.environ["TSPI_SESSION_ROOT"] = str(paths(installation.root).sessions)
@@ -1660,7 +1601,7 @@ def launch_terminal(installation: Installation, request: LaunchRequest, workspac
 
 def prepare_remote_terminal_cwd(installation: Installation, workspace_name: str) -> Path:
     """Create an isolated local cwd for an SSH terminal's presentation process."""
-    if not WORKSPACE_NAME.fullmatch(workspace_name):
+    if not WORKSPACE_ID_PATTERN.fullmatch(workspace_name):
         raise TSPiHostError(f"invalid workspace name: {workspace_name}", exit_code=2)
     root = installation.root / "var/cache/remote-terminal" / workspace_name
     if root.is_symlink():
@@ -1677,6 +1618,11 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
     if request.show_help:
         print(SERVER_USAGE if request.host else USAGE, end="")
         return 0
+    from tspi_foundation.installation_maintenance import assert_installation_available
+    try:
+        assert_installation_available(install_root)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise TSPiHostError(str(exc), code="installation_maintenance_required") from exc
     if request.host and "--service-host" not in argv and os.environ.get("TSPI_SYSTEMD_HOST") != "1":
         try:
             service_scope, _runtime_dir = _configured_service(Path(install_root).expanduser().resolve())
@@ -1738,7 +1684,7 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
     if default_client:
         if not request.workspace_name:
             raise TSPiHostError(f"a research workspace is required\n{USAGE}", exit_code=2)
-        # Bootstrap imports jsonschema and the scientific kernel. Select the
+        # Bootstrap imports jsonschema and the control kernel. Select the
         # installation-owned runtime before importing those modules; the
         # user's shell environment must not determine TSPi's dependencies.
         configure_runtime_environment(installation)
@@ -1763,16 +1709,6 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
             os.environ["RESEARCH_AGENT_WORKSPACE_MODE"] = str(manifest["workspace_mode"])
             os.environ["RESEARCH_AGENT_WORKSPACE_ID"] = str(manifest["workspace_id"])
             os.environ["TSPI_WORKSPACE_MODE"] = str(manifest["workspace_mode"])
-            if manifest["workspace_mode"] == "research":
-                # The Research State filesystem boundary owns the canonical state. A
-                # workspace that also contains the retired JSON/SQLite store has
-                # two competing write authorities and is rejected outright.
-                if has_legacy_research_storage(workspace):
-                    raise TSPiHostError(
-                        "workspace contains retired ResearchMap storage; "
-                        "remove or explicitly migrate research_map.json, research.db, "
-                        "workspace.json, and transactions.jsonl before opening it"
-                    )
         configure_process_environment(installation, workspace, request.workspace_name)
         launch_terminal(installation, request, workspace)
 

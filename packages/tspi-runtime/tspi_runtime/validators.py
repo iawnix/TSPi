@@ -2,7 +2,6 @@
 import hashlib
 import json
 import os
-import sys
 from pathlib import Path
 
 
@@ -18,19 +17,19 @@ def _registered_file(base, relative, expected):
 
 def prepare(root, params):
     root = Path(root).resolve()
-    package = Path(os.environ.get('TSPI_PACKAGE_ROOT') or os.environ.get('TS_PACKAGE_ROOT') or Path(__file__).resolve().parents[3]).resolve()
-    entries = []
-    for manifest in (package / 'extensions').glob('*/manifest.json'):
-        extension = json.loads(manifest.read_text())
-        for descriptor in extension.get('validators', []):
-            if descriptor.get('id') == params['validator_id']:
-                entries.append((manifest.parent, descriptor))
-    if len(entries) != 1:
-        raise ValueError('validator_not_registered: use an installed extension validator ID')
-    base, descriptor = entries[0]
+    from tspi_foundation.extension_catalog import registered_entry
+    base, descriptor = registered_entry('validators', params['validator_id'], params.get('validator_version'))
     script, script_digest = _registered_file(base, descriptor['entry'], descriptor['sha256'])
-    if any(k in params for k in ('command', 'inputs', 'outputs', 'environment', 'env', 'metadata', 'platform', 'cwd')):
-        raise ValueError('validator_request_invalid: only validator_id, input_artifact_ids and Job identity may be provided')
+    if any(k in params for k in ('command', 'inputs', 'outputs', 'environment', 'env', 'metadata', 'cwd')):
+        raise ValueError('validator_request_invalid: use validator identity, inputs, Job identity and a named platform')
+    from job_runtime.config_contract import load_job_config, resolve_binding, binding_digest
+    from job_runtime.environment import probe_binding, guarded_command
+    config_path = os.environ.get('TS_JOB_CONFIG')
+    if not config_path:
+        raise ValueError('job_config_required')
+    settings = load_job_config(config_path)
+    selected = resolve_binding(settings, params.get('platform') or settings['default_environment'],
+                               descriptor['backend'], runtime='python')
     from research_state.agent_workspace import read_context
     from artifact_store import PayloadStore
     store = PayloadStore(root / 'artifacts')
@@ -52,7 +51,7 @@ def prepare(root, params):
     inputs = [{'source': str(script), 'destination': 'validator.py', 'sha256': script_digest}]
     destinations = set()
     reserved = {'validator.py', 'validator_inputs.json', 'validator_result.json',
-                'spec.json', 'receipt.json', 'status.json', 'logs'}
+                'spec.json', 'receipt.json', 'status.json', 'logs', '.tspi'}
     for destination, resource in descriptor.get('resources', {}).items():
         target = Path(destination)
         if (target.is_absolute() or '..' in target.parts or not target.parts
@@ -119,11 +118,37 @@ def prepare(root, params):
         if manifest_path.read_bytes() != manifest_data:
             raise ValueError('validator_input_manifest_conflict')
     inputs.append({'source':str(manifest_path),'destination':'validator_inputs.json','sha256':manifest_digest})
-    return {**params, 'command': [sys.executable, 'validator.py', *[f'input_{i}' for i in range(len(refs))]],
+    environment = probe_binding(settings, selected, descriptor.get('requirements', {}))
+    argv = ['validator.py', *[f'input_{i}' for i in range(len(refs))]]
+    command, guard_inputs = guarded_command(selected, argv, environment)
+    inputs.extend(guard_inputs)
+    return {**params, 'platform': selected['environment'],
+        'command': command,
+        'environment': selected['binding'].get('environment', {}),
         'inputs': inputs, 'outputs': [{'path': 'validator_result.json', 'required': True, 'min_bytes': 2}],
-        'metadata': {'validator': {'id': descriptor['id'], 'version': descriptor['version'],
+        'metadata': {**selected['submission'], 'execution_binding': selected, 'python_binding': selected['python'],
+            'execution_environment': environment, 'execution_argv': argv,
+            'configuration_sha256': binding_digest(selected),
+            'resources_sha256': {row['destination']: row['sha256'] for row in inputs if not row['destination'].startswith('input_')},
+            'validator': {'id': descriptor['id'], 'version': descriptor['version'],
             'script_sha256': descriptor['sha256'], 'input_versions': input_versions, 'input_result_versions': input_result_versions},
             'input_artifact_ids': refs}}
+
+
+def check_current_inputs(root, prepared):
+    """Recheck State versions after the target probe, inside submission's lock."""
+    from research_state.agent_workspace import read_context
+    context = read_context(root)
+    validator = prepared['metadata']['validator']
+    artifacts = {row['id']: row for row in context['artifacts']}
+    attempts = {row['id']: row for row in context['attempts']}
+    for ref, digest in validator['input_versions'].items():
+        if artifacts.get(ref, {}).get('sha256') != digest:
+            raise ValueError('validator_input_stale')
+    for ref, version in validator['input_result_versions'].items():
+        metadata = attempts.get(ref, {}).get('metadata', {})
+        if metadata.get('latest_result_receipt_ref') != version or metadata.get('execution_conflict'):
+            raise ValueError('validator_input_stale')
 
 
 def collect_validation(receipt, collected):

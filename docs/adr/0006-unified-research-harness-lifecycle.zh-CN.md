@@ -32,7 +32,7 @@ Research State
 
 Harness / Host
   管理 turn admission、权限、workspace/session 绑定、工具契约、恢复和 follow-up
-  在统一 research.turn boundary 执行 checkpoint，不拥有科学决策
+  管理输入消费和工具准入；从 State 的 liveness 投影决定是否需要有界 follow-up
 
 Monitor
   观察外部 Attempt，记录 event/delivery，并通过 next_run 唤醒绑定 session
@@ -43,28 +43,30 @@ Compute / Workspace Runtime
   不直接写 Finding、Claim 或 Gate
 ```
 
-### Canonical Research Turn
+### Host 与 Research State 的职责
 
-所有入口（普通用户 turn、Monitor wake、恢复和重试）都经过同一协议：
+普通输入、Monitor wake 和恢复都通过当前 Pi submission 与 Worker 路径进入。Research
+State 不提供通用的 turn request/result 协议，也不保存 turn audit。Host/Harness
+负责输入准入、工具权限、workspace/session 绑定和恢复；Research State 负责规范研究状态、
+checkpoint 与 liveness。计算开始、结束或 Monitor 通知本身都不能生成科学结论。
+
+Worker 使用有界上下文和 State 工具执行当前 run。Agent 可以通过 `research_checkpoint`
+记录 `continue_required`、`waiting_external`、`deferred`、`blocked`、`terminal` 或
+`user_input_required` disposition。`continue_required` 记录明确的后续动作；它不会让
+Host 在当前 run 中自行选择并执行科学方法。Native Worker 在 run yield 后读取 liveness；
+若 active scope 仍缺少 disposition，可以请求有界 follow-up。Host 可以要求 Agent 读取
+状态并登记 disposition，但不能替它选择方法、Capability、Backend、Skill、参数或科学结论。
 
 ```text
-TRIGGER -> ADMIT -> ORIENT -> PLAN -> PREPARE -> EXECUTE
-        -> WAIT/RECONCILE -> INTERPRET -> ADVANCE -> CHECKPOINT
-        -> END 或 WAKE
+Pi submission -> Host admission -> Root Agent run -> State/Runtime tools
+              -> optional bounded follow-up based on State liveness
 ```
 
-Research State 暴露 `research.turn`（`research_turn_request` v1 / `research_turn_result` v1）：
-
-- `start`：登记一次 turn 开始并返回 bounded liveness；
-- `orient`：返回 bounded Research Context 和 liveness；
-- `checkpoint`：检查 Agent 是否留下合法 disposition；
-- `end`：只有非 `decision_needed` 状态才接受 turn 结束；
-- `wake`：把 Monitor/恢复唤醒映射到同一个边界。
-
-`research.turn` 只记录 operational turn audit（`operations/research_turns.jsonl`），
-不把生命周期事件写入 ResearchMap 科学事实集合。提供的 `request_id` 是幂等键：完全相同的重试返回
-`replayed=true` 且不重复追加 audit；如果同一 key 被用于不同 operation、turn、session、trigger
-或 delivery identity，则拒绝该 command。
+Monitor 在创建输入前调用只读命令 `research.monitor_assess(event_id, session_id)`。Research
+State 在 workspace 锁内检查事件的 workspace/session 身份，并将 event 与当前 Attempt、Node、
+interpretation、collection 和 disposition 对照，判断是否已处理或仍需关注。该结果只是准入
+评估，不是输入回执。Host 将通过检查的输入持久化为 Pi submission，并在模型首次消费前再次
+评估；Pi submission 是输入状态和消费的唯一权威，过期或被替代的 Monitor 事件不能进入模型。
 
 ### Liveness 语义
 
@@ -87,7 +89,7 @@ Node/Claim/Gate 状态和 Finding/Gate 证据决定科学结论。
 
 ### Follow-up 规则
 
-Host 在 `checkpoint/end` 读取 Research State 的结果：
+Native Worker 在模型 run yield 后读取 Research State 的 liveness：
 
 - `accepted=true`：结束当前 turn；`continue_required` 计划留给后续 turn 或 Monitor wake；
 - `requires_disposition=true`：最多追加有界 follow-up，要求 Agent 重新读取
@@ -96,14 +98,15 @@ Host 在 `checkpoint/end` 读取 Research State 的结果：
 - Host 不得在 follow-up 中指定 Capability、Backend、Skill、计算参数或科学结论；
 - 达到 follow-up 上限后保留 `decision_needed`，不能伪造 `terminal`。
 
-Monitor 在确认 wake delivery 前先提交 `research.turn(operation=wake)`；如果 boundary
-失败，delivery 保持 pending 并重试。因此 Monitor 的 `next_run` 是 operational wake-up，不是新的科学指令；`handoff` 只表示
-session/Agent 生命周期转移，也不表示科学下一步。
+Monitor 的 wake 只是 operational 输入，不是新的科学指令。事件是否仍需处理由只读
+`research.monitor_assess` 评估；输入的持久化、去重及消费状态由 Pi submission 管理。
+Research State 不再维护并行的 delivery receipt 或 turn audit。
 
 ### Research Memory、Skill 与计算环境
 
 Durable Research Memory 保存在 workspace：ResearchMap、ChangeSet、Attempt、Artifact、
-Monitor event、turn audit 和 provenance。模型上下文不是第二份状态。
+Monitor event 和 provenance。模型上下文不是第二份状态；run 生命周期由 Host/Pi 管理，
+Research State 不复制一份 turn history。
 
 每个 turn 只生成 bounded `research.context`：当前 focus、Gate/LifecycleAction 摘要、
 Attempt 状态、liveness 和截断标记。需要完整对象时 Agent 使用 `research_read detail/locate`
@@ -153,14 +156,13 @@ policy。这样冷恢复只允许 safe/idempotent 的 reconcile，`replay: never
 ## Native 生命周期接口
 
 `research_read`（包括有界的 `liveness` 视图）和 `research_checkpoint` 是
-Agent/Host 的规范接口：前者提供有界状态，后者以 disposition 结束 turn。
-`research.liveness` 只是诊断；`research_checkpoint` 仅用于读取或迁移旧的
-生命周期动作记录。所有生命周期语义统一由 `research.turn` 解释。Native
-Worker 的 `before_run_end` 只调用同一个 lifecycle boundary，不得实现第二套
-liveness 状态机。
+Agent/Host 的规范研究状态接口：前者提供有界状态，后者持久化 disposition。
+`research.liveness` 是派生诊断视图。Native Worker 在 run yield 后读取同一 liveness
+投影，并只在 active scope 缺少 disposition 时请求有界 follow-up；它不创建第二套研究
+状态机。Monitor 事件则通过只读 `research.monitor_assess` 进行 workspace/session 绑定检查。
 
 ## 验证
 
 必须覆盖：缺少 disposition、显式 continue_required、waiting external、deferred/blocked、terminal、
-Monitor wake、parsed Attempt 后重新需要决策、turn audit 幂等边界、bounded context、
-workspace binding、工具 envelope 和 Skill/Environment lazy-read contract。
+Monitor event 与 workspace/session 绑定、重复/迟到事件在 Pi submission 消费前复核、parsed
+Attempt 后重新需要决策、bounded context、工具 envelope 和 Skill/Environment lazy-read contract。

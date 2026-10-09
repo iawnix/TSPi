@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path, PurePosixPath
 
 from gaussian_io import parse_log, parse_irc_log, write_irc_parse_artifacts, write_xyz
-from science import digest, write_json, provenance, finite_energy
+from science import digest, write_json, finite_energy, new_result, finish
 
 
 def local_reference(value):
@@ -16,7 +16,7 @@ def local_reference(value):
     return str(path)
 
 
-def inspect_input(path, method, basis, charge, spin, threads, memory_mb):
+def inspect_input(path, method, basis, charge, multiplicity, threads, memory_mb):
     text = Path(path).read_text()
     sections = re.split(r'(?im)^\s*--Link1--\s*$', text)
     references, checkpoints, routes = set(), set(), []
@@ -41,7 +41,7 @@ def inspect_input(path, method, basis, charge, spin, threads, memory_mb):
         headers = re.findall(r'(?m)^\s*(-?\d+)\s+(\d+)\s*$', section[route_match.end():])
         if not headers and not re.search(r'geom\s*=\s*\(?allcheck', route, re.I):
             raise ValueError('missing charge/multiplicity header')
-        if any((int(c), int(m)) != (charge, spin + 1) for c, m in headers):
+        if any((int(c), int(m)) != (charge, multiplicity) for c, m in headers):
             raise ValueError('input charge/multiplicity differs from request')
         for key, value in re.findall(r'(?im)^\s*%(\w+)\s*=\s*(.*?)\s*$', section):
             key = key.lower()
@@ -61,7 +61,7 @@ def inspect_input(path, method, basis, charge, spin, threads, memory_mb):
 
 def run_input(args):
     source = Path(args.input_gjf).resolve()
-    checked = inspect_input(source, args.method, args.basis, args.charge, args.spin, args.threads, args.memory_mb)
+    checked = inspect_input(source, args.method, args.basis, args.charge, args.multiplicity, args.threads, args.memory_mb)
     out = Path(args.output_dir).resolve(); out.mkdir(parents=True, exist_ok=True)
     if any(out.iterdir()): raise ValueError('output directory must be empty')
     shutil.copyfile(source, out/'input.gjf')
@@ -69,18 +69,15 @@ def run_input(args):
         file = source.parent/name
         if not file.is_file(): raise ValueError(f'missing staged Gaussian dependency: {name}')
         target = out/name; target.parent.mkdir(parents=True, exist_ok=True); shutil.copyfile(file, target)
-    result = {'schema_version': 'science-result/1', 'method': args.method, 'basis': args.basis,
-              'charge': args.charge, 'spin': args.spin, 'input_sha256': digest(source),
-              'energy_unit': 'hartree', 'geometry_unit': 'angstrom', 'steps': [], 'validated': False,
-              'execution_succeeded': False, 'normal_termination': False, 'checks_passed': False,
-              'scientific_validation': 'not_assessed', 'validation_requested': args.validation,
-              'input': checked, 'scripts': provenance(__file__)}
+    result = new_result(args, args.method, args.basis, source)
+    result.update(normal_termination=False, validation_requested=args.validation, input=checked)
+    error = None
     try:
         executable = shutil.which(args.executable)
         if not executable: raise ValueError('configured Gaussian executable unavailable after activation')
         with (out/'input.gjf').open('rb') as inp, (out/'gaussian.out').open('wb') as log:
             process = subprocess.run([executable], cwd=out, stdin=inp, stdout=log, stderr=subprocess.STDOUT)
-        result['execution_succeeded'] = process.returncode == 0
+        result['program_returncode'] = process.returncode
         parsed = parse_log(out/'gaussian.out', expected_route=checked['routes'][-1])
         write_json(out/'parsed.json', parsed)
         summary = parsed['summary']; result['normal_termination'] = summary['normal_termination'] and not summary['error_termination']
@@ -101,13 +98,11 @@ def run_input(args):
             irc = parse_irc_log(out/'gaussian.out'); write_irc_parse_artifacts(irc, out, 'gaussian', 'gaussian.out')
             result['irc'] = irc['summary']
             if not irc['points'] or not irc['atoms']: raise ValueError('IRC path/endpoint evidence missing')
-        result['checks_passed'] = True
         # Numeric checks do not establish mode direction, basin identity or a mechanism.
-        result['scientific_validation'] = 'requires_interpretation'
         result['limitations'] = ['Inspect mode vectors, route readback and endpoint identities before scientific claims. Normal termination alone is not validation.']
         return_code = 0
     except Exception as exc:
-        result['error'] = {'type': type(exc).__name__, 'message': str(exc)}
+        error = exc
         return_code = 1
-    write_json(out/'result.json', result)
+    finish(out, result, __file__, error)
     return return_code

@@ -23,7 +23,8 @@ Preserve production consumers:
 
 - Workspace validation, mode policy, workspace identity and Research State bridge.
 - The Native Host activity journal and canonical ResearchMap reader.
-- The HTTP adapter that connects to an existing Native Host.
+- The authenticated Host browser gateway. The optional unrestricted HTTP adapter
+  and direct-to-Pi HTTP gateway were removed by the architecture convergence work.
 - Operational ID allocation, now owned by `research_state.operational_ids` with
   the same durable counters and CLI operation.
 - The TS Web `research-map-provider/1` JSONL adapter in `research_web_bridge.py`.

@@ -34,15 +34,15 @@ Path('validator_result.json').write_text(json.dumps({'schema_version':'validator
     for check in checks:
         entry = extension / (check["id"] + ".py")
         entry.write_text(script.read_text() + "\n# Fixture criterion: " + check["id"] + "\n")
-        validators.append({"id": check["validator_id"], "version": "1", "entry": entry.name,
+        validators.append({"id": check["validator_id"], "version": "1", "entry": entry.name, "backend": "validation",
             "sha256": "sha256:" + hashlib.sha256(entry.read_bytes()).hexdigest(),
             "input_contract": {"schema_version": "validator-input/1", "roles": [
                 {"name": "spec", "source": "registered_artifact", "schema_version": "fixture-spec/1"}]}})
-    (extension / "manifest.json").write_text(json.dumps({"name": "fixture", "validators": validators, "acceptance_profiles": [{
+    (extension / "manifest.json").write_text(json.dumps({"schema_version": "tspi-extension/1", "name": "fixture", "version": "1.0.0", "skills": [], "validators": validators, "acceptance_profiles": [{
             "id": "fixture.path", "version": "1", "description": "Three independently executed fixture checks",
             "subject_binding": "spec_artifact_id", "binding_keys": ["spec_artifact_id", "spec_sha256", "method"],
             "constraint_keys": ["method"], "checks": checks}]}))
-    monkeypatch.setenv("TSPI_PACKAGE_ROOT", str(package))
+    monkeypatch.setenv("TSPI_EXTENSION_MANIFESTS", str(extension / "manifest.json"))
     return {"id": "fixture.path", "version": "1"}
 
 
@@ -66,7 +66,7 @@ def input_spec(root, method="M062X"):
 def run_validator(root, validator_id, spec, suffix="", additional_inputs=()):
     job_id = "job_" + validator_id.replace(".", "_") + suffix
     dispatch("start", {"root": str(root), "job_id": job_id, "node_id": "node_1", "session_id": "session_fixture",
-                       "validator_id": validator_id, "input_artifact_ids": [spec, *additional_inputs]})
+                       "validator_id": validator_id, "validator_version": "1", "input_artifact_ids": [spec, *additional_inputs]})
     for _ in range(200):
         if dispatch("status", {"root": str(root), "job_id": job_id})["state"] not in {"started", "running"}:
             break
@@ -83,8 +83,7 @@ def assess(root, receipts=(), identifier="requirement_assessment_1", **values):
 
 
 def finish(root):
-    return checkpoint(root, {"principal": "root_agent", "authority": "kernel_write", "id": "checkpoint_final",
-                             "disposition": "terminal", "reason": "End this bounded run"})
+    return checkpoint(root, {"principal": "root_agent", "authority": "kernel_write", "checkpoint": {"id": "checkpoint_final", "disposition": "terminal", "reason": "End this bounded run"}})
 
 
 def test_sources_are_atomic_authentic_and_must_be_reviewed(tmp_path):
@@ -102,6 +101,89 @@ def test_sources_are_atomic_authentic_and_must_be_reviewed(tmp_path):
     change(tmp_path, [{"type": "review_source", "source_ref": ref, "disposition": "no_new_requirements",
                        "reason": "This is a status question about the existing work."}])
     assert requirements_evaluation(read_context(tmp_path))["settled"]
+    assert not requirements_evaluation(read_context(tmp_path))["satisfied"]
+
+
+def test_requirement_registration_needs_no_profile_and_cannot_disappear(tmp_path):
+    workspace(tmp_path)
+    src = source(tmp_path, "Calculate a new biological observable with method X.")
+    change(tmp_path, [{"type": "create_requirement", "id": "requirement_path", "source_ref": src,
+                       "source_quote": "Calculate a new biological observable with method X.",
+                       "statement": "Calculate the observable", "execution_required": True,
+                       "constraints": {"new_observable": "X"}}])
+    result = assess(tmp_path)
+    assert not result["satisfied"] and not result["settled"]
+    assert result["requirements"][0]["constraints"] == {"new_observable": "X"}
+    assert any(row["id"] == "acceptance_criteria" and not row["satisfied"] for row in result["requirements"][0]["checks"])
+    with pytest.raises(AgentWorkspaceError, match="requirement_source_has_requirements"):
+        change(tmp_path, [{"type": "review_source", "source_ref": src, "disposition": "no_new_requirements",
+                           "reason": "No installed method exists, so ignore the request"}])
+    with pytest.raises(AgentWorkspaceError, match="requirements_unsettled"):
+        finish(tmp_path)
+
+
+def test_missing_template_preserves_obligation_and_cannot_be_replaced_by_material(tmp_path):
+    workspace(tmp_path)
+    requirement(tmp_path, {"id": "biology.new_method", "version": "1"}, constraints={"temperature": 300})
+    report = artifact("create", {"root": str(tmp_path), "content": "No installed template was found"})
+    result = assess(tmp_path, evidence_refs=[report["artifact_id"]])
+    assert not result["satisfied"]
+    assert result["requirements"][0]["checks"][0]["id"] == "acceptance_profile"
+    with pytest.raises(AgentWorkspaceError, match="requirement_minimum_cannot_be_weakened"):
+        change(tmp_path, [{"type": "revise_requirement", "requirement_id": "requirement_path",
+                           "acceptance_profile": {"id": "research.material", "version": "1"}, "reason": "Substitute a report"}])
+
+
+def test_task_composed_checks_require_execution_and_cannot_be_weakened(tmp_path):
+    from research_state.workspace import initialize_workspace
+    from research_state.agent_workspace import admit_workspace
+    initialize_workspace(tmp_path, "simple_computation", "research")
+    admit_workspace(tmp_path, {"authority": "host"})
+    src = source(tmp_path, "Compute the requested observable.")
+    change(tmp_path, [{"type": "create_node", "id": "node_1", "title": "Compute", "objective": "Produce an observable"},
+                     {"type": "create_requirement", "id": "requirement_path", "source_ref": src,
+                      "source_quote": "Compute the requested observable.", "statement": "Compute the observable",
+                      "node_ids": ["node_1"], "execution_required": True}])
+    input_id = artifact("create", {"root": str(tmp_path), "content": "bounded input data"})["artifact_id"]
+    input_path = next(row["location"] for row in read_context(tmp_path)["artifacts"] if row["id"] == input_id)
+    change(tmp_path, [{"type": "bind_requirement", "requirement_id": "requirement_path",
+                       "input_artifact_ids": [input_id], "reason": "Bind the actual data used by this computation"}])
+    with pytest.raises(ValueError, match="job_input_not_staged"):
+        dispatch("start", {"root": str(tmp_path), "job_id": "job_fake_input", "node_id": "node_1",
+                           "command": [sys.executable, "-c", "pass"], "input_artifact_ids": [input_id]})
+    criterion = {"id": "meaning", "source_type": "agent_assessment", "description": "Inspect the reported observable and its units"}
+    change(tmp_path, [{"type": "revise_requirement", "requirement_id": "requirement_path",
+                       "criteria": [criterion], "reason": "Define how to interpret the output"}])
+    for extra in ({"execution_required": False}, {"criteria": [{**criterion, "description": "A report exists"}]}):
+        with pytest.raises(AgentWorkspaceError, match="requirement_minimum_cannot_be_weakened"):
+            change(tmp_path, [{"type": "revise_requirement", "requirement_id": "requirement_path",
+                               "reason": "Weaken the task", **extra}])
+    judgment = [{"criterion_id": "meaning", "verdict": "pass", "reason": "Inspected the output and units"}]
+    assert not assess(tmp_path, assessments=judgment)["satisfied"]
+
+    def run(job_id, code):
+        dispatch("start", {"root": str(tmp_path), "job_id": job_id, "node_id": "node_1",
+                           "command": [sys.executable, "-c", "from pathlib import Path; Path('value.txt').write_text('1 Hartree'); raise SystemExit(" + str(code) + ")"],
+                           "input_artifact_ids": [input_id], "inputs": [{"source": input_path, "destination": "data.txt"}],
+                           "outputs": [{"path": "value.txt", "required": True}]})
+        for _ in range(200):
+            if dispatch("status", {"root": str(tmp_path), "job_id": job_id})["state"] in {"succeeded", "failed"}:
+                break
+            time.sleep(.01)
+        return dispatch("collect", {"root": str(tmp_path), "job_id": job_id})["result_receipt"]["receipt_id"]
+
+    failed = run("job_failed", 1)
+    assert not assess(tmp_path, [failed], identifier="failed_assessment", assessments=judgment)["satisfied"]
+    with pytest.raises(AgentWorkspaceError, match="requirement_machine_verdict_mismatch"):
+        assess(tmp_path, [failed], identifier="override_failed", assessments=[*judgment,
+            {"criterion_id": "requirement.execution_succeeded", "verdict": "pass", "result_receipt_ref": failed}])
+    succeeded = run("job_succeeded", 0)
+    assert assess(tmp_path, [succeeded], identifier="success_assessment", assessments=judgment)["satisfied"]
+    state = read_context(tmp_path)
+    assert state["claims"] == [] and state["gates"] == [] and state["strategy_plans"] == []
+    (tmp_path / "runs/jobs/job_succeeded/value.txt").write_text("2 Hartree")
+    dispatch("collect", {"root": str(tmp_path), "job_id": "job_succeeded"})
+    assert not requirements_evaluation(read_context(tmp_path))["satisfied"]
 
 
 def test_requirement_cannot_invent_user_quote_or_downgrade_profile(tmp_path, profile):
@@ -113,7 +195,7 @@ def test_requirement_cannot_invent_user_quote_or_downgrade_profile(tmp_path, pro
         change(tmp_path, [{"type": "review_source", "source_ref": operation["source_ref"], "disposition": "no_new_requirements", "reason": "Pretend there was no task"}])
     with pytest.raises(AgentWorkspaceError, match="requirement_minimum_cannot_be_weakened"):
         change(tmp_path, [{"type": "revise_requirement", "requirement_id": "requirement_path", "constraints": {"method": "cheap method"}, "reason": "Reduce scope without a user change"}])
-    with pytest.raises(AgentWorkspaceError, match="operation_contract_invalid"):
+    with pytest.raises(AgentWorkspaceError, match="requirement_minimum_cannot_be_weakened"):
         change(tmp_path, [{"type": "revise_requirement", "requirement_id": "requirement_path", "constraints": {}, "acceptance_profile": {"id": "research.material", "version": "1"}, "reason": "Replace science with a report"}])
 
 
@@ -139,7 +221,7 @@ def test_stage_node_can_complete_but_success_delivery_cannot_consume_unmet_work(
     workspace(tmp_path)
     requirement(tmp_path, profile)
     change(tmp_path, [{"type": "create_node", "id": "node_delivery", "title": "Success report", "objective": "Deliver the study",
-                       "completion_exemption": "Notification has its own receipt", "consumes": {"requirement_ids": ["requirement_path"]}},
+                       "consumes": {"requirement_ids": ["requirement_path"]}},
                       {"type": "set_node_state", "node_id": "node_1", "state": "closed", "outcome": "completed"}])
     with pytest.raises(AgentWorkspaceError, match="node_requirements_unmet"):
         change(tmp_path, [{"type": "set_node_state", "node_id": "node_delivery", "state": "closed", "outcome": "completed"}])
@@ -156,7 +238,7 @@ def test_real_matching_validators_satisfy_requirement_and_receipt_changes_expire
     assess(tmp_path, receipts, identifier="assessment_reuse")
     assert len(read_context(tmp_path)["attempts"]) == 3
     change(tmp_path, [{"type": "create_node", "id": "node_delivered", "title": "Delivered result", "objective": "Deliver accepted research",
-                       "completion_exemption": "Delivery receipt is recorded separately", "consumes": {"requirement_ids": ["requirement_path"]}},
+                       "consumes": {"requirement_ids": ["requirement_path"]}},
                       {"type": "set_node_state", "node_id": "node_delivered", "state": "closed", "outcome": "completed"}])
     delivered = next(row for row in read_context(tmp_path)["nodes"] if row["id"] == "node_delivered")
     assert delivered["requirement_consumption"]["requirements"][0]["assessment_id"] == "assessment_reuse"
@@ -249,8 +331,7 @@ def test_actual_failed_execution_can_end_a_run_without_claiming_success(tmp_path
 
 def test_host_can_record_new_input_while_blocked_without_resuming_effects(tmp_path):
     workspace(tmp_path)
-    checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "id": "checkpoint_blocked",
-                          "disposition": "blocked", "reason": "Wait for missing experimental material"})
+    checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "checkpoint": {"id": "checkpoint_blocked", "disposition": "blocked", "reason": "Wait for missing experimental material"}})
     ref = source(tmp_path, "Here is an update about the missing input.")
     state = read_context(tmp_path)
     assert state["requirement_sources"][0]["source_ref"] == ref
@@ -263,7 +344,7 @@ def test_adding_an_input_scope_expires_prior_acceptance_but_preserves_history(tm
     first = artifact("create", {"root": str(tmp_path), "content": "First reference"})
     assert assess(tmp_path, evidence_refs=[first["artifact_id"]])["satisfied"]
     change(tmp_path, [{"type": "create_node", "id": "node_delivered", "title": "Delivered materials", "objective": "Share accepted materials",
-                       "completion_exemption": "Delivery receipt is separate", "consumes": {"requirement_ids": ["requirement_path"]}},
+                       "consumes": {"requirement_ids": ["requirement_path"]}},
                       {"type": "set_node_state", "node_id": "node_delivered", "state": "closed", "outcome": "completed"}])
     delivered = next(row for row in read_context(tmp_path)["nodes"] if row["id"] == "node_delivered")
     previous = read_context(tmp_path)["requirements"][0]["assessments"][0]
@@ -278,7 +359,7 @@ def test_adding_an_input_scope_expires_prior_acceptance_but_preserves_history(tm
     from research_state.invariants import validate_context
     assert validate_context(state)["valid"]
     change(tmp_path, [{"type": "create_node", "id": "node_next_delivery", "title": "Additional materials", "objective": "Deliver the expanded scope",
-                       "completion_exemption": "Delivery receipt is separate", "consumes": {"requirement_ids": ["requirement_path"]}}])
+                       "consumes": {"requirement_ids": ["requirement_path"]}}])
     with pytest.raises(AgentWorkspaceError, match="node_requirements_unmet"):
         change(tmp_path, [{"type": "set_node_state", "node_id": "node_next_delivery", "state": "closed", "outcome": "completed"}])
     assert assess(tmp_path, identifier="assessment_expanded", evidence_refs=[first["artifact_id"], second["artifact_id"]])["satisfied"]

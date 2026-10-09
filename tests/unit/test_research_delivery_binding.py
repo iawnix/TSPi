@@ -17,8 +17,7 @@ from tspi_runtime.evidence import dispatch as artifact
 
 def delivery_node(root, *, dependencies=None, consumes=None):
     change(root, [{"type": "create_node", "id": "node_delivery", "title": "Notify", "objective": "Report the consumed work",
-                   "claim_ids": ["claim_1"], "completion_exemption": "Notification produces a delivery receipt, not a calculation",
-                   "dependencies": dependencies if dependencies is not None else [{"node_id": "node_1", "condition": "finished"}],
+                   "claim_ids": ["claim_1"], "dependencies": dependencies if dependencies is not None else [{"node_id": "node_1", "condition": "finished"}],
                    **({"consumes": consumes} if consumes is not None else {})}])
 
 
@@ -84,8 +83,7 @@ def test_finished_dependency_can_report_actual_failure_and_retry_does_not_send_a
     assert basis["snapshot"]["requirements"][0]["satisfied"] is False
     assert basis["snapshot"]["attempts"][0]["state"] == "failed"
     change(tmp_path, [{"type": "set_node_state", "node_id": "node_delivery", "state": "closed", "outcome": "completed"}])
-    checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "id": "failed_run_final",
-                          "disposition": "terminal", "reason": "The failure was reported; the unmet requirement remains recorded"})
+    checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "checkpoint": {"id": "failed_run_final", "disposition": "terminal", "reason": "The failure was reported; the unmet requirement remains recorded"}})
     assert delivery.notify_user(tmp_path, request)["state"] == "already_sent"
     assert len(calls) == 1
     assert len(read_context(tmp_path)["attempts"]) == 1
@@ -94,7 +92,7 @@ def test_finished_dependency_can_report_actual_failure_and_retry_does_not_send_a
 def test_unrelated_failed_attempt_cannot_authorize_a_failure_label(tmp_path):
     workspace(tmp_path)
     change(tmp_path, [{"type": "create_node", "id": "node_other", "title": "Other scope", "objective": "Independent work",
-                       "claim_ids": ["claim_1"], "completion_exemption": "No calculation required"},
+                       "claim_ids": ["claim_1"], },
                       {"type": "set_node_state", "node_id": "node_other", "state": "closed", "outcome": "inconclusive"}])
     delivery_node(tmp_path, dependencies=[{"node_id": "node_other", "condition": "finished"}])
     failed_calculation(tmp_path)
@@ -109,8 +107,7 @@ def test_finished_dependency_never_bypasses_global_blocked_state(tmp_path, monke
     request, _ = email_request(tmp_path, monkeypatch, "progress")
     calls = []
     monkeypatch.setattr(delivery, "_run_transport", lambda *args, **kwargs: calls.append(1) or "accepted")
-    checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "id": "blocked_run",
-                          "disposition": "blocked", "reason": "Wait for explicit recovery"})
+    checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "checkpoint": {"id": "blocked_run", "disposition": "blocked", "reason": "Wait for explicit recovery"}})
     with pytest.raises(ValueError, match="research_lifecycle_blocked"):
         delivery.notify_user(tmp_path, request)
     assert calls == []

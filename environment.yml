@@ -1,4 +1,4 @@
-name: tspi-skill
+name: tspi-control
 channels:
   - conda-forge
   - nodefaults
@@ -7,12 +7,5 @@ dependencies:
   - pip
   - setuptools>=77
   - wheel
-  - pytest
-  - jsonschema
-  - numpy>=2.0,<3
-  - rdkit>=2025.9,<2027
-  - scipy
-  - ase
-  - pillow>=10,<13
-  - matplotlib>=3.9,<4
-# Pip-only Core dependencies are installed separately from requirements-runtime.txt.
+  - jsonschema>=4.23,<5
+  - packaging>=24,<27

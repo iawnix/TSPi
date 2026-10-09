@@ -1,81 +1,39 @@
-# ChangeSet Contract
+# Recording and revising research decisions
 
-`research_change` is the only public mutation boundary for `ResearchMap`. Its
-public payload contains `rationale`, optional `basis_refs`, optional
-`expected_revision`, and a non-empty `operations` array. The Host attaches
-`principal=root_agent` and `authority=kernel_write` to the internal Research State
-request; those authority fields are not public tool parameters. Query
-`research_read mode=operations` for the current catalog before using an unfamiliar
-operation.
+Use `research_change` for map changes. Query
+`research_read mode=operations query=<operation>` for the authoritative fields,
+constraints and examples. Use existing IDs and keep related operations in one
+coherent request; later operations may refer to objects created earlier in it.
+Use the current revision when the decision depends on a specific State snapshot.
+A rejected batch leaves the prior map intact. Diagnose its reported operation and
+repair the cause through tools rather than editing canonical files.
 
-## Operations
+Record a Finding for a verified output, meaningful limitation or unresolved
+scientific issue. Cite registered evidence and keep the statement no stronger
+than that evidence. A plan or object ID is a decision basis, not scientific
+material. Use the request's decision-basis field for such context.
 
-Each operation uses `type` and an explicit project-local `id` for objects it
-creates. References use the IDs already present in the map.
+Assess a Claim explicitly from inspected evidence. Literature and imported data
+can support an assessment without a new calculation. An untested plan cannot.
+Read `mode=decisions` for assessment reasons and evidence bindings. When evidence
+or an attached Gate changes, inspect the resulting review requirement and reassess;
+keep the earlier decision as history. Independent work may continue while a
+conclusion awaits review, but the stale conclusion cannot justify final success.
 
-| Type | Required data |
-| --- | --- |
-| `create_phase` | `id`, `title`; optional `objective` |
-| `create_claim` | `id`, `statement`; optional `status=proposed`, `predictions`, `falsifiers` |
-| `create_node` | `id`, `title`, `objective`; optional `phase_id`, `claim_ids`, `dependency_ids` |
-| `create_finding` | `id`, `node_id`, `statement`, `kind` (`fact` or `issue`); fact fields are `value`, `datatype`, `unit`, `provenance`; issue fields are `status`, `severity`, `resolution` |
-| `create_gate` | `id`, `scope` (`node` or `claim`), `target_id`, `criteria` |
-| `evaluate_gate` | `gate_id`, `verdict`, `assessments`, optional `message`, `evidence_refs` |
-| `set_node_state` | `node_id`, `state`; closing also needs `outcome` and `summary` |
-| `assess_claim` | `id`, `claim_id`, `verdict`, `reason`; registered `evidence_refs` for `supported`, `contradicted`, or `inconclusive` |
-| `revise_claim` | `source_claim_id`, `target_claim_id`, `revision_id`, `statement`, `reason`; optional `relation`, `predictions`, `falsifiers` |
-| `relate_claims` | `source_id`, `target_id`, `relation` |
-| `set_focus` | `claim_ids`, `node_ids` |
+Attach a Gate when a Node or Claim decision benefits from explicit criteria.
+Ordinary Nodes need no Gate. Requirements preserve user deliverables regardless
+of local Gate choices; see [requirements](requirements.md). Use runtime facts and
+registered validators for checks they can establish, and explicit Agent judgment
+for scientific interpretation. Explain changed criteria rather than silently
+replacing them. A machine failure cannot be changed into a pass by an assessment.
 
-Object IDs must be unique within the map and references must resolve in the
-proposed post-state. Operations run in order, so a later operation can refer to
-an object created earlier in the same request. Keep one coherent research change in a
-single ChangeSet; unrelated changes should use separate requests.
+Inspect collected outputs before recording an Attempt interpretation. Use the
+result receipt and its direct evidence for the result of that run; distinguish
+comparison and background evidence. Operational observations and execution issues
+refer to Runtime observations. Correct an earlier interpretation by superseding it.
+Changed outputs require a fresh decision against their current versions.
 
-## Commit Rules
-
-The Research State locks the workspace, loads canonical context, checks
-`expected_revision` when present, applies operations to a detached copy, runs
-the full map validator, increments `revision`, and atomically replaces context,
-liveness, memory, and manifest revision. A rejected request does not alter the
-prior map. Do not edit canonical documents directly.
-
-`create_finding` records the Node's verified output. It is not a generic log
-entry: use `FactFinding` for a value that supports a scientific statement and
-`IssueFinding` for a limitation, anomaly, conflict, or unresolved question.
-`create_gate` and `evaluate_gate` are the Gate lifecycle. Claim status and Gate
-verdict are independent: a Gate evaluation does not silently change Claim status.
-New Claims start as `proposed`; scientific verdicts go through `assess_claim`,
-not a direct status setter. Cite registered literature, imported data or collected
-outputs with their provenance. An assessment does not require a new calculation,
-but an untested plan cannot establish a scientific verdict or confirmed Finding.
-`current_assessment_id` identifies the adopted assessment. Its evidence versions
-and any required ClaimGate must stay current; `assessment_state` reports
-`not_assessed`, `current` or `needs_review`. Reassess changed evidence rather than
-editing old records. Legacy status without an assessment remains `not_assessed`.
-Read assessment reasons and evidence bindings with `research_read mode=decisions claim_id=<claim_id>`.
-Adding, revising or reevaluating a ClaimGate (even at the same Gate version) makes
-an adopted `supported` assessment need review. You may record that change first
-and submit `assess_claim` later; one combined ChangeSet is not required.
-`needs_review` prevents explicit and automatic terminal closure, while independent work may continue.
-
-
-Before starting a calculation, attach explicit Gate criteria to its Node or give
-`completion_exemption` with a reason when creating that Node. Each criterion has
-an `id` and `source_type`: `runtime_fact`, `validator_result`, or `agent_assessment`.
-An evaluation supplies `assessments` for every criterion. Machine criteria require
-the actual `result_receipt_ref`; an agent assessment needs a reason and remains an
-agent judgment. Use `revise_gate` with `criteria` and `reason` to change conditions;
-old versions remain in the audit and previous evaluations no longer pass.
-
-`context` is a bounded current decision view. Use `detail` for an exact object,
-`evidence` with `attempt_id` or `job_id`, and `offset`/`limit` for pages. Record goal
-`source_refs` and `constraints` on Claims so they survive conversation compaction.
-Never copy producer IDs onto agent-created text. `job_collect` certifies current
-outputs and returns a stable result receipt. Final `kind=result` interpretations
-must cite that receipt and its direct outputs. Use comparison/background roles
-for other runs. `kind=observation` or `execution_issue` requires the runtime's
-`execution_observation_ref`. Use `supersedes_id` to correct earlier explanations.
-Changed outputs invalidate dependent explanations and machine Gate assessments.
-
-Completion conditions also apply to report and email Nodes. Each agent_assessment supplies criterion_id, verdict (pass/fail/inconclusive/blocked), and reason; machine assessments supply criterion_id and result_receipt_ref. Query mode=operations query=evaluate_gate for the complete schema and example, replacing example evidence IDs with registered IDs. Use operation_index/target_id to diagnose an atomic batch failure; rollback does not mean an earlier Gate evaluation was invalid.
+An atomic failure need not mean every proposed operation was wrong. Repair the
+reported target, retain valid artifacts and side-effect receipts, and submit the
+remaining coherent decision. A failure to record delivery does not authorize
+sending the delivery again.

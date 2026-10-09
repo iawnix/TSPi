@@ -1,13 +1,10 @@
-"""Executable scientific-runtime capability probe used by the installer."""
+"""Executable control-runtime capability probe used by the installer."""
 
 from __future__ import annotations
 
 import argparse
 import importlib.metadata
-import io
 import json
-import os
-import subprocess
 import sys
 from pathlib import Path
 from pathlib import PurePosixPath
@@ -22,123 +19,26 @@ from tspi_foundation.env import (
 
 
 def probe_runtime_capabilities(*, require_distribution: bool = True) -> dict[str, Any]:
-    """Exercise the chemistry and rendering capabilities required by TSPi."""
+    """Exercise only the dependencies used by the control plane."""
+    import jsonschema
+    import packaging
+    from packaging.specifiers import SpecifierSet
 
-    import numpy
-    import rdkit
-    from rdkit import Chem
-    from rdkit.Chem import AllChem
-
-    molecule = Chem.MolFromSmiles("CC")
-    if molecule is None:
-        raise RuntimeError("RDKit could not parse the probe SMILES")
-    molecule = Chem.AddHs(molecule)
-    parameters = AllChem.ETKDGv3()
-    parameters.randomSeed = 61_453
-    if AllChem.EmbedMolecule(molecule, parameters) != 0:
-        raise RuntimeError("RDKit ETKDG probe embedding failed")
-    if not AllChem.UFFHasAllMoleculeParams(molecule):
-        raise RuntimeError("RDKit UFF parameters are unavailable for the probe molecule")
-    if AllChem.UFFOptimizeMolecule(molecule, maxIters=200) != 0:
-        raise RuntimeError("RDKit UFF probe optimization did not converge")
-    render = _probe_render_capabilities()
-    from ase.thermochemistry import IdealGasThermo
-    thermal = IdealGasThermo([], geometry="monatomic", potentialenergy=0, natoms=1).get_enthalpy(298.15, verbose=False)
-    if not 0.06 < thermal < 0.07:
-        raise RuntimeError("ASE thermal-model probe failed")
-
+    validator = jsonschema.Draft202012Validator({"type": "object", "required": ["version"],
+        "properties": {"version": {"type": "integer", "minimum": 1}}, "additionalProperties": False})
+    validator.validate({"version": 1})
+    if not list(validator.iter_errors({"version": "invalid"})):
+        raise RuntimeError("JSON Schema validation probe failed")
+    constraint = SpecifierSet(">=1,<2")
+    if "1.5" not in constraint or "2.0" in constraint:
+        raise RuntimeError("Version constraint probe failed")
     return {
-        "schema_version": RUNTIME_PROBE_VERSION,
-        "ok": True,
-        "python": {
-            "version": sys.version.split()[0],
-            "executable": str(Path(sys.executable).resolve()),
-        },
+        "schema_version": RUNTIME_PROBE_VERSION, "ok": True,
+        "python": {"version": sys.version.split()[0], "executable": str(Path(sys.executable).resolve())},
         "distribution": _probe_distribution(required=require_distribution),
-        "modules": {
-            "numpy": {
-                "version": str(numpy.__version__),
-                "origin": str(Path(numpy.__file__).resolve()),
-            },
-            "rdkit": {
-                "version": str(rdkit.__version__),
-                "origin": str(Path(rdkit.__file__).resolve()),
-            },
-            "matplotlib": render["matplotlib"],
-        },
-        "commands": {"xyzrender": render["xyzrender"]},
-        "capabilities": {
-            "rdkit_smiles_parse": True,
-            "rdkit_etkdg_embed": True,
-            "rdkit_uff_optimize": True,
-            "matplotlib_render": True,
-            "xyzrender_cli": True,
-            "reaction_analysis": True,
-            "ase_thermochemistry": True,
-        },
-    }
-
-
-def _probe_render_capabilities() -> dict[str, dict[str, Any]]:
-    import matplotlib
-
-    matplotlib.use("Agg", force=True)
-    import matplotlib.pyplot as plt
-
-    figure, axes = plt.subplots(figsize=(1, 1), dpi=32)
-    try:
-        axes.plot((0, 1), (0, 1))
-        axes.set_axis_off()
-        output = io.BytesIO()
-        figure.savefig(output, format="png")
-        if not output.getvalue().startswith(b"\x89PNG\r\n\x1a\n"):
-            raise RuntimeError("Matplotlib did not produce a valid PNG image")
-    finally:
-        plt.close(figure)
-
-    executable_name = "xyzrender.exe" if os.name == "nt" else "xyzrender"
-    candidates = (
-        Path(sys.base_prefix) / ("Scripts" if os.name == "nt" else "bin") / executable_name,
-        Path(sys.prefix) / ("Scripts" if os.name == "nt" else "bin") / executable_name,
-    )
-    executable = next(
-        (
-            path.resolve()
-            for path in candidates
-            if path.is_file() and os.access(path, os.X_OK)
-        ),
-        None,
-    )
-    if executable is None:
-        raise RuntimeError("managed scientific runtime is missing the xyzrender executable")
-    try:
-        completed = subprocess.run(
-            [str(executable), "--help"],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=30,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        raise RuntimeError(f"xyzrender capability probe failed: {error}") from error
-    if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout).strip().splitlines()
-        suffix = f": {detail[-1]}" if detail else ""
-        raise RuntimeError(f"xyzrender capability probe exited with status {completed.returncode}{suffix}")
-    try:
-        version = importlib.metadata.version("xyzrender")
-    except importlib.metadata.PackageNotFoundError as error:
-        raise RuntimeError("managed scientific runtime is missing the xyzrender distribution") from error
-    return {
-        "matplotlib": {
-            "version": str(matplotlib.__version__),
-            "origin": str(Path(matplotlib.__file__).resolve()),
-        },
-        "xyzrender": {
-            "version": version,
-            "path": str(executable),
-        },
+        "modules": {name: {"version": importlib.metadata.version(name), "origin": str(Path(module.__file__).resolve())}
+                    for name, module in (("jsonschema", jsonschema), ("packaging", packaging))},
+        "capabilities": {"json_schema_validation": True, "version_constraints": True},
     }
 
 

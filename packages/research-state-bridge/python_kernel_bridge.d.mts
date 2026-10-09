@@ -1,4 +1,4 @@
-export const KERNEL_BRIDGE_PORT_VERSION: "kernel_bridge_port_1";
+export const KERNEL_BRIDGE_PORT_VERSION: "kernel_bridge_port_2";
 export const KERNEL_BRIDGE_METHODS: readonly [
   "execute_command",
   "read_context",
@@ -6,7 +6,6 @@ export const KERNEL_BRIDGE_METHODS: readonly [
   "admit_workspace",
   "apply_change",
   "checkpoint",
-  "turn",
   "transaction_get",
   "transaction_recover",
   "transaction_begin",
@@ -27,7 +26,7 @@ export interface KernelBridgeTransport {
 }
 
 export interface ResearchStateBridge {
-  readonly protocol_version: "kernel_bridge_port_1";
+  readonly protocol_version: "kernel_bridge_port_2";
   readonly workspace_root: string;
   execute_command(command: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>;
   read_context(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
@@ -35,7 +34,6 @@ export interface ResearchStateBridge {
   admit_workspace(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
   apply_change(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
   checkpoint(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
-  turn(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
   transaction_get(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
   transaction_recover(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
   transaction_begin(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
@@ -58,6 +56,7 @@ export interface JsonlSubprocessTransportOptions {
   readonly cwd?: string;
   readonly env?: NodeJS.ProcessEnv;
   readonly timeout_ms?: number;
+  readonly extension_catalog?: Record<string, unknown>;
 }
 
 export function create_jsonl_subprocess_transport(
@@ -72,4 +71,5 @@ export function create_python_kernel_bridge(request: {
   readonly cwd?: string;
   readonly env?: NodeJS.ProcessEnv;
   readonly timeout_ms?: number;
+  readonly extension_catalog?: Record<string, unknown>;
 }): ResearchStateBridge;

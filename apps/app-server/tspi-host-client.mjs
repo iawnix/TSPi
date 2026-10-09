@@ -6,7 +6,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-export const HOST_PROTOCOL = "tspi-host/1";
+import protocol from "../../packages/tspi-foundation/tspi_foundation/protocol.json" with { type: "json" };
+export const HOST_PROTOCOL = protocol.host_protocol;
 export const MAX_FRAME_BYTES = 16 * 1024 * 1024;
 
 export function protocolError(code, message, retryable = false) {

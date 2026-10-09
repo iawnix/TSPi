@@ -1,5 +1,6 @@
 """Exact workspace references survive mutation, concurrency and process restart."""
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -112,36 +113,36 @@ def test_public_commands_and_changes_resolve_artifact_selectors(tmp_path):
     assert next(row for row in read_context(tmp_path)["evidence_links"] if row["id"] == "evidence_via_change")["artifact_id"] == other["artifact_id"]
 
 
-def test_preparation_cli_emits_a_managed_reference_in_workspace(tmp_path):
+def test_preparation_cli_emits_only_a_file_and_digest_in_workspace(tmp_path):
     workspace(tmp_path)
     config = tmp_path / "job.toml"
+    from job_runtime.config_contract import load_job_config
+    python = load_job_config(config)['environments']['local']['backends']['validation']['python']
     config.write_text('''default_environment = "local"
 [environments.local]
 kind = "local"
 [environments.local.python]
 manager = "conda"
-conda_executable = "/opt/conda/bin/conda"
-prefix = "/opt/runner"
-lock_ref = "/opt/locks/runner.lock"
+conda_executable = CONDA_PATH
+prefix = PREFIX_PATH
+lock_ref = LOCK_PATH
 [environments.local.backends.xtb]
-command = ["/opt/xtb"]
-''')
+command = ["/bin/true"]
+'''.replace('CONDA_PATH', json.dumps(python['conda_executable']))
+       .replace('PREFIX_PATH', json.dumps(python['prefix'])).replace('LOCK_PATH', json.dumps(python['lock_ref'])))
     xyz = tmp_path / "water.xyz"
     xyz.write_text("1\nH\nH 0 0 0\n")
     output = tmp_path / "prepared" / "request.json"
-    helper = Path(__file__).resolve().parents[2] / "extensions/chemical/skills/method-selection/scripts/prepare_job.py"
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": os.pathsep.join(sys.path)}
-    result = subprocess.run([sys.executable, str(helper), "--config", str(config), "--environment", "local",
-                             "--backend", "xtb", "--skill", "xtb", "--xyz", str(xyz), "--output", str(output),
+    before = read_context(tmp_path)
+    result = subprocess.run([sys.executable, "-m", "tspi_runtime.executors", "--config", str(config), "--environment", "local",
+                             "--executor", "chemical.xtb", "--version", "1", "--input", "geometry=" + str(xyz), "--output", str(output),
                              "--", "--task", "sp"], env=env, capture_output=True, text=True, check=True)
     value = json.loads(result.stdout)
-    assert value["prepared_ref"] == "p1"
-    assert execute("job.prepare", tmp_path, {"request_file": str(output)}) == value
-    resolved = execute("job.resolve_prepared", tmp_path, {"prepared_ref": value["prepared_ref"], "node_id": "node_1"})
-    assert resolved["node_id"] == "node_1"
-    assert resolved["work_id"] == value["work_id"]
-    assert resolved["inputs"][-1]["source"] == str(xyz)
-    assert not read_context(tmp_path)["attempts"]
+    assert value == {"request_file": str(output), "request_sha256": hashlib.sha256(output.read_bytes()).hexdigest()}
+    assert any(row['source'] == str(xyz) for row in json.loads(output.read_text())["inputs"])
+    assert read_context(tmp_path) == before
+    assert not (tmp_path / "operations/references/index.json").exists()
 
 
 def test_tampered_prepared_snapshot_is_rejected(tmp_path):
@@ -205,3 +206,100 @@ def test_registry_index_and_snapshot_recover_as_one_transaction(tmp_path, monkey
     assert value["prepared_ref"] == "p1"
     assert resolve_prepared_job(tmp_path, {"prepared_ref": "p1"})["work_id"] == "work_one"
     assert len(list((tmp_path / "operations/references/records").glob("*.json"))) == 1
+
+
+@pytest.mark.parametrize("change, error", [
+    ({"request_sha256": "0" * 64}, "prepared_request_changed"),
+    ({"request_sha256": None}, "prepared_request_digest_required"),
+    ({"command": ["false"]}, "prepared_override_forbidden"),
+    ({"request_id": "replacement"}, "prepared_override_forbidden: remove top-level request_id"),
+    ({"node_id": "node_missing"}, "research_node_required"),
+])
+def test_file_submission_rejection_does_not_register_or_stage(tmp_path, change, error):
+    workspace(tmp_path)
+    (tmp_path / "input.xyz").write_text("geometry")
+    path = prepared(tmp_path)
+    params = {"request_file": str(path), "request_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+              "node_id": "node_1", **change}
+    before = read_context(tmp_path)
+    with pytest.raises(ValueError, match=error):
+        execute("job.start", tmp_path, params)
+    assert read_context(tmp_path) == before
+    assert not (tmp_path / "operations/references/index.json").exists()
+    assert not list((tmp_path / "operations/jobs").glob("*.json"))
+    assert not list((tmp_path / "runs/jobs").glob("*"))
+
+
+def test_file_submission_freezes_one_read_and_replays_without_execution(tmp_path, monkeypatch):
+    from research_state import references
+    import time
+
+    workspace(tmp_path)
+    (tmp_path / "input.xyz").write_text("geometry")
+    marker = tmp_path / "launches.txt"
+    path = prepared(tmp_path, command=[sys.executable, "-c",
+        f"from pathlib import Path; Path({str(marker)!r}).open('a').write('run\\n')"])
+    encoded = path.read_bytes()
+    params = {"request_file": str(path), "request_sha256": hashlib.sha256(encoded).hexdigest(), "node_id": "node_1"}
+    original = references.read_prepared_file
+    reads = []
+
+    def read_and_replace(root, request):
+        value = original(root, request)
+        reads.append(value)
+        # Mutation after resolution must neither change the staged command
+        # nor be silently incorporated by a second parser in another layer.
+        path.write_text(json.dumps({"command": ["false"]}))
+        return value
+
+    monkeypatch.setattr(references, "read_prepared_file", read_and_replace)
+    first = execute("job.start", tmp_path, params)
+    assert len(reads) == 1
+    assert first["prepared_ref"] == "p1"
+    frozen = resolve_prepared_job(tmp_path, {"prepared_ref": "p1"})
+    assert frozen["command"] == json.loads(encoded)["command"]
+    path.write_bytes(encoded)
+    replay = execute("job.start", tmp_path, params)
+    assert replay["prepared_ref"] == "p1"
+    assert replay["job_id"] == first["job_id"]
+    assert execute("job.start", tmp_path, {"prepared_ref": "p1", "node_id": "node_1"})["job_id"] == first["job_id"]
+    for _ in range(200):
+        status = execute_job("status", {"root": str(tmp_path), "job_id": first["job_id"]})
+        if status["state"] in {"succeeded", "failed"}:
+            break
+        time.sleep(.01)
+    assert status["state"] == "succeeded"
+    assert marker.read_text() == "run\n"
+    assert len(read_context(tmp_path)["attempts"]) == 1
+    assert len(list((tmp_path / "operations/references/records").glob("p*.json"))) == 1
+
+
+def test_file_reference_and_attempt_recover_in_the_same_dispatch_transaction(tmp_path, monkeypatch):
+    from research_state import transactions
+
+    workspace(tmp_path)
+    (tmp_path / "input.xyz").write_text("geometry")
+    marker = tmp_path / "launches.txt"
+    path = prepared(tmp_path, command=[sys.executable, "-c",
+        f"from pathlib import Path; Path({str(marker)!r}).touch()"])
+    params = {"request_file": str(path), "request_sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "node_id": "node_1"}
+    original = transactions._atomic_json
+
+    def fail_index(target, value):
+        if target == tmp_path / "operations/references/index.json":
+            raise OSError("simulated index failure before dispatch")
+        return original(target, value)
+
+    monkeypatch.setattr(transactions, "_atomic_json", fail_index)
+    with pytest.raises(OSError, match="index failure"):
+        execute("job.start", tmp_path, params)
+    monkeypatch.setattr(transactions, "_atomic_json", original)
+    replay = execute("job.start", tmp_path, params)
+    assert replay["state"] == "unknown"
+    assert not marker.exists()
+    assert resolve_prepared_job(tmp_path, {"prepared_ref": "p1"})["work_id"] == "work_one"
+    attempts = read_context(tmp_path)["attempts"]
+    assert len(attempts) == 1
+    intent = json.loads((tmp_path / f"operations/jobs/{replay['job_id']}.json").read_text())
+    assert intent["prepared_ref"] == "p1"
+    assert intent["attempt_id"] == attempts[0]["id"]

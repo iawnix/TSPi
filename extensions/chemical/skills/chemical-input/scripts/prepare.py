@@ -1,5 +1,4 @@
 """Resolve identities, validate graphs, generate seeds, or inspect an explicit reaction map."""
-import argparse
 from collections import Counter
 import hashlib
 import json
@@ -64,6 +63,7 @@ def seeds(smiles, charge, multiplicity, output, enumerate_stereo=False):
         generated.append({'smiles': Chem.MolToSmiles(isomer), 'xyz': str(path.resolve()),
                           'sha256': hashlib.sha256(xyz.encode()).hexdigest()})
     return {'schema_version': 'chemical-seeds/1', **metadata, 'multiplicity': multiplicity,
+            'embedding': {'method': 'ETKDGv3', 'random_seed': 61453},
             'seeds': generated, 'geometry_status': 'initial_seed',
             'limitations': ['Embedding is not optimization; conformers and intermolecular approaches require separate exploration.']}
 
@@ -73,18 +73,8 @@ from reaction_checks import reaction
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', help='Absolute installation name-resolver TOML')
-    parser.add_argument('--output', required=True)
-    sub = parser.add_subparsers(dest='command', required=True)
-    names = sub.add_parser('resolve'); names.add_argument('--name', required=True); names.add_argument('--lookup-name')
-    check = sub.add_parser('inspect'); check.add_argument('--smiles', required=True)
-    seed = sub.add_parser('seed'); seed.add_argument('--smiles', required=True)
-    seed.add_argument('--charge', type=int, required=True); seed.add_argument('--multiplicity', type=int, required=True)
-    seed.add_argument('--output-dir', type=Path, required=True); seed.add_argument('--enumerate-stereo', action='store_true')
-    mapping = sub.add_parser('reaction'); mapping.add_argument('--smiles', required=True)
-    mapping.add_argument('--transformation', type=Path, help='JSON declaring diels_alder or explicit bond/hydrogen changes')
-    args = parser.parse_args()
+    from cli import parse_arguments
+    args = parse_arguments()
     if args.config: os.environ['TSPI_NAME_RESOLVER_CONFIG'] = args.config
     try:
         if args.command == 'resolve': result = resolve_name(args.name, args.lookup_name)

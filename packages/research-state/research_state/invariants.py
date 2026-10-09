@@ -1,6 +1,7 @@
 """Domain-neutral checks shared by validation, checkpoints and writes."""
 from __future__ import annotations
 from .operation_registry import GATE_CONTRACT
+from .evidence_checks import aggregate_verdict, machine_check
 
 
 def _validate_gate_shape(value, kind):
@@ -55,8 +56,6 @@ def validate_context(context):
             consumed = completed_node_requirement_evaluation(context, node)
             if not consumed["satisfied"]:
                 issues.append({"code": "completed_requirements_unmet", "refs": [node["id"], *consumed["unmet_requirement_ids"]]})
-            if not node.get("gate_ids") and not node.get("completion_exemption"):
-                issues.append({"code": "completion_conditions_required", "refs": [node["id"]]})
             for gate_id in node.get("gate_ids", []):
                 if gate_id not in gates or not gate_evaluation_current(context, gates[gate_id]):
                     issues.append({"code": "completed_gate_not_current", "refs": [node["id"], gate_id],
@@ -102,21 +101,24 @@ def gate_evaluation_current(context, gate):
     artifacts = {a['id']: a for a in context.get('artifacts', [])}
     if any(artifacts.get(ref, {}).get('sha256') != digest for ref, digest in evaluation.get('artifact_versions', {}).items()):
         return False
+    if evaluation.get("evidence_basis") is not None:
+        from .assessments import assessment_current
+        if not assessment_current(context, evaluation):
+            return False
     return all(not attempts.get(attempt_id, {}).get('metadata', {}).get('execution_conflict') and attempts.get(attempt_id, {}).get('metadata', {}).get('latest_result_receipt_ref') == receipt_id
                for attempt_id, receipt_id in evaluation.get('result_versions', {}).items())
 
 
 def evaluate_criteria(root, context, gate, operation):
     """Validate provenance and compute the aggregate; never trust machine verdicts from JSON."""
-    import json
-    import re
+    from .assessments import bind_evidence
     assessments = operation.get('assessments', [])
     if not isinstance(assessments, list) or any(not isinstance(a, dict) for a in assessments):
         raise ValueError('gate_assessments_required: expected an array of criterion assessments')
     by_id = {item.get('criterion_id'): item for item in assessments if isinstance(item, dict)}
     if len(by_id) != len(assessments) or set(by_id) != {c['id'] for c in gate['criteria']}:
         raise ValueError('gate_assessments_required: assess every current criterion exactly once')
-    result_versions = {}
+    basis = bind_evidence(root, context, operation.get("evidence_refs", []), gate["target_id"] if gate["scope"] == "claim" else "")
     verdicts = []
     for criterion in gate['criteria']:
         assessment = by_id[criterion['id']]
@@ -127,50 +129,25 @@ def evaluate_criteria(root, context, gate, operation):
             if not isinstance(assessment.get('reason'), str) or not assessment['reason'].strip():
                 raise ValueError('gate_agent_assessment_requires_reason')
         else:
-            ref = assessment.get('result_receipt_ref', '')
-            if not re.fullmatch(r'result_[0-9a-f]{64}', ref):
-                raise ValueError('gate_result_receipt_required')
-            receipt = json.loads((root / 'operations/results' / (ref + '.json')).read_text())
-            attempt = next((a for a in context['attempts'] if a['id'] == receipt['attempt_id']), None)
-            if not attempt or attempt.get('metadata', {}).get('execution_conflict') or attempt.get('metadata', {}).get('latest_result_receipt_ref') != ref:
-                raise ValueError('gate_result_receipt_stale')
-            node = next(n for n in context['nodes'] if n['id'] == attempt['node_id'])
-            if ((gate['scope'] == 'node' and gate['target_id'] != node['id'])
-                    or (gate['scope'] == 'claim' and gate['target_id'] not in node['claim_ids'])):
-                raise ValueError('gate_result_scope_mismatch')
-            result_versions[attempt['id']] = ref
-            if criterion['source_type'] == 'runtime_fact':
-                fact = criterion.get('fact')
-                if fact == 'execution_succeeded':
-                    verdict = 'pass' if receipt['execution_state'] == 'succeeded' else 'fail'
-                elif fact == 'outputs_collected':
-                    verdict = 'pass' if receipt['collection_state'] == 'complete' else 'inconclusive'
-                else:
-                    raise ValueError('gate_runtime_fact_invalid')
-            else:
-                validation = receipt.get('validator_result')
-                if not validation or validation['id'] != criterion.get('validator_id'):
-                    raise ValueError('gate_validator_receipt_required')
-                if validation['version'] != criterion.get('validator_version'):
-                    raise ValueError('gate_validator_version_mismatch')
-                for producer_id, version in validation.get('input_result_versions', {}).items():
-                    producer = next(a for a in context['attempts'] if a['id'] == producer_id)
-                    if producer.get('metadata', {}).get('latest_result_receipt_ref') != version:
-                        raise ValueError('gate_validator_input_stale')
-                    result_versions[producer_id] = version
-                artifacts = {a['id']: a for a in context['artifacts']}
-                for artifact_id, digest in validation['input_versions'].items():
-                    if artifacts.get(artifact_id, {}).get('sha256') != digest:
-                        raise ValueError('gate_validator_input_stale')
-                verdict = validation['verdict']
+            result = machine_check(root, context, criterion, assessment.get('result_receipt_ref'), label='gate',
+                                   evidence_refs=operation.get('evidence_refs', []))
+            attempt = result['attempt']
+            if attempt:
+                node = next(n for n in context['nodes'] if n['id'] == attempt['node_id'])
+                if ((gate['scope'] == 'node' and gate['target_id'] != node['id'])
+                        or (gate['scope'] == 'claim' and gate['target_id'] not in node['claim_ids'])):
+                    raise ValueError('gate_result_scope_mismatch')
+            for field, values in result['evidence_basis'].items():
+                basis[field].update(values)
+            verdict = result['verdict']
             if assessment.get('verdict') is not None and assessment['verdict'] != verdict:
                 raise ValueError('gate_machine_verdict_mismatch')
         _validate_gate_shape(assessment, 'assessment')
         verdicts.append(verdict)
-    aggregate = 'pass' if all(v == 'pass' for v in verdicts) else next(v for v in ('fail', 'blocked', 'inconclusive') if v in verdicts)
+    aggregate = aggregate_verdict(verdicts)
     if operation.get('verdict') != aggregate:
         raise ValueError('gate_aggregate_verdict_mismatch')
-    return result_versions
+    return basis
 
 
 def validate_criteria(criteria):
@@ -185,7 +162,7 @@ def validate_criteria(criteria):
             raise ValueError('gate_criterion_source_required')
         if criterion['source_type'] == 'validator_result' and not all(criterion.get(k) for k in ('validator_id', 'validator_version')):
             raise ValueError('gate_validator_identity_required')
-        if criterion['source_type'] == 'runtime_fact' and criterion.get('fact') not in {'execution_succeeded', 'outputs_collected'}:
+        if criterion['source_type'] == 'runtime_fact' and criterion.get('fact') not in {'execution_succeeded', 'outputs_collected', 'artifacts_registered'}:
             raise ValueError('gate_runtime_fact_invalid')
         _validate_gate_shape(criterion, 'criterion')
 

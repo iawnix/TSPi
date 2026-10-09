@@ -1,20 +1,6 @@
 import { lstat, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { classify_tool_class, is_tool_class_allowed } from "../../packages/agent-core/mode_policy.mjs";
 import { validate_workspace_files, validate_workspace_manifest } from "../../packages/agent-core/workspace.mjs";
-
-export const WORKSPACE_MODE = "research";
-
-// Derived from the framework mode policy. Research-only names are retained as
-// a public vocabulary marker, but admission itself uses the shared class
-// classifier below so the app server cannot silently drift from Core policy.
-export const RESEARCH_ONLY_TOOL_NAMES = Object.freeze(new Set([
-  "research_read",
-  "research_change",
-  "research_strategy",
-  "research_interpretation",
-  "research_checkpoint",
-]));
 
 /**
  * Read the immutable framework mode bound by ResearchAgent.
@@ -58,22 +44,6 @@ export async function readWorkspaceManifest(workspaceRoot) {
     throw new Error(`workspace_manifest_invalid: ${manifestPath}`, { cause: error });
   }
   return Object.freeze(manifest);
-}
-
-export function filterWorkspaceTools(tools, workspaceMode = WORKSPACE_MODE) {
-  if (!Array.isArray(tools)) throw new TypeError("tools must be an array");
-  if (workspaceMode !== WORKSPACE_MODE) throw new TypeError("workspaceMode must be research");
-  return tools.filter((tool) => isWorkspaceToolAllowed(tool?.name, workspaceMode));
-}
-
-export function filterExtensionToolNames(names, workspaceMode = WORKSPACE_MODE) {
-  if (!Array.isArray(names)) return [];
-  if (workspaceMode !== WORKSPACE_MODE) throw new TypeError("workspaceMode must be research");
-  return names.filter((name) => isWorkspaceToolAllowed(name, workspaceMode));
-}
-
-function isWorkspaceToolAllowed(name, workspaceMode) {
-  return is_tool_class_allowed(workspaceMode, classify_tool_class(name));
 }
 
 function requireAbsolutePath(value) {

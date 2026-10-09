@@ -48,9 +48,9 @@ export function createSystemPromptManifest(options: {
 export function createSystemPromptTool(
   manifestOrResolver:
     | SystemPromptManifest
-    | ((ctx: { getSystemPrompt(): string } | undefined) => SystemPromptManifest | Promise<SystemPromptManifest>),
+    | ((ctx: import("./workspace-context.mjs").ToolExecutionContext, context: import("@earendil-works/chord").Context) => SystemPromptManifest | Promise<SystemPromptManifest>),
   contract: {
-    name: "sys_prompt";
+    name: "system_prompt";
     label: string;
     description: string;
     promptSnippet: string;
@@ -63,11 +63,9 @@ export function createSystemPromptTool(
   promptSnippet: string;
   parameters: TSchema;
   execute(
-    toolCallId?: string,
-    params?: Record<string, never>,
-    signal?: AbortSignal,
-    onUpdate?: unknown,
-    ctx?: { getSystemPrompt(): string },
+    params: Record<string, never>,
+    api: import("@earendil-works/pi-durable").ToolExecutionApi & { readonly tspi: import("./workspace-context.mjs").ToolExecutionContext },
+    context: import("@earendil-works/chord").Context,
   ): Promise<{
     content: Array<{ type: "text"; text: string }>;
     details: { sha256: string; contributorCount: number; provenanceComplete: boolean };

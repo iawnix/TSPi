@@ -153,6 +153,16 @@ def _delivery_command(root,base,action,args):
         token=f"{state['revision']}:{state.get('checkpoint_id')}"
         pending = [(p, row) for p in deliveries if not (row := read_delivery(p)).get('delivered')
                    and row.get('deferred_state') != token]
+        for path, row in pending:
+            if row.get('superseded_input'):
+                # Only a Worker-proven pre-consumption rejection permits a new
+                # input. Preserve prior business identities; lost replies and
+                # provider failures never rotate an admitted input identity.
+                previous = row['request_id']
+                row.setdefault('superseded_requests', []).append(previous)
+                row.update(request_id='job-wake-batch:' + hashlib.sha256(f'{previous}:{token}'.encode()).hexdigest(),
+                           superseded_input=False)
+                write(path, row)
         # Persist immutable batch membership before Host admission. Retries and
         # uncertain RPC outcomes must reuse both identity and message payload.
         sessions = {}
@@ -182,5 +192,7 @@ def _delivery_command(root,base,action,args):
         if row.get('claim_token')!=args.get('claim_token'):raise ValueError('stale wake claim')
         row.update(delivered=bool(args.get('delivered')),error=args.get('error'),lease_until=0,
                    deferred_state=args.get('deferred_state'))
+        if args.get('superseded_input'):
+            row['superseded_input'] = True
         write(path,row);return {'ok':True}
     raise ValueError('unknown monitor command')

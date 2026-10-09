@@ -13,10 +13,9 @@ owns a second agent loop or replacement UI.
 
 ## Component Responsibilities
 
-- `apps/app-server/` contains the Agent Server: the `tspi-host/1` API, Root
+- `apps/app-server/` contains the Agent Server: the `tspi-host/2` API, Root
   Agent session host, transaction boundary, installation Pi App Server/Harness
-  owner, native remote-client launcher, Monitor worker, browser adapter, and
-  history migration tools. The pinned Pi worker loads TSPi's
+  owner, native remote-client launcher, Monitor worker and browser adapter. The pinned Pi worker loads TSPi's
   worker facet (tools, skills, hooks, policy, and system prompt).
 - `services/tspi-link-relay/` owns TSPi Link enrollment, pairing, device
   authorization, and opaque frame forwarding. It has no workspace, session, or
@@ -31,8 +30,8 @@ owns a second agent loop or replacement UI.
 - `extensions/` contains installable Skills, scientific scripts, registered
   validators, and acceptance profiles. Scientific calculations and analysis use
   Skill scripts through generic Jobs; report formatting and email use Skill
-  helpers through native bash. Extension manifests can still declare provider metadata for
-  discovery; this inventory does not dispatch scientific execution.
+  helpers through native bash. Core and domain Skills share digest-verified manifests. Scientific execution
+  entries declare their scripts, inputs, outputs and environment requirements.
   Package-owned server tool assembly is not an
   external extension; it lives under `apps/app-server/server-tools/`.
 - `packages/agent-ui/` contains only the small Native TUI presentation helpers
@@ -47,15 +46,13 @@ owns a second agent loop or replacement UI.
 - `components/ts-web/` is an optional read-only browser client that renders the
   serialized canonical `ResearchMap`. The optional
   `apps/app-server/tspi-browser-gateway.mjs` adapter exposes the same Host
-  session to a browser over the versioned session-control contract; it attaches
-  to an existing session and never owns a second Worker. The
-  `pi-session-control-server.mjs` module supplies the shared HTTP transport for
-  that contract.
+  session to a browser over `tspi-host/2`; it attaches to an existing session
+  and never owns a second Worker. This is the only browser control gateway.
 - TS Phone is an independent Flutter client that connects through TSPi Link.
 
 Pi's App Server/Harness owns the session directory, transcript history, model
 state, prompt loop, and worker lane. The Host is the same Agent Server's API,
-routing, authentication, idempotency, scheduler lease, transaction, and client
+routing, authentication, non-input RPC receipts, and client
 subscription layer. The native Pi TUI, Phone, and Monitor address the same lane and therefore see the same
 `read`, `write`, `bash`, and package tool inventory; transport is not an
 authorization role.
@@ -63,7 +60,7 @@ authorization role.
 Host RPC is independent of its byte transport. Installed clients use a private
 Unix socket; the remote terminal client may start `tspi-host-proxy` over SSH and
 forward stdin/stdout to both the remote Host and Pi App Server sockets; Phone
-continues to use the TSPi Link WSS Relay. All three use the same `tspi-host/1`
+continues to use the TSPi Link WSS Relay. All three use the same `tspi-host/2`
 NDJSON protocol and never create a second Agent lane.
 
 The remote Host owns the canonical workspace, SQLite durable sessions, Research
@@ -333,7 +330,7 @@ Both network-facing legs use `/v1/link` with the `tspi-link.v1` WebSocket
 subprotocol and distinct bearer credentials. A short-lived Host enrollment
 code creates the Host credential; a short-lived Phone pairing code creates a
 revocable device credential. The Relay maps an authorized device to its Host
-and forwards framed `tspi-host/1` NDJSON bytes without parsing them. This is
+and forwards framed `tspi-host/2` NDJSON bytes without parsing them. This is
 deliberately a TSPi transport contract, not Pi's experimental remote protocol.
 
 The TSPi Link Relay owns no workspace, session, transcript, tool, or compute state.
@@ -351,7 +348,8 @@ broker or transport service.
 
 The `ts-app-server-tspi.service` unit invokes TSPi's Host entrypoint and creates
 installation state at `var/state/host/`, including one stable server ID,
-the Host socket, SQLite sessions, receipts, scheduler leases, and Monitor health.
+the Host socket, SQLite sessions, non-input RPC receipts, and Monitor health.
+Pi submissions own input idempotency and lifecycle; the Host queries them directly.
 The Pi App Server is the runtime owner below that Host. Its SQLite durable sessions
 are stored in `var/state/pi/sessions/<workspace-id>/<session-id>/`; `meta.json`
 keeps `workspace_id`, `session_id`, and `cwd` together so routing uses identity
@@ -365,8 +363,7 @@ descriptor. The remote TUI owns completion, rendering, input handling, and its
 supported slash commands, including workspace-scoped `/resume`; standalone Pi
 session commands are not exposed by this client. Phone uses Host RPC and
 Monitor submits a durable `next_run` entry to the same lane. Disconnecting a
-client does not stop the worker or its current turn. `TSPI_HOST_BACKEND` must be
-`harness`; the retired ordinary-Pi backend is rejected.
+client does not stop the worker or its current turn. The Native Pi Harness is the sole runtime.
 
 The first client launch initializes a missing workspace through the same
 validated bootstrap. The Host never creates an unnamed workspace; a client must
@@ -506,13 +503,13 @@ are separate from the scientific operation journal.
 - Monitor contracts: `contracts/tspi-monitor/1/`.
 - Host lifecycle and Native Harness integration tests: `tests/integration/test_pi_app_server_launcher.py`,
   `tests/node/native/tspi-host.test.mjs`, `tests/node/native/worker-research-flow.test.mjs`, and
-  `tests/node/native/pi-session-control.test.mjs`.
+  `tests/node/native/input-admission.test.mjs` and `tests/node/native/session-admission.test.mjs`.
 
 
 ## Sourced requirements and current acceptance
 
 `research-requirements/1` adds user deliverables without replacing scientific Claims.
-Host records actual Pi user submissions; Monitor and State continuation messages
+Worker admission records actual Pi user submissions; Monitor and State continuation messages
 are internal inputs. Installed versioned acceptance profiles declare finite checks.
 A requirement binds its source quote, constraints, inputs and contributing Nodes;
 receipt-based assessments derive satisfaction. Source coverage remains an Agent
@@ -530,10 +527,10 @@ Artifacts or predecessor Nodes. Email preparation binds its event and consumptio
 to State; send rechecks that basis. Existing sent/unknown receipts remain idempotent.
 
 Prepared Job references (`pN`) and Artifact references (`aN`) are exact persistent
-workspace records. Transaction journal v2 recovers only pending commits after a
-one-time history migration. Stop all old workspace writers before upgrading; do
-not directly downgrade an upgraded workspace. See
-[the migration notes](MANAGED_REFERENCES_AND_TRANSACTION_RECOVERY.zh-CN.md).
+workspace records. The current transaction journal recovers pending commits through
+its versioned recovery index. Installation does not scan or convert old workspaces
+or sessions. See
+[the recovery contract](MANAGED_REFERENCES_AND_TRANSACTION_RECOVERY.zh-CN.md).
 
 During a State bridge outage only native local read/system_prompt diagnostics can
 bypass unavailable admission; effects still require current State. A failed initial

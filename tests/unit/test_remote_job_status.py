@@ -38,6 +38,44 @@ def test_failed_qdel_does_not_claim_cancellation(tmp_path,monkeypatch):
     assert remote.cancel(receipt(tmp_path)).state==JobState.UNKNOWN
 
 
+@pytest.mark.parametrize('confirmed', ['terminal', 'missing'])
+def test_accepted_qdel_waits_for_scheduler_termination_across_restart(tmp_path, monkeypatch, confirmed):
+    remote = platform()
+    state = 'R'
+    calls = []
+    def run(command, **kwargs):
+        calls.append(command)
+        if 'status.exit' in command: return subprocess.CompletedProcess([], 1, '', '')
+        if 'qdel' in command: return subprocess.CompletedProcess([], 0, '', '')
+        if state == 'missing': return subprocess.CompletedProcess([], 153, '', 'qstat: Unknown Job Id 123.cluster')
+        if state == 'unavailable': return subprocess.CompletedProcess([], 255, '', 'connection failed')
+        return subprocess.CompletedProcess([], 0, 'job_state = ' + state, '')
+    monkeypatch.setattr(remote, '_run_ssh', run)
+    pending = remote.cancel(receipt(tmp_path))
+    assert pending.state == JobState.RUNNING and pending.diagnostics['cancellation_requested']
+    assert not (tmp_path/'status.json').exists()
+    restarted = platform()
+    monkeypatch.setattr(restarted, '_run_ssh', run)
+    state = 'unavailable'
+    assert restarted.cancel(receipt(tmp_path)).state == JobState.UNKNOWN
+    state = 'C' if confirmed == 'terminal' else 'missing'
+    assert restarted.status(receipt(tmp_path)).state == JobState.CANCELLED
+    assert sum('qdel' in command for command in calls) == 1
+
+
+def test_completed_program_wins_over_a_racing_cancellation(tmp_path, monkeypatch):
+    remote = platform()
+    cancelled = False
+    def run(command, **kwargs):
+        nonlocal cancelled
+        if 'status.exit' in command:
+            return subprocess.CompletedProcess([], 0, '0\n', '') if cancelled else subprocess.CompletedProcess([], 1, '', '')
+        if 'qdel' in command: cancelled = True
+        return subprocess.CompletedProcess([], 0, 'job_state = R', '')
+    monkeypatch.setattr(remote, '_run_ssh', run)
+    assert remote.cancel(receipt(tmp_path)).state == JobState.SUCCEEDED
+
+
 def test_reconcile_recovers_submission_without_calling_qsub(tmp_path,monkeypatch):
     import json
     remote=platform()

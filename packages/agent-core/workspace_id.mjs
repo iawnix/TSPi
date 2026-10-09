@@ -6,7 +6,9 @@
  * intentionally have their own contracts and must not reuse this validator.
  */
 
-export const WORKSPACE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
+import protocol from "../tspi-foundation/tspi_foundation/protocol.json" with { type: "json" };
+
+export const WORKSPACE_ID_PATTERN = new RegExp(protocol.workspace_id.pattern, "u");
 
 export function is_workspace_id(value) {
   return typeof value === "string" && WORKSPACE_ID_PATTERN.test(value);

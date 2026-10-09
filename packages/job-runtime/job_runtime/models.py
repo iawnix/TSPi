@@ -4,6 +4,9 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Mapping
+import math
+
+from .process_environment import validate_environment
 
 
 class JobState(StrEnum):
@@ -28,6 +31,7 @@ class JobOutput:
     required: bool = False
     media_type: str | None = None
     min_bytes: int = 0
+    recursive: bool = False
 
 
 @dataclass(frozen=True)
@@ -46,15 +50,19 @@ class JobSpec:
     attempt_id: str | None = None
 
     def __post_init__(self) -> None:
-        if not self.command or not all(isinstance(item, str) and item for item in self.command):
+        if not self.command or not all(isinstance(item, str) and item and '\0' not in item for item in self.command):
             raise ValueError("job command must contain at least one non-empty argument")
-        if self.timeout_seconds is not None and self.timeout_seconds <= 0:
+        if self.timeout_seconds is not None and (type(self.timeout_seconds) not in {int, float}
+                or not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0):
             raise ValueError("job timeout_seconds must be positive")
+        validate_environment(self.env)
         for output in self.outputs:
+            if type(output.recursive) is not bool:
+                raise ValueError("recursive output must be a boolean")
             if output.min_bytes < 0:
                 raise ValueError("min_bytes must be nonnegative")
             path = Path(output.path)
-            if path.is_absolute() or ".." in path.parts:
+            if path.is_absolute() or ".." in path.parts or path == Path("."):
                 raise ValueError(f"job output path must stay below cwd: {output.path!r}")
 
 

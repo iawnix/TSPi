@@ -9,7 +9,10 @@ TS Web 只读取工作区。
 
 ## 开发环境
 
-安装 `environment.yml` 描述的科学环境和固定 Pi 源码。修改包布局前运行：
+安装固定 Pi 源码，通过 `python3 tools/bootstrap_dev.py --install` 安装独立测试环境。
+测试使用 `tools/test/environment.lock.txt`，默认位于 `/home/iaw/debug/tspi-test-env`，
+可用 `TSPI_TEST_ENV_ROOT` 设置。根目录的 `environment.lock.txt` 仅用于最小 Host，
+不含科学依赖或 pytest。修改包布局前运行：
 
 ```bash
 python3 tools/test/runner.py list
@@ -27,8 +30,7 @@ export TSPI_TEST_PI_RUNTIME_ROOT=/path/to/prepared/pi
 npm run test:native-pi
 ```
 
-Native Pi Harness 不需要 tmux，也是唯一支持的运行时。`TSPI_HOST_BACKEND=ordinary` 与
-`TSPI_TMUX` 会被拒绝。不要用未固定或被修改的 Pi checkout 迁就测试。远端 smoke 和真实模型评测是显式 opt-in lane，需要外部
+Native Pi Harness 不需要 tmux，也是唯一支持的运行时。不提供后端选择开关。不要用未固定或被修改的 Pi checkout 迁就测试。远端 smoke 和真实模型评测是显式 opt-in lane，需要外部
 配置，不属于默认测试套件。
 
 权威测试清单是 `tools/test/manifest.toml`，由 `tools/test/runner.py` 调度。
@@ -60,8 +62,8 @@ bootstrap 时明确拒绝。
 
 独立分析由 Skill 脚本通过通用 Job 执行。注册验证器和验收 profile 在 extension manifest
 中声明，`packages/tspi-runtime/tspi_runtime/validators.py` 验证并暂存声明的验证器和输入。
-扩展 manifest 合同位于 `contracts/tspi-extension/1/`。Provider 元数据发现仍受支持，但不
-负责派发科学执行。新增算法必须声明有界输入、适用条件、反例、
+扩展 manifest 合同位于 `contracts/tspi-extension/1/`。核心与领域 Skill 共用清单加载器，入口、参考资料及脚本
+由 `scripts/update_skill_resources.py` 固定摘要。新增算法必须声明有界输入、适用条件、反例、
 可重放候选，并在确定性输出语义变化时提升版本。不要加入科学 successor routing。
 
 Node 状态与依赖准入由 Research State 管理；派发意图、执行观察和收集证据必须遵守

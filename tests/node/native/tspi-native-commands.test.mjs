@@ -5,7 +5,7 @@ import { createClientQueries } from "../../../apps/app-server/tspi-client-querie
 import { createTerminalSession, runTerminalSessions } from "../../../apps/app-server/tspi-terminal-session.mjs";
 import { parseSlashCommand, SLASH_COMMAND_NAMES } from "../../../packages/agent-runtime/host-api/commands.mjs";
 
-const row = (id, workspace = "remote") => ({ session_id: id, workspace_id: workspace, format: "pi-harness", read_only: false });
+const row = (id, workspace = "remote") => ({ session_id: id, workspace_id: workspace });
 
 test("worker queries bind identity and admit only read-only research arguments", async () => {
   const calls = [];
@@ -64,13 +64,13 @@ test("resume rejects unavailable or foreign sessions and checks Host response id
   const session = createTerminalSession({ workspaceId: "remote", sessionId: "one", switchSession: (id) => switched.push(id),
     async request(method, params) {
       calls.push([method, params]);
-      if (method === "session/list") return { sessions: [row("one"), row("two"), row("foreign", "elsewhere"), { ...row("old"), read_only: true }] };
+      if (method === "session/list") return { sessions: [row("one"), row("two"), row("foreign", "elsewhere")] };
       return { session: row("two", wrong ? "elsewhere" : "remote"), client: { session_id: "two" } };
     },
   });
   await session.resume("one");
   assert.equal(calls.length, 0);
-  for (const id of ["missing", "foreign", "old"]) await assert.rejects(session.resume(id), /not available/);
+  for (const id of ["missing", "foreign"]) await assert.rejects(session.resume(id), /not available/);
   assert.equal(calls.some(([method]) => method === "session/resume"), false);
   wrong = true;
   await assert.rejects(session.resume("two"), /unexpected/);

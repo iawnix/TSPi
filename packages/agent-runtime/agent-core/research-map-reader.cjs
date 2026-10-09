@@ -4,7 +4,8 @@ const { existsSync, lstatSync, readFileSync } = require("node:fs");
 const { resolve } = require("node:path");
 
 const MANIFEST_SCHEMA = "research_state_workspace_2";
-const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
+const protocol = require("../../tspi-foundation/tspi_foundation/protocol.json");
+const WORKSPACE_ID = new RegExp(protocol.workspace_id.pattern, "u");
 const COLLECTIONS = [
   "phases", "claims", "nodes", "findings", "gates", "claim_relations",
   "attempts", "artifacts", "evidence_links", "lifecycle_actions",
@@ -15,7 +16,7 @@ const RESEARCH_DIRECTORIES = ["research_map", "memory", "lifecycle", "checkpoint
 
 // The Agent Runtime consumes the same canonical read model as the Research
 // Research State. It must never silently fall back to research_map.json, because that
-// would create a second authority after a workspace has migrated.
+// would create a second authority for workspace state.
 function readResearchMap(rootValue) {
   const root = resolve(rootValue);
   const manifestPath = resolve(root, "workspace_manifest.json");
@@ -29,13 +30,7 @@ function readResearchMap(rootValue) {
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   validateManifest(manifest, root);
   validateLayout(manifest, root);
-  for (const name of [
-    "workspace.json", "research_map.json", "research.db", "transactions.jsonl",
-    "research_state.json", "phases.json", "claims.json", "claim_relations.json",
-    "research_nodes.json", "observations.json", "proof_specs.json",
-    "validation_results.json", "findings.json", "gate_specs.json", "gate_results.json",
-    "decision_log.jsonl", "transaction_log.jsonl",
-  ]) {
+  for (const name of protocol.retired_workspace_files) {
     const path = resolve(root, name);
     if (existsSync(path) || isSymlink(path)) throw new Error(`legacy workspace layout: ${name}`);
   }

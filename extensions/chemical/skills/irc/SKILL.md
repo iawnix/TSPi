@@ -12,6 +12,12 @@ completion, endpoint extraction, and endpoint identity. The Gaussian Skill
 checks Gaussian-specific files; this Skill owns the chemical meaning of the
 path.
 
+For Gaussian, prepare the validated saddle checkpoint and declared path spec
+with the `chemical.path-irc` Job executor, then execute each direction through
+`chemical.gaussian-input`. Follow the [executable path workflow](../candidate-generation/references/gaussian_path.md)
+for input preparation and evidence binding. Other mechanisms require an explicit
+method and validated runner; the bundled path constructor covers its declared DA scope.
+
 Start from a validated saddle candidate and preserve path direction. Check the
 IRC origin against that structure, termination and path completeness in both
 directions, final geometry and gradient, and whether endpoint optimization is

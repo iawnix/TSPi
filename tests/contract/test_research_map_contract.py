@@ -7,10 +7,7 @@ import pytest
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
-from research_state.registry import (
-    reconcile_workspace_registry,
-    workspace_id_for,
-)
+from research_state.workspace_catalog import WorkspaceCatalog, WorkspaceCatalogError, workspace_id_for
 from research_state.web import ResearchWebError, handle_request, register_sources
 from research_state.workspace import admit_research_workspace, initialize_workspace
 
@@ -179,7 +176,7 @@ def test_provider_does_not_expose_an_admission_pending_workspace(tmp_path: Path)
     context_path.write_text(json.dumps(context), encoding="utf-8")
     liveness_path.write_text(json.dumps(liveness), encoding="utf-8")
 
-    with pytest.raises(ResearchWebError, match="unknown workspace id"):
+    with pytest.raises(ResearchWebError, match="unknown or invalid workspace id"):
         handle_request(
             state_dir,
             _provider_request(operation="route", workspace_id=workspace_id, route="map"),
@@ -204,7 +201,7 @@ def test_workspace_discovery_supports_read_only_workspace_roots(tmp_path: Path) 
     _init_workspace(workspace, "workspace_filesystem")
     workspace.chmod(0o555)
     try:
-        rows = reconcile_workspace_registry(state_dir, [tmp_path])
+        rows = WorkspaceCatalog(tmp_path).list()
     finally:
         workspace.chmod(0o755)
     assert [row["source_root"] for row in rows] == [str(workspace)]
@@ -248,34 +245,49 @@ def test_registry_keeps_path_id_fallback_for_uninitialized_directory(tmp_path: P
         workspace_id_for(source)
 
 
-def test_registry_rejects_legacy_workspace_id_routes(tmp_path: Path) -> None:
+def test_catalog_does_not_import_an_obsolete_web_registry(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     state_dir = tmp_path / "state"
     _init_workspace(workspace)
     state_dir.mkdir()
-    legacy_id = "ws_obsolete"
-    (state_dir / "workspaces.json").write_text(
-        json.dumps({
-            "schema_version": "research-web-registry/1",
-            "workspaces": [{
-                "workspace_id": legacy_id,
-                "source_root": str(workspace.resolve()),
-                "label": "legacy",
-                "registered_at": "2026-01-01T00:00:00Z",
-            }],
-        }),
-        encoding="utf-8",
-    )
+    legacy = {"schema_version": "research-web-registry/1", "workspaces": [{
+        "workspace_id": "ws_obsolete", "source_root": str(workspace), "label": "legacy"}]}
+    path = state_dir / "workspaces.json"
+    path.write_text(json.dumps(legacy))
+    assert handle_request(state_dir, _provider_request())["workspaces"] == []
+    with pytest.raises(ResearchWebError, match="unknown or invalid workspace id"):
+        handle_request(state_dir, _provider_request(operation="route", workspace_id="ws_obsolete", route="map"))
+    assert json.loads(path.read_text()) == legacy
 
-    rows = reconcile_workspace_registry(state_dir, [tmp_path])
-    canonical = "workspace_workspace"
-    assert rows[0]["workspace_id"] == canonical
-    assert legacy_id != rows[0]["workspace_id"]
-    persisted = json.loads((state_dir / "workspaces.json").read_text(encoding="utf-8"))
-    assert persisted["workspaces"][0]["workspace_id"] == canonical
 
-    with pytest.raises(ResearchWebError, match="unknown workspace id"):
-        handle_request(
-            state_dir,
-            _provider_request(operation="route", workspace_id=legacy_id, route="map"),
-        )
+def test_workspace_id_contract_agrees_across_exported_schemas_and_runtime():
+    from tspi_foundation.protocol import WORKSPACE_ID_PATTERN
+
+    shared = json.loads((ROOT / 'packages/tspi-foundation/tspi_foundation/protocol.json').read_text())
+    schemas = [
+        json.loads((ROOT / 'contracts/ts-web/provider-request.schema.json').read_text())['properties']['workspace_id'],
+        json.loads((ROOT / 'contracts/ts-web/research-map-response.schema.json').read_text())['properties']['workspace']['properties']['workspace_id'],
+    ]
+    for schema in schemas:
+        assert schema['pattern'] == shared['workspace_id']['pattern']
+        validator = Draft202012Validator(schema)
+        for value in ['project-a', 'a' * 80, 'A_1.2-3']:
+            assert WORKSPACE_ID_PATTERN.fullmatch(value) and validator.is_valid(value)
+        for value in ['a' * 81, 'project-a\n', 'project-a\r\n', '../project', 'a/b', '.hidden', 'a:b', '']:
+            assert WORKSPACE_ID_PATTERN.fullmatch(value) is None and not validator.is_valid(value)
+
+
+def test_workspace_doctor_checks_current_state_without_parsing_retired_files(tmp_path):
+    from research_state.doctor import inspect_workspace
+
+    workspace = tmp_path / 'workspace'
+    _init_workspace(workspace)
+    assert inspect_workspace(workspace)['valid'] is True
+    obsolete = workspace / 'research.db'
+    obsolete.write_bytes(b'unsupported storage: do not parse or repair')
+    before = obsolete.read_bytes()
+    result = inspect_workspace(workspace)
+    assert result['valid'] is False
+    assert any(row['code'] == 'unsupported_workspace_storage' for row in result['findings'])
+    assert set(result['sources']) == {'manifest', 'context'}
+    assert obsolete.read_bytes() == before

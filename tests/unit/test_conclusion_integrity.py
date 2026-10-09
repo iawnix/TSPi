@@ -128,12 +128,10 @@ def test_only_the_adopted_assessment_can_block_completion_when_outputs_change(tm
     issues = execute("research.validate", tmp_path)["issues"]
     assert any(issue["code"] == "claim_assessment_stale" for issue in issues)
     with pytest.raises(AgentWorkspaceError, match="terminal_state_inconsistent"):
-        checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write",
-                              "id": "checkpoint_stale", "disposition": "terminal", "reason": "Finish"})
+        checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "checkpoint": {"id": "checkpoint_stale", "disposition": "terminal", "reason": "Finish"}})
     assess(tmp_path, id="assessment_2", evidence_refs=[second["artifacts"][0]["artifact_id"]])
     change(tmp_path, [{"type": "set_node_state", "node_id": "node_1", "state": "closed", "outcome": "completed"}])
-    checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write",
-                          "id": "checkpoint_done", "disposition": "terminal", "reason": "Reviewed the current result"})
+    checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "checkpoint": {"id": "checkpoint_done", "disposition": "terminal", "reason": "Reviewed the current result"}})
     assert read_context(tmp_path)["claim_assessments"][0] == first_assessment
     assert execute("research.validate", tmp_path)["valid"]
 
@@ -161,8 +159,7 @@ def test_gate_changes_are_recorded_then_require_a_new_claim_assessment(tmp_path,
     state = read_context(tmp_path)
     assert claim_review_state(state, state["claims"][0]) == "needs_review"
     with pytest.raises(AgentWorkspaceError, match="terminal_state_inconsistent"):
-        checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "id": "checkpoint_stale",
-                              "disposition": "terminal", "reason": "Finish"})
+        checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "checkpoint": {"id": "checkpoint_stale", "disposition": "terminal", "reason": "Finish"}})
     change(tmp_path, [evaluation])
     # A new passing Gate evaluation cannot silently revive an old conclusion.
     state = read_context(tmp_path)
@@ -255,6 +252,6 @@ def test_legacy_status_is_reported_as_unassessed_without_rewriting_history(tmp_p
 
 def test_internal_decision_operations_validate_values_too(tmp_path):
     workspace(tmp_path)
-    with pytest.raises(AgentWorkspaceError, match="strategy_status_invalid"):
+    with pytest.raises(AgentWorkspaceError, match="operation_contract_invalid: create_strategy_plan.status"):
         change(tmp_path, [{"type": "create_strategy_plan", "id": "strategy_bad", "claim_id": "claim_1",
                            "objective": "Try", "rationale": "Need evidence", "status": "banana"}])

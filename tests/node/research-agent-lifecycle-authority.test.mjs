@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createChangeTool, createResearchLifecycleTool } from "../../apps/app-server/pi-native-tools.mjs";
+import { createChangeTool, createResearchDecisionTools } from "../../apps/app-server/pi-native-tools.mjs";
 import { close_test_research_states, create_test_research_state } from "../support/research_state_helpers.mjs";
 import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
 import {
@@ -28,31 +28,21 @@ test("blocked research liveness stops new mutations but permits a recovery check
       { type: "create_node", id: "node_1", title: "Bounded work", objective: "Exercise lifecycle", claim_ids: ["claim_1"] },
       { type: "set_focus", claim_ids: ["claim_1"], node_ids: ["node_1"] },
     ] }));
-    await assert.rejects(
-      kernel.apply_change(write({ expected_revision: 1, operations: [{
-        type: "register_attempt", id: "attempt_1", node_id: "node_1",
-        capability: "xtb", capability_version: "1", state: "started",
-      }] })),
-      /research_decision_required/,
-    );
+    // A scoped Job needs no placeholder Claim assessment or StrategyPlan.
     await kernel.apply_change(write({ expected_revision: 1, operations: [{
-      type: "create_strategy_plan", id: "strategy_1", claim_id: "claim_1", node_id: "node_1",
-      objective: "Choose a bounded execution", rationale: "The claim needs one declared method", status: "active",
-    }] }));
-    await kernel.apply_change(write({ expected_revision: 2, operations: [{
       type: "register_attempt", id: "attempt_1", node_id: "node_1",
       capability: "xtb", capability_version: "1", state: "started",
     }] }));
-    await kernel.checkpoint(write({ id: "checkpoint_blocked", disposition: "blocked", reason: "Waiting for user input" }));
+    await kernel.apply_change(write({ expected_revision: 2, operations: [{
+      type: "create_strategy_plan", id: "strategy_1", node_id: "node_1",
+      objective: "Choose a bounded execution", rationale: "Record an optional Node strategy", status: "active",
+    }] }));
+    await kernel.checkpoint(write({ checkpoint: { id: "checkpoint_blocked", disposition: "blocked", reason: "Waiting for user input" } }));
     await assert.rejects(
       kernel.apply_change(write({ expected_revision: 3, operations: [{ type: "set_focus", claim_ids: ["claim_1"], node_ids: ["node_1"] }] })),
       /research_lifecycle_blocked/,
     );
-    await assert.rejects(kernel.turn({
-      protocol: "research_turn_request", version: 1, request_id: "turn_end_blocked",
-      operation: "end", input: {},
-    }), /research_lifecycle_blocked/);
-    const recovered = await kernel.checkpoint(write({ id: "checkpoint_recovered", disposition: "continue_required", unresolved_refs: ["node_1"] }));
+    const recovered = await kernel.checkpoint(write({ checkpoint: { id: "checkpoint_recovered", disposition: "continue_required", unresolved_refs: ["node_1"], reason: "Resume pending work" } }));
     assert.equal(recovered.disposition, "continue_required");
     const memory = JSON.parse(await readFile(join(root, "memory", "index.json"), "utf8"));
     const context = JSON.parse(await readFile(join(root, "research_map", "context.json"), "utf8"));
@@ -68,24 +58,14 @@ test("blocked research liveness stops new mutations but permits a recovery check
 });
 
 test("native research writes reject a non-root principal in Host context", async () => {
-  const previous = process.env.TSPI_NATIVE_WRITES;
-  process.env.TSPI_NATIVE_WRITES = "1";
-  try {
-    await assert.rejects(
-      createChangeTool().execute(
-        "change-authority",
-        { rationale: "authority test", operations: [{ type: "set_focus", claim_ids: [], node_ids: [] }] },
-        undefined,
-        { cwd: "/tmp", principal: "monitor" },
-        undefined,
-        {},
-      ),
-      /Root Agent principal/,
-    );
-  } finally {
-    if (previous === undefined) delete process.env.TSPI_NATIVE_WRITES;
-    else process.env.TSPI_NATIVE_WRITES = previous;
-  }
+  await assert.rejects(
+    createChangeTool().execute(
+      { rationale: "authority test", operations: [{ type: "set_focus", claim_ids: [], node_ids: [] }] },
+      { callId: "change-authority", tspi: { cwd: "/tmp", principal: "monitor" } },
+      {},
+    ),
+    /Root Agent principal/,
+  );
 });
 
 test("Research lifecycle envelopes use one canonical State write authority", () => {
@@ -119,15 +99,13 @@ test("Research lifecycle envelopes use one canonical State write authority", () 
 
 test("Native strategy and checkpoint writes reach the canonical Python State boundary", async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-native-lifecycle-authority-"));
-  const previous = process.env.TSPI_NATIVE_WRITES;
-  process.env.TSPI_NATIVE_WRITES = "1";
   try {
     const workspace = create_workspace_initializer();
     await workspace.initialize_workspace({ workspace_root: root, workspace_id: "workspace_native_lifecycle", workspace_mode: "research" });
     await workspace.admit_workspace(root);
     const toolContext = { cwd: root, principal: "root_agent" };
     const context = { abortSignal: new AbortController().signal };
-    await createChangeTool().execute("create-scope", {
+    await createChangeTool().execute({
       expected_revision: 0,
       rationale: "Create lifecycle protocol fixture",
       operations: [
@@ -135,9 +113,9 @@ test("Native strategy and checkpoint writes reach the canonical Python State bou
         { type: "create_node", id: "node_1", title: "Bounded node", objective: "Exercise lifecycle writes", claim_ids: ["claim_1"] },
         { type: "set_focus", claim_ids: ["claim_1"], node_ids: ["node_1"] },
       ],
-    }, undefined, toolContext, undefined, context);
-    const lifecycle = createResearchLifecycleTool();
-    const strategy = await lifecycle.execute("strategy", {
+    }, { callId: "test-call", tspi: toolContext }, context);
+    const lifecycle = createResearchDecisionTools().find(tool => tool.name === "research_strategy");
+    const strategy = await lifecycle.execute({
       operation: "strategy",
       strategy_operation: "plan",
       plan: {
@@ -148,9 +126,9 @@ test("Native strategy and checkpoint writes reach the canonical Python State bou
         rationale: "The lifecycle protocol must persist the decision",
       },
       rationale: "Record the strategy before execution",
-    }, undefined, toolContext, undefined, context);
+    }, { callId: "test-call", tspi: toolContext }, context);
     assert.equal(strategy.details.result.commit.accepted, true);
-    const checkpoint = await lifecycle.execute("checkpoint", {
+    const checkpoint = await createResearchDecisionTools().find(tool => tool.name === "research_checkpoint").execute({
       operation: "checkpoint",
       checkpoint: {
         id: "checkpoint_1",
@@ -162,14 +140,12 @@ test("Native strategy and checkpoint writes reach the canonical Python State bou
         reason: "Continue with the selected strategy",
       },
       rationale: "Close the turn with an explicit continuation",
-    }, undefined, toolContext, undefined, context);
+    }, { callId: "test-call", tspi: toolContext }, context);
     assert.equal(checkpoint.details.result.accepted, true);
     const durable = JSON.parse(await readFile(join(root, "research_map", "context.json"), "utf8"));
     assert.equal(durable.strategy_plans.length, 1);
     assert.equal(durable.lifecycle, "continue_required");
   } finally {
-    if (previous === undefined) delete process.env.TSPI_NATIVE_WRITES;
-    else process.env.TSPI_NATIVE_WRITES = previous;
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -194,7 +170,7 @@ test("Python Research State requires the Root Agent kernel-write boundary", asyn
       /authority=kernel_write/,
     );
     await assert.rejects(
-      kernel.checkpoint({ principal: "root_agent", authority: "kernel_write", id: "checkpoint_bad", disposition: "continue_required", claim_ids: ["claim_missing"] }),
+      kernel.checkpoint({ principal: "root_agent", authority: "kernel_write", checkpoint: { id: "checkpoint_bad", disposition: "continue_required", claim_ids: ["claim_missing"], reason: "Test unknown scope" } }),
       /unknown Claim/,
     );
     const accepted = await kernel.apply_change({
@@ -202,12 +178,11 @@ test("Python Research State requires the Root Agent kernel-write boundary", asyn
       operations: [{ type: "create_phase", id: "phase_1", title: "Accepted" }],
     });
     assert.equal(accepted.revision, 1);
-    const turned = await kernel.turn({
-      protocol: "research_turn_request", version: 1, request_id: "turn_checkpoint_input",
-      principal: "root_agent", authority: "kernel_write", operation: "checkpoint",
-      input: { id: "checkpoint_input", disposition: "user_input_required", reason: "Which hypothesis should the new research scope investigate?" },
+    const turned = await kernel.checkpoint({
+      request_id: "turn_checkpoint_input", principal: "root_agent", authority: "kernel_write",
+      checkpoint: { id: "checkpoint_input", disposition: "user_input_required", reason: "Which hypothesis should the new research scope investigate?" },
     });
-    assert.equal(turned.output.checkpoint_id, "checkpoint_input");
+    assert.equal(turned.checkpoint_id, "checkpoint_input");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

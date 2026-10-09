@@ -19,7 +19,7 @@ except ImportError:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Install the TSPi scientific base and release-specific Python kernel."
+        description="Install the TSPi control base and release-specific Python kernel."
     )
     parser.add_argument("--package-root", default=str(ROOT))
     parser.add_argument("--workspace-root", help="Explicit owner root for runtime metadata; environment storage is separately configured.")

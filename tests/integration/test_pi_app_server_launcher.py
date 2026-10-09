@@ -21,6 +21,14 @@ ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 
 
+def test_host_socket_limit_includes_private_pi_subdirectory(tmp_path, monkeypatch):
+    # The public Host socket fits here, but the longest private Pi socket does not.
+    base = "/" + "x" * 31
+    monkeypatch.setenv("TSPI_APP_SERVER_RUNTIME_DIR", base)
+    with pytest.raises(launcher.TSPiHostError, match="too long for Unix sockets"):
+        launcher._private_socket_directory(tmp_path, create=False)
+
+
 def test_normalize_proxy_environment_accepts_host_port_and_drops_invalid(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -206,7 +214,7 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.egg-info"),
     )
     shutil.copy2(ROOT / "environment.yml", package_root / "environment.yml")
-    shutil.copy2(ROOT / "requirements-runtime.txt", package_root / "requirements-runtime.txt")
+    shutil.copy2(ROOT / "environment.lock.txt", package_root / "environment.lock.txt")
     write_test_runtime_manifest(package_root, install_root)
     (package_home / "current").symlink_to("releases/test-suite")
     installed_launcher = install_root / "ResearchAgent"
@@ -436,7 +444,6 @@ def test_launcher_binds_and_admits_research_workspace(tmp_path: Path) -> None:
     assert json.loads((workspace / "research_map/context.json").read_text(encoding="utf-8"))["lifecycle_state"] == "admitted"
     assert not (workspace / "research_map.json").exists()
     assert not (workspace / "research.db").exists()
-    assert launcher.has_legacy_research_storage(workspace) is False
 
 
 @pytest.mark.parametrize("option", ["-r", "--resume"])
@@ -495,13 +502,6 @@ def test_host_environment_publishes_owner_only_worker_diagnostics(tmp_path: Path
         os.environ.clear()
         os.environ.update(original_environment)
 
-
-def test_cli_workspace_storage_rejects_retired_sqlite_bootstrap(tmp_path: Path) -> None:
-    installation = _installation(tmp_path)
-    workspace = launcher.prepare_workspace(installation, "sqlite-check")
-    with pytest.raises(launcher.TSPiHostError, match="SQLite ResearchMap storage is retired"):
-        launcher.ensure_workspace_sqlite(workspace)
-    assert not (workspace / "research.db").exists()
 
 
 def test_host_state_rejects_an_insecure_installation_pi_directory(tmp_path: Path) -> None:
@@ -764,26 +764,9 @@ def test_default_terminal_exports_installation_pinned_pi_source(
     assert captured["workspace"] == installation.workspaces_root / "reaction-a"
 
 
-def test_ordinary_runtime_flag_is_rejected(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("TSPI_HOST_BACKEND", raising=False)
+def test_native_runtime_flag_is_rejected() -> None:
     with pytest.raises(launcher.TSPiHostError, match="--native-runtime was removed"):
         launcher.parse_launch_request(["--workspace", "reaction-a", "--native-runtime"])
-
-
-def test_ordinary_backend_is_rejected_before_host_start(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    installation = _installation(tmp_path)
-    workspace = installation.root / "workspaces" / "reaction-a"
-    workspace.mkdir(parents=True)
-    request = launcher.parse_launch_request(["--workspace", "reaction-a"])
-    monkeypatch.setenv("TSPI_HOST_BACKEND", "ordinary")
-
-    with pytest.raises(launcher.TSPiHostError, match="Native Pi Harness is the only supported backend"):
-        launcher.launch_terminal(installation, request, workspace)
 
 
 @pytest.mark.parametrize(

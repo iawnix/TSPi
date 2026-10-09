@@ -10,8 +10,6 @@ import {
   create_research_admission_request,
   create_research_admission_result,
   create_research_state_port,
-  create_research_turn_request,
-  create_research_turn_result,
 } from "../../packages/research-state-bridge/ports.mjs";
 
 test("workspace port preserves implementation receivers and owns its protocol id", async () => {
@@ -35,30 +33,8 @@ test("public command catalog matches the canonical filesystem command boundary",
   // read-only diagnostic projection.
   assert.equal(COMMAND_DEFINITIONS["research.storage"]?.effect, "read");
   assert.equal(COMMAND_DEFINITIONS["research.evidence.register"], undefined);
-});
-
-test("research turn contracts validate without Pi", () => {
-  const request = create_research_turn_request({
-    operation: "orient",
-    request_id: "request_1",
-    workspace_id: "workspace_1",
-    session_id: "session_1",
-  });
-  const result = create_research_turn_result({
-    request_id: request.request_id,
-    output: { operation: request.operation },
-    provenance: { producer: "test", request_digest: "sha256:" + "a".repeat(64) },
-  });
-  assert.equal(request.protocol, "research_turn_request");
-  assert.equal(request.version, 1);
-  assert.equal(result.protocol, "research_turn_result");
-  assert.equal(result.version, 1);
-  assert.throws(() => create_research_turn_request({
-    operation: "research.turn",
-    request_id: "request_2",
-    workspace_id: "workspace_1",
-    session_id: "session_1",
-  }), /invalid research_turn operation/);
+  assert.equal(COMMAND_DEFINITIONS["research.turn"], undefined);
+  assert.equal(COMMAND_DEFINITIONS["research.monitor_assess"]?.effect, "read");
 });
 
 test("Research State port has no runtime-specific dependency", async () => {
@@ -68,7 +44,6 @@ test("Research State port has no runtime-specific dependency", async () => {
     async read_liveness() { calls.push("liveness"); return { state: "idle" }; },
     async apply_change() { calls.push("change"); return { accepted: true }; },
     async checkpoint() { calls.push("checkpoint"); return { accepted: true }; },
-    async turn(request) { calls.push(request.operation); return { accepted: true }; },
     async admit_workspace(request) {
       calls.push(["admit", request.authority]);
       return create_research_admission_result({
@@ -79,14 +54,9 @@ test("Research State port has no runtime-specific dependency", async () => {
       });
     },
   });
-  const request = create_research_turn_request({
-    operation: "start",
-    request_id: "request_3",
-    workspace_id: "workspace_1",
-    session_id: "session_1",
-  });
-  assert.equal((await kernel.turn(request)).accepted, true);
-  assert.deepEqual(calls, ["start"]);
+  assert.equal(kernel.protocol_version, "research_state_port_2");
+  assert.equal(kernel.turn, undefined);
+  assert.deepEqual(calls, []);
 });
 
 test("Research State port restores admission when a bound implementation is addressed by root", async () => {
@@ -96,7 +66,6 @@ test("Research State port restores admission when a bound implementation is addr
     async read_liveness(request) { calls.push(request); return { workspace_id: "workspace_bound", state: "admitted" }; },
     async apply_change() { return { accepted: true }; },
     async checkpoint() { return { accepted: true }; },
-    async turn() { return { accepted: true }; },
     async admit_workspace() { throw new Error("unexpected admission"); },
   });
   const result = await kernel.apply_change({
@@ -119,7 +88,6 @@ test("Research State admission is Host-only and blocks ResearchMap changes while
     async read_liveness() { return { state: "admission_pending" }; },
     async apply_change(request) { changes.push(request); return { accepted: true }; },
     async checkpoint() { return { accepted: true }; },
-    async turn() { return { accepted: true }; },
     async admit_workspace(request) {
       assert.equal(request.authority, "host");
       return create_research_admission_result({

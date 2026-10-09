@@ -27,13 +27,13 @@ Monitor ─ Host RPC ─────────┘       ├─ Root Agent Sess
                                     └─ Harness / Pi App Server / SessionWorker
 ```
 
-Host 是 Agent Server 的 API 和宿主层，负责路由、认证、幂等回执、scheduler lease、会话发现
+Host 是 Agent Server 的 API 和宿主层，负责路由、认证、非输入 RPC 回执、会话发现
 以及 Monitor supervisor；Harness worker 在同一个 Agent Server 内拥有 agent loop、模型、工具、
 transcript 和 SQLite durable lane。Pi 原生 TUI、Phone、Monitor 都是同一个 lane 的客户端，
 不会启动第二个 agent loop。
 
 Host client 的 RPC transport 可以是本机 Unix socket，也可以通过 SSH 启动远端
-`tspi-host-proxy`，把同一份 `tspi-host/1` NDJSON 通过 SSH stdin/stdout 转发到远端私有
+`tspi-host-proxy`，把同一份 `tspi-host/2` NDJSON 通过 SSH stdin/stdout 转发到远端私有
 socket。SSH transport 只改变连接路径，不改变 workspace、session 或 Agent lane 的拥有者。
 
 连接远端安装时，需要同时提供远端 Host socket 和 proxy 路径：
@@ -96,15 +96,20 @@ prompt 通过 Host `input/send` 进入同一个 lane，并使用持久回执和�
 方向键查找已接受的 prompt。重新打开时，压缩之前已不在活动 transcript 中的输入暂不恢复。
 
 分离、打断和退出不是同一件事：终端 detach 只是客户端断开；`Esc` 或 Host 的
-`turn/interrupt` 请求打断当前 turn；`/quit` 仅关闭当前终端连接。连接在提交后丢失时 Host 会
-报告 `uncertain`，不会悄悄重放 prompt；磁盘上的 `dispatching` 回执在 Pi 到达
-`submitted/observed` 边界前也不会报告为 accepted。应先检查会话，再用同一个业务 ID 重试。
+`turn/interrupt` 请求打断当前 turn；`/quit` 仅关闭当前终端连接。输入发送后若响应丢失，用相同
+`client_message_id` 查询 `input/status`。Pi 持久 submission 负责接收与完成状态；
+同一业务 ID 重试不会再产生一条输入。
 
 ## Phone、浏览器与 Monitor
 
-TS Phone 通过 TSPi Link 使用版本化 `tspi-host/1` NDJSON 方法。Relay 只转发不透明
+Phone 客户端必须通过 TSPi Link 使用版本化 `tspi-host/2` NDJSON 方法。Relay 只转发不透明
 帧，不拥有 session 或 ResearchMap。可选 browser gateway 只附着一个已经存在的会话，
 通过 loopback HTTP/SSE 提供 snapshot 和事件，不启动 Pi 或 worker。
+
+Host 握手仅接受 `protocol: "tspi-host/2"`，v1 客户端必须更新。能力列表与调用方法统一用斜杠。
+会话读取和附着只接受 `after_cursor: {epoch, sequence}`；Host epoch 改变时返回当前快照，
+不重放旧 epoch 的事件。会话创建/恢复及 `model/select` 统一使用 `model: {provider, id}`。
+会话列表只返回 `{sessions: [...]}`，不携带旧 backend 或格式标记。
 
 Host 为 workspace root 启动一个 Monitor worker。Monitor 轮询持久化 Compute 状态，在
 workspace 内写入 event/delivery 回执；wake 与用户通知分别确认，带租约和退避。wake

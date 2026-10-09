@@ -7,7 +7,7 @@ import { runTerminalSessions } from "./tspi-terminal-session.mjs";
 import { subscribeMonitor } from "./tspi-monitor-subscription.mjs";
 import { connectHost } from "./tspi-host-client.mjs";
 import { createTspiToolRenderers } from "./tspi-tool-renderers.mjs";
-import { PUBLIC_TOOL_CANONICAL_NAMES } from "../../packages/agent-runtime/host-api/tools.mjs";
+import { PUBLIC_TOOL_NAMES } from "../../packages/agent-runtime/host-api/tools.mjs";
 
 if (!process.env.TSPI_PI_RUNTIME_ROOT) throw new Error("remote Pi client requires TSPI_PI_RUNTIME_ROOT");
 const sourceRoot = resolve(process.env.TSPI_PI_RUNTIME_ROOT);
@@ -25,7 +25,7 @@ const [{ configureToolRenderers }, tuiComponents] = await Promise.all([
   fromSource("packages/coding-agent/src/experimental/client-tui-chat.ts"),
   fromSource("packages/tui/src/index.ts"),
 ]);
-configureToolRenderers(createTspiToolRenderers(tuiComponents, Object.values(PUBLIC_TOOL_CANONICAL_NAMES)));
+configureToolRenderers(createTspiToolRenderers(tuiComponents, Object.values(PUBLIC_TOOL_NAMES)));
 
 function createHostRequest() {
   const socketPath = process.env.TSPI_HOST_SOCKET?.trim();

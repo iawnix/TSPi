@@ -9,6 +9,8 @@ the retired JSON/SQLite ResearchState is not a runtime fallback.
 
 from __future__ import annotations
 
+from tspi_foundation.protocol import WORKSPACE_ID_PATTERN
+
 import copy
 import hashlib
 import json
@@ -35,7 +37,6 @@ CHECKPOINT_DISPOSITIONS = frozenset(json.loads((Path(__file__).parent / "contrac
 # IDs are opaque protocol references.  The namespace is part of the contract
 # while the suffix may carry a stable semantic token rather than an ordinal.
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
-_WORKSPACE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$")
 _NODE_ID = re.compile(r"^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _CLAIM_ID = re.compile(r"^claim_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 RESEARCH_CONTEXT_COLLECTIONS = (
@@ -271,7 +272,7 @@ def _load_state(
         raise AgentWorkspaceError("research_workspace_id_mismatch")
     if workspace_id != manifest.get("workspace_id"):
         raise AgentWorkspaceError("research_workspace_id_mismatch")
-    if not isinstance(workspace_id, str) or _WORKSPACE_ID.fullmatch(workspace_id) is None:
+    if not isinstance(workspace_id, str) or WORKSPACE_ID_PATTERN.fullmatch(workspace_id) is None:
         raise AgentWorkspaceError("context.workspace_id must be a valid workspace identifier")
     # This boundary accepts only the canonical Research workspace written by
     # the workspace initializer.
@@ -345,50 +346,6 @@ def _require_admitted(
         raise AgentWorkspaceError("research_lifecycle_blocked")
 
 
-def _require_decision_ready(
-    context: dict[str, Any],
-    liveness: dict[str, Any],
-    operations: list[dict[str, Any]],
-) -> None:
-    """Prevent execution/evidence writes while focus still needs a decision."""
-    if liveness.get("disposition") == "user_input_required":
-        raise AgentWorkspaceError("research_user_input_required")
-    if liveness.get("lifecycle") != "decision_needed":
-        return
-    focus = context.get("focus") if isinstance(context.get("focus"), dict) else {}
-    claim_ids = set(focus.get("claim_ids", []))
-    node_ids = set(focus.get("node_ids", []))
-    plans = context.get("strategy_plans", [])
-    if any(
-        isinstance(plan, dict)
-        and plan.get("status", "proposed") in {"proposed", "active"}
-        and (plan.get("claim_id") in claim_ids or plan.get("node_id") in node_ids)
-        for plan in plans if isinstance(plans, list)
-    ):
-        return
-    execution_types = {
-        "register_attempt", "transition_attempt", "reconcile_attempt",
-        "register_artifact", "link_evidence",
-        "register_evidence", "create_finding", "resolve_issue", "create_gate", "evaluate_gate",
-    }
-    if any(
-        isinstance(item, dict)
-            and not (
-                item.get("type") == "register_artifact"
-                and item.get("kind") in {"calculation_input", "provenance"}
-            )
-        and (
-            item.get("type") in execution_types
-            or item.get("type") == "set_node_state" and item.get("state") == "active"
-        )
-        for item in operations
-    ):
-        raise AgentWorkspaceError(
-            "research_decision_required: no proposed/active StrategyPlan covers the focused "
-            f"claims {sorted(claim_ids)} or nodes {sorted(node_ids)}. Read research_read mode=context; "
-            "create missing Claim/Node objects with research_change, then record research_strategy "
-            "before evidence writes or job_start. Use research_checkpoint only for an explicit disposition."
-        )
 
 
 class ProjectionWriter(Protocol):
@@ -440,12 +397,10 @@ def _liveness_projection(context, liveness, checkpoint=None):
     nodes = {n["id"]: n for n in _items(context, "nodes")}
     running = [a for a in _items(context, "attempts") if a.get("state") in {"started", "running", "unknown"} or a.get("metadata", {}).get("execution_conflict")]
     running_nodes = {a.get("node_id") for a in running}
-    plans = [p for p in _items(context, "strategy_plans") if p.get("status", "proposed") in {"proposed", "active"}]
     from .dependencies import dependency_evaluation
     ready = [n["id"] for n in nodes.values()
         if n.get("state") in {"planned", "active"}
-        and dependency_evaluation(context, n)["satisfied"]
-        and any(p.get("node_id") == n["id"] or p.get("claim_id") in n.get("claim_ids", []) for p in plans)]
+        and dependency_evaluation(context, n)["satisfied"]]
     result["eligible_node_ids"] = ready
     ready = [node for node in ready if node not in running_nodes]
     result["ready_node_ids"] = ready
@@ -455,7 +410,7 @@ def _liveness_projection(context, liveness, checkpoint=None):
         result["ready_node_ids"] = []
         result["eligible_node_ids"] = []
         result["execution_ready"] = False
-    elif nodes:
+    else:
         result["execution_ready"] = bool(ready)
     if result.get("disposition") != "continue_required":
         result["continuation"] = None
@@ -562,12 +517,6 @@ def _base_liveness_projection(
         result["lifecycle"] = "waiting_external"
         result["waiting_external"] = waiting_external
         result["decision_needed"] = []
-        running_nodes = {row["node_id"] for row in waiting_external}
-        plans = [p for p in _items(context, "strategy_plans") if p.get("status", "proposed") in {"proposed", "active"}]
-        result["ready_node_ids"] = [node["id"] for node in _items(context, "nodes")
-            if node["id"] in node_ids and node["id"] not in running_nodes and node.get("state") in {"planned","active"}
-            and any(p.get("node_id")==node["id"] or p.get("claim_id") in node.get("claim_ids",[]) for p in plans)]
-        result["execution_ready"] = bool(result["ready_node_ids"])
         return result
 
     nodes_by_id = {
@@ -588,35 +537,6 @@ def _base_liveness_projection(
         value for value in claim_ids
         if claims_by_id.get(value, {}).get("status", "proposed") in {"proposed", "inconclusive"}
     ]
-    plans = _items(context, "strategy_plans")
-    active_plans = [
-        plan for plan in plans
-        if plan.get("status", "proposed") in {"proposed", "active"}
-    ]
-    covered_nodes = {
-        plan.get("node_id") for plan in active_plans
-        if isinstance(plan.get("node_id"), str)
-    }
-    covered_claims = {
-        plan.get("claim_id") for plan in active_plans
-        if isinstance(plan.get("claim_id"), str)
-    }
-    # `decision_needed` describes the missing scientific decision, while an
-    # active StrategyPlan makes the focused scope executable. The explicit
-    # flag lets the Host admit prepare/execute tools before the final
-    # checkpoint without guessing from a transport-specific context shape.
-    result["execution_ready"] = bool(
-        (open_node_ids or open_claim_ids)
-        and all(
-            value in covered_nodes
-            or any(
-                claim_id in covered_claims
-                for claim_id in nodes_by_id.get(value, {}).get("claim_ids", [])
-            )
-            for value in open_node_ids
-        )
-        and all(value in covered_claims for value in open_claim_ids)
-    )
     review_claim_ids = [row["claim_id"] for row in result["research_obligations"] if row["kind"] == "reassess_claim"]
     requirement_work = [row for row in result["research_obligations"]
                         if row["kind"] in {"review_user_source", "plan_requirement", "satisfy_requirement"}]
@@ -645,8 +565,6 @@ def _base_liveness_projection(
     else:
         result["lifecycle"] = "idle"
         result["decision_needed"] = []
-    if not (open_node_ids or open_claim_ids):
-        result["execution_ready"] = False
     return result
 
 
@@ -694,7 +612,6 @@ def _validate_checkpoint_lifecycle(context: dict[str, Any], checkpoint: dict[str
     claims = _items(context, "claims")
     nodes = _items(context, "nodes")
     attempts = _items(context, "attempts")
-    plans = _items(context, "strategy_plans")
     claim_by_id = {row.get("id"): row for row in claims}
     node_by_id = {row.get("id"): row for row in nodes}
     attempt_by_id = {row.get("id"): row for row in attempts}
@@ -726,17 +643,6 @@ def _validate_checkpoint_lifecycle(context: dict[str, Any], checkpoint: dict[str
         finished = sorted(ref for ref in set(unresolved_refs) if attempt_by_id[ref].get("state") in ATTEMPT_TERMINAL_STATES)
         if finished:
             raise AgentWorkspaceError("waiting_external checkpoint references terminal Attempts: " + ", ".join(finished))
-    if disposition == "continue_required":
-        metadata = checkpoint.get("metadata") if isinstance(checkpoint.get("metadata"), dict) else {}
-        strategy_ids = set(metadata.get("strategy_ids", [])) if isinstance(metadata.get("strategy_ids"), list) else set()
-        valid_claims = {
-            row.get("claim_id") for row in plans
-            if row.get("status", "proposed") in {"proposed", "active"}
-            and (not strategy_ids or row.get("id") in strategy_ids)
-        }
-        missing = sorted(set(claim_ids) - valid_claims)
-        if missing:
-            raise AgentWorkspaceError("continue_required checkpoint needs an active StrategyPlan for Claims: " + ", ".join(missing))
     if disposition == "terminal":
         from .requirements import requirements_evaluation
         requirements = requirements_evaluation(context)
@@ -1095,13 +1001,9 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
         claim_ids = operation.get("claim_ids", [])
         from .dependencies import normalize_dependencies
         dependencies = normalize_dependencies(context, operation)
-        dependency_ids = [row["node_id"] for row in dependencies]
         if not isinstance(claim_ids, list) or any(not isinstance(item, str) for item in claim_ids):
             raise AgentWorkspaceError("operation.claim_ids must be an array of strings")
-        if not isinstance(dependency_ids, list) or any(not isinstance(item, str) for item in dependency_ids):
-            raise AgentWorkspaceError("operation.dependency_ids must be an array of strings")
         claim_ids = [_claim_identifier(item, "operation.claim_ids[]") for item in claim_ids]
-        dependency_ids = [_node_identifier(item, "operation.dependency_ids[]") for item in dependency_ids]
         claims_by_id = {item.get("id"): item for item in _array(context, "claims") if isinstance(item, dict)}
         for claim_id in claim_ids:
             claim = claims_by_id.get(claim_id)
@@ -1110,9 +1012,6 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
             claim.setdefault("node_ids", [])
             if item_id not in claim["node_ids"]:
                 claim["node_ids"].append(item_id)
-        exemption = operation.get("completion_exemption")
-        if exemption is not None and (not isinstance(exemption, str) or not exemption.strip()):
-            raise AgentWorkspaceError("completion_exemption_requires_reason")
         consumes = copy.deepcopy(operation.get("consumes", {}))
         if consumes:
             for collection, field in (("requirements", "requirement_ids"), ("artifacts", "artifact_refs")):
@@ -1123,11 +1022,10 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
             "type": "research_node", "id": item_id, "created_at": created_at,
             "metadata": dict(operation.get("metadata", {})) if isinstance(operation.get("metadata"), dict) else {},
             "title": _string(operation, "title"), "objective": _string(operation, "objective"),
-            "phase_id": phase_id, "claim_ids": list(claim_ids), "dependency_ids": list(dependency_ids),
+            "phase_id": phase_id, "claim_ids": list(claim_ids),
             "dependencies": dependencies, "consumes": consumes,
             "finding_ids": [], "gate_ids": [], "attempt_refs": [], "artifact_refs": [],
             "state": "planned", "outcome": None, "outcome_summary": None,
-            "completion_exemption": operation.get("completion_exemption"),
         })
         if phase is not None:
             phase.setdefault("node_ids", [])
@@ -1160,8 +1058,6 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
                 raise AgentWorkspaceError(f"node {node_id} cannot be completed before a NodeGate passes")
         if state == "closed" and any(a["node_id"] == node_id and (a["state"] not in ATTEMPT_TERMINAL_STATES or a.get("metadata", {}).get("execution_conflict")) for a in context["attempts"]):
             raise AgentWorkspaceError("node_has_active_attempts")
-        if state == "closed" and outcome == "completed" and not node.get("gate_ids") and not node.get("completion_exemption"):
-            raise AgentWorkspaceError("completion_conditions_required")
         if state == "closed" and outcome == "completed":
             from .dependencies import dependency_evaluation
             dependencies = dependency_evaluation(context, node)
@@ -1398,12 +1294,12 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
             _refs_exist(context, evidence_refs, label="operation.evidence_refs")
         from .invariants import evaluate_criteria
         try:
-            versions = evaluate_criteria(root, context, gate, operation)
+            basis = evaluate_criteria(root, context, gate, operation)
         except (ValueError, OSError) as exc:
             raise AgentWorkspaceError(str(exc)) from exc
         gate.setdefault("evaluations", []).append({
-            "gate_version": gate["version"], "result_versions": versions,
-            "artifact_versions": {a['id']: a.get('sha256') for a in context['artifacts'] if a['id'] in evidence_refs},
+            "gate_version": gate["version"], "result_versions": basis["result_versions"],
+            "artifact_versions": basis["artifact_versions"], "evidence_basis": basis,
             "assessments": copy.deepcopy(operation.get("assessments", [])),
             "verdict": verdict,
             "checked_at": created_at,
@@ -1617,19 +1513,16 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
         item_id = _identifier(operation.get("id"), "operation.id")
         plans = _items(context, "strategy_plans")
         _unique(plans, item_id, "strategy plan")
-        claim_id = _claim_identifier(operation.get("claim_id"), "operation.claim_id")
-        _lookup(context, "claims", claim_id, "claim")
+        claim_id = operation.get("claim_id")
+        if claim_id is not None:
+            claim_id = _claim_identifier(claim_id, "operation.claim_id")
+            _lookup(context, "claims", claim_id, "claim")
         node_id = operation.get("node_id")
         if node_id is not None:
             node_id = _node_identifier(node_id, "operation.node_id")
             node = _lookup(context, "nodes", node_id, "node")
-            if claim_id not in node.get("claim_ids", []):
+            if claim_id is not None and claim_id not in node.get("claim_ids", []):
                 raise AgentWorkspaceError(f"strategy {item_id} node {node_id} is not linked to claim {claim_id}")
-        if operation.get("status", "proposed") not in {"proposed", "active", "superseded", "completed", "blocked"}:
-            raise AgentWorkspaceError("strategy_status_invalid")
-        for field in ("steps", "alternatives"):
-            if not isinstance(operation.get(field, []), list) or any(not isinstance(row, dict) for row in operation.get(field, [])):
-                raise AgentWorkspaceError("strategy_field_invalid: " + field + " must be an array of objects")
         plans.append({
             "type": "strategy_plan", "id": item_id, "created_at": created_at,
             "claim_id": claim_id, "node_id": node_id,
@@ -1644,11 +1537,16 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
         item_id = _identifier(operation.get("id"), "operation.id")
         reviews = _items(context, "strategy_reviews")
         _unique(reviews, item_id, "strategy review")
-        claim_id = _claim_identifier(operation.get("claim_id"), "operation.claim_id")
-        _lookup(context, "claims", claim_id, "claim")
+        claim_id = operation.get("claim_id")
+        if claim_id is not None:
+            claim_id = _claim_identifier(claim_id, "operation.claim_id")
+            _lookup(context, "claims", claim_id, "claim")
+        node_id = operation.get("node_id")
+        if node_id is not None:
+            node = _lookup(context, "nodes", _node_identifier(node_id, "operation.node_id"), "node")
+            if claim_id is not None and claim_id not in node.get("claim_ids", []):
+                raise AgentWorkspaceError("strategy_review_scope_mismatch")
         decision = _string(operation, "decision")
-        if decision not in {"continue", "switch", "stop", "blocked"}:
-            raise AgentWorkspaceError("operation.decision is invalid")
         selected = operation.get("selected_strategy_id")
         previous = operation.get("previous_strategy_id")
         if selected is not None:
@@ -1662,7 +1560,7 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
             raise AgentWorkspaceError(f"operation.attempt_refs references unknown attempt: {', '.join(missing_attempts)}")
         reviews.append({
             "type": "strategy_review", "id": item_id, "created_at": created_at,
-            "claim_id": claim_id, "decision": decision, "rationale": _string(operation, "rationale"),
+            "claim_id": claim_id, "node_id": node_id, "decision": decision, "rationale": _string(operation, "rationale"),
             "trigger_refs": _string_list(operation, "trigger_refs"),
             "alternatives_considered": copy.deepcopy(operation.get("alternatives_considered", [])),
             "selected_strategy_id": selected, "previous_strategy_id": previous,
@@ -1674,15 +1572,17 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
         item_id = _identifier(operation.get("id"), "operation.id")
         interpretations = _items(context, "attempt_interpretations")
         _unique(interpretations, item_id, "interpretation")
-        claim_id = _claim_identifier(operation.get("claim_id"), "operation.claim_id")
-        _lookup(context, "claims", claim_id, "claim")
+        claim_id = operation.get("claim_id")
+        if claim_id is not None:
+            claim_id = _claim_identifier(claim_id, "operation.claim_id")
+            _lookup(context, "claims", claim_id, "claim")
         attempt_ref = _identifier(operation.get("attempt_ref"), "operation.attempt_ref")
         attempt = _lookup(context, "attempts", attempt_ref, "attempt")
         node_id = operation.get("node_id", attempt["node_id"])
         if node_id is not None:
             node_id = _node_identifier(node_id, "operation.node_id")
             node = _lookup(context, "nodes", node_id, "node")
-            if claim_id not in node.get("claim_ids", []):
+            if claim_id is not None and claim_id not in node.get("claim_ids", []):
                 raise AgentWorkspaceError(f"interpretation {item_id} node {node_id} is not linked to claim {claim_id}")
         finding_ids = _string_list(operation, "finding_ids")
         gate_ids = _string_list(operation, "gate_ids")
@@ -1704,8 +1604,6 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
         if attempt.get("node_id") != node_id and node_id is not None:
             raise AgentWorkspaceError("interpretation_node_mismatch")
         interpretation_kind = operation.get("kind")
-        if interpretation_kind not in {"result", "observation", "execution_issue"}:
-            raise AgentWorkspaceError("interpretation_kind_required")
         result_ref = operation.get("result_receipt_ref")
         observation_ref = operation.get("execution_observation_ref")
         if attempt.get("metadata", {}).get("execution_conflict"):
@@ -1737,8 +1635,6 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
                 raise AgentWorkspaceError("interpretation_supersedes_mismatch")
             prior["review_state"] = "superseded"
             prior["superseded_by"] = item_id
-        if operation.get("outcome") not in {"supports", "contradicts", "inconclusive", "invalid"}:
-            raise AgentWorkspaceError("interpretation_outcome_invalid")
         interpretations.append({
             "type": "attempt_interpretation", "id": item_id, "created_at": created_at,
             "claim_id": claim_id, "node_id": node_id, "attempt_ref": attempt_ref,
@@ -1909,8 +1805,8 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
             ) for op in operations
         )
         _require_admitted(context, liveness, allow_checkpoint=operational)
-        if not source_only:
-            _require_decision_ready(context, liveness, operations)
+        if not source_only and liveness.get("disposition") == "user_input_required":
+            raise AgentWorkspaceError("research_user_input_required")
         updated = copy.deepcopy(context)
         created_ids: list[str] = []
         for index, operation in enumerate(operations):
@@ -1922,9 +1818,6 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
                 details = {**getattr(exc, "details", {}), "operation_index": index,
                            "operation_type": op.get("type"), "target_id": target,
                            "retryable_without_change": False, "atomic_batch_committed": False}
-                if str(exc).startswith("completion_conditions_required"):
-                    details.update(missing=["gate_or_completion_exemption"],
-                                   recovery="Create and evaluate a Gate for this node before closing it; preserve completed work and existing delivery receipts.")
                 raise AgentWorkspaceError(str(exc), details=details) from exc
             if created is not None:
                 created_ids.append(created)
@@ -1985,21 +1878,30 @@ def checkpoint(root: str | Path, request: dict[str, Any] | None = None) -> dict[
         _check_workspace(request, workspace_id)
         _require_kernel_write_principal(request)
         _require_admitted(context, liveness, allow_checkpoint=True)
-        source = request.get("checkpoint") if isinstance(request.get("checkpoint"), dict) else request
-        checkpoint_id = source.get("checkpoint_id") or source.get("id") or f"checkpoint_{context['revision'] + 1}"
+        from .operation_registry import validate_checkpoint_request
+        try:
+            validate_checkpoint_request(request)
+        except ValueError as exc:
+            raise AgentWorkspaceError("checkpoint_contract_invalid: " + str(exc)) from exc
+        _expected_revision(request, context["revision"])
+        source = request["checkpoint"]
+        _string(source, "reason")
+        if source.get("map_revision", context["revision"]) != context["revision"]:
+            raise AgentWorkspaceError("research_revision_mismatch: checkpoint map_revision is stale")
+        checkpoint_id = source.get("id") or f"checkpoint_{context['revision'] + 1}"
         checkpoint_id = _identifier(checkpoint_id, "checkpoint_id")
         value = dict(source)
         value.update({
             "schema_version": CHECKPOINT_SCHEMA, "checkpoint_id": checkpoint_id,
             "workspace_id": workspace_id, "revision": context["revision"],
             "lifecycle_state": ADMITTED,
-            "created_at": source.get("created_at") if isinstance(source.get("created_at"), str) else _now(),
+            "created_at": _now(),
         })
         _validate_checkpoint_lifecycle(context, value)
         projected_liveness = _liveness_projection(context, {**liveness, "checkpoint_id": checkpoint_id}, value)
         # State owns the continuation decision; Host consumes the durable outbox
         # record. Checkpoint IDs alone are not progress and cannot create new wakes.
-        session_id = source.get("session_id")
+        session_id = request.get("session_id")
         budget = liveness.get("continuation_budget", {"count": 0, "revision": None})
         if budget.get("session_id") not in {None, session_id}:
             budget = {"count": 0, "revision": None}
@@ -2053,78 +1955,16 @@ def checkpoint(root: str | Path, request: dict[str, Any] | None = None) -> dict[
     }
 
 
-def turn(root: str | Path, request: dict[str, Any] | None = None) -> dict[str, Any]:
+def monitor_assess(root: str | Path, request: dict[str, Any] | None = None) -> dict[str, Any]:
     request = request or {}
-    protocol = request.get("protocol")
-    if protocol != "research_turn_request":
-        raise AgentWorkspaceError("unsupported research turn protocol")
-    if request.get("version") != 1:
-        raise AgentWorkspaceError("unsupported research turn version")
-    if not isinstance(request.get("input"), dict):
-        raise AgentWorkspaceError("research turn input is required")
-    if "payload" in request:
-        raise AgentWorkspaceError("research turn payload is not supported")
-    request_id = request.get("request_id")
-    if not isinstance(request_id, str) or not request_id:
-        raise AgentWorkspaceError("research turn request_id is required")
-    operation = request.get("operation")
-    if operation == "checkpoint":
-        checkpoint_request = dict(request)
-        # The turn router calls the operation input ``input``. Keep the
-        # Research State boundary aligned with that single transport envelope while
-        # preserving the snake_case checkpoint fields.
-        envelope = request["input"]
-        if "checkpoint" not in checkpoint_request and isinstance(envelope, dict):
-            checkpoint_request["checkpoint"] = envelope
-            for field in ("principal", "authority"):
-                if field not in checkpoint_request and field in envelope:
-                    checkpoint_request[field] = envelope[field]
-        result = checkpoint(root, checkpoint_request)
-        return {
-            "protocol": "research_turn_result", "version": 1,
-            "request_id": request_id, "status": "completed",
-            "output": result,
-            "provenance": {"producer": "research_state", "request_digest": _turn_request_digest(request)},
-        }
+    session_id = request.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        raise AgentWorkspaceError("monitor assessment requires session_id")
     with _workspace_lock(Path(root).expanduser().resolve()):
         _, _, context, liveness = _load_state(root)
-        _check_workspace(request, context["workspace_id"])
-        if operation in {"start", "orient"}:
-            return {
-                "protocol": "research_turn_result", "version": 1,
-                "request_id": request_id, "status": "completed",
-                "output": {"operation": operation, "context": context, "liveness": _liveness_projection(context, liveness)},
-                "provenance": {"producer": "research_state", "request_digest": _turn_request_digest(request)},
-            }
-        if operation in {"end", "wake"}:
-            _require_admitted(context, liveness, allow_checkpoint=operation == "wake")
-            if operation == "wake" and request["input"].get("trigger") == "monitor.wake":
-                from .monitor_wake import assess
-                assessment = assess(root, context, liveness, request["input"].get("event_id"),
-                                    request.get("context", {}).get("session_id"))
-                return {"protocol": "research_turn_result", "version": 1, "request_id": request_id,
-                        "status": "completed", "output": {"operation": "wake", **assessment},
-                        "provenance": {"producer": "research_state", "request_digest": _turn_request_digest(request)}}
-            waiting_user = liveness.get("disposition") == "user_input_required"
-            if operation == "wake" and (waiting_user or liveness.get("disposition") in {"blocked", "deferred", "terminal"}):
-                return {"protocol": "research_turn_result", "version": 1, "request_id": request_id,
-                        "status": "completed", "output": {"operation": "wake", "admitted": False,
-                        "reason": "research_" + str(liveness.get("disposition")), "state_token": f"{context['revision']}:{liveness.get('checkpoint_id')}"},
-                        "provenance": {"producer": "research_state", "request_digest": _turn_request_digest(request)}}
-            if liveness.get("lifecycle") == "decision_needed" and not waiting_user:
-                raise AgentWorkspaceError("research_decision_required")
-            return {
-                "protocol": "research_turn_result", "version": 1,
-                "request_id": request_id, "status": "completed",
-                "output": {"operation": operation},
-                "provenance": {"producer": "research_state", "request_digest": _turn_request_digest(request)},
-            }
-        raise AgentWorkspaceError(f"invalid research_turn operation: {operation}")
-
-
-def _turn_request_digest(request: dict[str, Any]) -> str:
-    payload = json.dumps(request, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        _require_admitted(context, liveness, allow_checkpoint=True)
+        from .monitor_wake import assess
+        return assess(root, context, liveness, request.get("event_id"), session_id)
 
 
 
@@ -2154,6 +1994,6 @@ def dispatch(root: str | Path, method: str, request: dict[str, Any] | None = Non
         return apply_change(root, request)
     if method == "checkpoint":
         return checkpoint(root, request)
-    if method == "turn":
-        return turn(root, request)
+    if method == "monitor_assess":
+        return monitor_assess(root, request)
     raise AgentWorkspaceError(f"unsupported kernel bridge method: {method}")

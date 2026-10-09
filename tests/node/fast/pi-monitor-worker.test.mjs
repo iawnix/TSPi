@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   deliverMonitorEvent,
   parseMonitorArguments,
-  recordMonitorTurn,
 } from "../../../apps/app-server/pi-monitor-worker.mjs";
 import { create_workspace_initializer } from "../../../packages/agent-core/workspace.mjs";
 
@@ -51,53 +50,8 @@ test("monitor only wakes the owning session and never sends mail", async (t) => 
   assert.equal(notifications, 0);
   assert.equal(wakes[0].session_id, "existing-session");
   assert.equal(wakes[0].mode, "next_run");
-});
-
-test("monitor wake records the canonical Research Turn before queue delivery", async (t) => {
-  const state = await fixture(t);
-  const calls = [];
-  const turn = await recordMonitorTurn({
-    workspace: state.workspace,
-    workspace_id: state.canonicalId,
-    event: state.event,
-    delivery: state.delivery,
-    execute: async (_python, args) => {
-      calls.push(args);
-      const requestPath = args[args.indexOf("--request-file") + 1];
-      const request = JSON.parse(await readFile(requestPath, "utf8"));
-      assert.deepEqual(request, {
-        protocol: "research_turn_request",
-        version: 1,
-        workspace_id: state.canonicalId,
-        request_id: "monitor:evt_1",
-        operation: "wake",
-        input: {
-          trigger: "monitor.wake",
-          event_id: "evt_1",
-          monitor_id: "mon_1",
-          job_id: "job_1", attempt_id: "attempt_1",
-        },
-        context: { session_id: "existing-session" },
-      });
-      return { stdout: JSON.stringify({
-        protocol: "research_turn_result", version: 1, request_id: "monitor:evt_1", status: "completed",
-        output: { operation: "wake" }, provenance: { producer: "research_state", request_digest: "sha256:" + "a".repeat(64) },
-      }) };
-    },
-  });
-  assert.equal(turn.output.operation, "wake");
-  assert.equal(calls.length, 1);
-});
-
-test("a failed Research Turn wake keeps the durable wake retryable", async (t) => {
-  const state = await fixture(t);
-  const errors = await deliverMonitorEvent({ ...state,
-    recordTurn: async () => { throw new Error("turn boundary unavailable"); },
-    async sendWake() { throw new Error("must not queue before boundary"); },
-    async sendNotification() {},
-  });
-  assert.deepEqual(errors, ["wake: turn boundary unavailable"]);
-  assert.deepEqual(state.receipts, [{ channel: "wake", delivered: false }]);
+  assert.deepEqual(wakes[0].event_ids, [state.event.event_id]);
+  assert.equal(wakes[0].text, undefined);
 });
 
 test("an offline session leaves wake retryable", async (t) => {
@@ -113,13 +67,10 @@ test("an offline session leaves wake retryable", async (t) => {
 
 test("State-deferred wake remains undelivered without prompting or reporting a failure", async (t) => {
   const state = await fixture(t);
-  let sent = 0;
   const errors = await deliverMonitorEvent({ ...state,
-    recordTurn: async () => ({ protocol: "research_turn_result", version: 1, request_id: state.delivery.request_id,
-      status: "completed", output: { operation: "wake", admitted: false, state_token: "3:checkpoint_user" }, provenance: {} }),
-    sendWake: async () => { sent++; },
+    sendWake: async () => ({ accepted: false, error: { code: "monitor_deferred" },
+      assessments: [{ event_id: state.event.event_id, admitted: false, state_token: "3:checkpoint_user" }] }),
   });
-  assert.equal(sent, 0);
   assert.deepEqual(errors, []);
   assert.deepEqual(state.receipts, [{ channel: "wake", delivered: false }]);
 });
@@ -139,4 +90,12 @@ test("managed monitor options require a Host endpoint", () => {
     workspaceRoot: "/workspaces", hostSocket: "/state/host.sock", stateRoot: "/state", intervalMs: 1000, once: true,
   });
   assert.throws(() => parseMonitorArguments(["--workspace-root", "/workspaces"]), /host-socket/);
+});
+
+test("Pi admission alone does not acknowledge a wake before consumption", async t => {
+  const state = await fixture(t);
+  assert.deepEqual(await deliverMonitorEvent({ ...state, sendWake: async () => ({ accepted: true, pending: true }) }), []);
+  assert.deepEqual(state.receipts, [{ channel: "wake", delivered: false }]);
+  assert.deepEqual(await deliverMonitorEvent({ ...state, sendWake: async () => ({ accepted: true, consumed: true }) }), []);
+  assert.equal(state.completed.has("wake"), true);
 });

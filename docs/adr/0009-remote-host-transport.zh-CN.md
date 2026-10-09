@@ -6,7 +6,7 @@
 
 ## 决策
 
-`tspi-host/1` NDJSON RPC 与底层传输解耦。客户端可以使用私有 Unix socket，或通过 SSH 启动
+`tspi-host/2` NDJSON RPC 与底层传输解耦。客户端可以使用私有 Unix socket，或通过 SSH 启动
 `tspi-host-proxy`，让 proxy 把 stdin/stdout 字节转发到远端 Host Unix socket。Phone 继续使用
 TSPi Link 的 WSS Relay。三种方式都使用同一份 Host RPC，不创建第二个 Agent lane。
 

@@ -6,6 +6,14 @@ import { tmpdir } from "node:os";
 
 import { monitorHostWorkspaceId } from "../../apps/app-server/pi-monitor-worker.mjs";
 import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
+import { is_workspace_id } from "../../packages/agent-core/workspace_id.mjs";
+
+test("workspace routes reject ambiguous paths and trailing line breaks", () => {
+  for (const value of ["project-a", "a".repeat(80), "A_1.2-3"]) assert.equal(is_workspace_id(value), true);
+  for (const value of ["a".repeat(81), "project-a\n", "project-a\r\n", "../project", "a/b", ".hidden", "a:b", "", null]) {
+    assert.equal(is_workspace_id(value), false);
+  }
+});
 
 test("monitor identity uses the research workspace manifest", async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-manifest-boundary-"));

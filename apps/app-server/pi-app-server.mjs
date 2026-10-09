@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomBytes } from "node:crypto";
 import { startTspiHost } from "./tspi-host.mjs";
 import { createTspiHarnessBackend } from "./tspi-harness-backend.mjs";
 
@@ -26,12 +27,9 @@ const socketPath = join(resolve(options.directory), `${options["server-id"]}.soc
 // public socket in a private child directory to avoid endpoint collisions.
 const piServerDirectory = join(resolve(options.directory), "pi");
 const python = process.env.TSPI_PYTHON || "python3";
+const monitorToken = randomBytes(32).toString("hex");
 const provider = options.provider ?? process.env.TSPI_PROVIDER;
 const model = options.model ?? process.env.TSPI_MODEL;
-const backendMode = (process.env.TSPI_HOST_BACKEND || "harness").trim().toLowerCase();
-if (backendMode !== "harness") {
-  throw new Error(`Unsupported TSPI_HOST_BACKEND: ${backendMode}; Native Pi Harness is the only supported backend`);
-}
 if ((provider === undefined) !== (model === undefined)) throw new Error("TSPI_PROVIDER and TSPI_MODEL must be provided together");
 if (Boolean(process.env.TSPI_LINK_URL) !== Boolean(process.env.TSPI_LINK_HOST_TOKEN_FILE)) {
   throw new Error("Both TSPi Link URL and Host token file are required.");
@@ -43,7 +41,7 @@ let stopPromise;
 let startupPromise = Promise.resolve();
 const workers = new Map();
 const timers = new Set();
-function supervise(name, entry, argv) {
+function supervise(name, entry, argv, privateEnv = {}) {
   let failures = 0;
   const health = (value) => {
     const path = join(stateRoot, `${name}-supervisor.json`);
@@ -53,7 +51,7 @@ function supervise(name, entry, argv) {
   };
   const start = () => {
     if (stopping) return;
-    const child = spawn(process.execPath, [join(packageRoot, entry), ...argv], { cwd: stateRoot, env: process.env, stdio: "inherit" });
+    const child = spawn(process.execPath, [join(packageRoot, entry), ...argv], { cwd: stateRoot, env: { ...process.env, ...privateEnv }, stdio: "inherit" });
     workers.set(name, child);
     health({ state: "running", pid: child.pid, restarts: failures });
     let finished = false;
@@ -157,7 +155,7 @@ startupPromise = (async () => {
     if (stopping) return;
     host = await startTspiHost({
       socketPath, workspaceRoot, stateRoot, packageRoot, python, serverId: options["server-id"],
-      sessionBackend,
+      sessionBackend, monitorToken,
     });
   } catch (error) {
     try { await sessionBackend?.close?.(); } catch { /* startup cleanup is best effort */ }
@@ -176,7 +174,7 @@ await startupPromise;
 // present.  Host session traffic remains available either way.
 if (process.env.TSPI_MONITOR_DISABLED !== "1" && existsSync(join(packageRoot, "apps/agent-cli/monitor.py"))) supervise("monitor", "apps/app-server/pi-monitor-worker.mjs", [
   "--workspace-root", workspaceRoot, "--host-socket", socketPath, "--state-root", stateRoot,
-]);
+], { TSPI_INTERNAL_MONITOR_TOKEN: monitorToken });
 if (process.env.TSPI_LINK_URL || process.env.TSPI_LINK_HOST_TOKEN_FILE) {
   supervise("link", "apps/app-server/tspi-link-host.mjs", [
     "--relay-url", process.env.TSPI_LINK_URL, "--token-file", process.env.TSPI_LINK_HOST_TOKEN_FILE, "--socket-path", socketPath,

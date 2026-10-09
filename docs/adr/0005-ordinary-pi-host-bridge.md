@@ -1,64 +1,28 @@
-# ADR 0005: Ordinary Pi Runtime With a Host Bridge
+# ADR 0005: Ordinary Pi Runtime With a Host Bridge (Retired)
 
-[English](0005-ordinary-pi-host-bridge.md) | [简体中文](0005-ordinary-pi-host-bridge.zh-CN.md)
+[简体中文](0005-ordinary-pi-host-bridge.zh-CN.md) | English
 
-- Status: retired; historical design record only
+- Status: retired; archival record only
 - Date: 2026-09-21
-- Scope: TSPi launcher, Pi terminal, Host, Phone, Web, Monitor, and history
+- Scope: former launcher, Pi terminal, Host, Phone, Web, Monitor, and session-history proposal
 
 ## Decision
 
-This ADR records the former transitional ordinary-Pi compatibility mode. It is
-retired and is not selected, packaged, or reachable by the current runtime. When
-`TSPI_HOST_BACKEND=ordinary` is explicitly selected, `ResearchAgent --workspace <name>`
-launches the pinned Pi CLI in its normal `InteractiveMode`. Pi owns the agent
-loop, model, tools, format-3 transcript, cwd, and workspace Root lock. TSPi
-loads ordinary research extensions plus one small bridge extension. This mode
-has an isolated writer and is never used as a Harness fallback.
+This ADR records a transitional design for running ordinary Pi `InteractiveMode`
+behind a TSPi Host bridge. That runtime and its selector have been removed. No
+`TSPI_HOST_BACKEND` selector, ordinary-runtime fallback, `tmux` persistence path,
+or format-3 history importer is supported by the current code.
 
-The default runtime is the installation Pi App Server described by the Harness
-architecture: one `SessionWorker`/`durable Harness` lane is shared by the native
-Pi remote TUI, Phone, and Monitor clients.
-
-The installation Host is a control plane, not a second Pi runtime. It exposes
-authenticated `tspi-host/1` NDJSON over a private Unix socket and provides
-workspace/session discovery, input admission, idempotency receipts, event
-subscriptions, model selection, and Monitor supervision. The bridge translates
-Host requests to the live Pi ExtensionAPI and publishes native snapshots and
-events back. One live Pi process is allowed per workspace.
-
-The ordinary compatibility mode may use `tmux` as its persistence boundary,
-but this is an explicit migration/debug concern. The Harness path never starts
-tmux or scrapes a PTY. If the compatibility mode cannot use tmux it may run Pi
-in the foreground; that process must not write the Harness SQLite durable repository.
-
-TS Phone uses Host RPC through TSPi Link. The Relay forwards opaque framed
-NDJSON and owns neither sessions nor research state. The optional browser
-gateway is a loopback adapter to one existing Host session.
-
-The Host starts one Monitor worker for the workspace root. Monitor writes
-durable registrations, events, and per-channel delivery receipts. Wake and
-notification delivery are independent, leased, retryable, and deduplicated.
-An accepted wake is not an agent completion. Monitor never finalizes a
-calculation or writes ResearchMap state.
-
-The canonical `workspace_manifest.json` binds the scientific `workspace_id` and
-Host route to one identity. A worker verifies that manifest before routing; it
-does not translate a legacy identity alias.
-
-Compatibility history is never silently converted or opened writable. Host
-exposes workspace format-3 files read-only; an explicit import creates a new
-installation-owned SQLite durable session while preserving the source and writing a
-provenance report. Ambiguous, active, torn, or unsupported histories are
-rejected.
+The current runtime uses the Native Pi Harness and the `tspi-host/2` protocol.
+This ADR is retained only to explain the former design; it is not an
+implementation contract. The current architecture is described in
+[`ARCHITECTURE.md`](../ARCHITECTURE.md).
 
 ## Consequences
 
-- Pi behavior and commands remain available without TSPi-specific rendering.
-- Phone, Web, and Monitor share a live Pi session without owning a second agent.
-- `request_id` and `client_message_id` make retries observable; uncertain input
-  is not blindly replayed.
-- The compatibility mode remains isolated from Harness receipts, history, and
-  locks; the implementation has now been removed from the supported runtime.
-- The default Harness terminal has no tmux dependency and reconnects through a
-  local Pi connection descriptor after Host recovery.
+- `ResearchAgent` uses the Native Pi Harness; there is no alternate ordinary-Pi
+  backend or fallback.
+- Old workspace and session formats are not restored, imported, or converted.
+  New installations start with new workspaces and sessions.
+- The former design rationale remains available for repository history, without
+  implying that its proposed runtime or migration paths exist.

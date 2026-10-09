@@ -1,6 +1,6 @@
 # Name resolution
 
-Use chemical-input scripts/prepare.py resolve --name ORIGINAL, optionally --lookup-name NORMALIZED.
+Prepare the chemical.resolve@1 Job with --name ORIGINAL, optionally --lookup-name NORMALIZED; use the generic preparation command described in the Skill.
 Global --output selects the JSON file; --config accepts an absolute name-resolver TOML path.
 Defaults read TSPI_NAME_RESOLVER_CONFIG or TSPI_INSTALL_ROOT/etc/name-resolver.toml.
 Enabled PubChem/OPSIN backends retain request provenance, time, response digests and candidates.

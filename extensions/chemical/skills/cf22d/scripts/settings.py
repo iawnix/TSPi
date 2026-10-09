@@ -155,7 +155,7 @@ def parse_pyscf_artifacts(
         raise ValueError("PySCF result is not valid UTF-8 JSON") from exc
     if not isinstance(result, dict):
         raise ValueError("PySCF result must be a JSON object")
-    if result.get("schema_version") != "pyscf-run/1":
+    if result.get("schema_version") != "pyscf-run/2":
         raise ValueError("unsupported PySCF result schema")
     if result.get("backend") != "pyscf" or result.get("task_type") != task_type:
         raise ValueError("PySCF result does not match the requested task")

@@ -12,7 +12,7 @@
       "additionalProperties": false,
       "required": ["workspace_id", "label", "available", "valid", "revision", "progress"],
       "properties": {
-        "workspace_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$" },
+        "workspace_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}(?![\\s\\S])" },
         "label": { "type": "string", "minLength": 1 },
         "available": { "const": true },
         "valid": { "const": true },

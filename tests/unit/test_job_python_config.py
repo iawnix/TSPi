@@ -11,7 +11,7 @@ def binding(prefix):
 def config():
     return {"default_environment": "local", "environments": {
         "local": {"kind": "local"},
-        "remote": {"kind": "remote", "submission": {"queue":"test"}, "python": binding("/opt/runner"), "backends": {
+        "remote": {"kind": "remote", "ssh_host": "fixture", "remote_root": "/scratch/jobs", "submission": {"queue":"test"}, "python": binding("/opt/runner"), "backends": {
             "xtb": {"command": ["/opt/xtb"]}, "pyscf": {"python": binding("/opt/cf22d")}}}}}
 
 
@@ -30,16 +30,16 @@ def test_legacy_interpreter_is_not_a_second_configuration_protocol():
         validate_job_config(c)
 
 
-def test_skill_preparation_uses_bound_conda_and_rejects_dual_pyscf_binding(tmp_path):
+def test_skill_preparation_uses_bound_conda_and_rejects_dual_pyscf_binding(tmp_path, mock_environment_probe):
     import json
     import tomllib
-    import runpy
-    helper = Path(__file__).resolve().parents[2] / "extensions/chemical/skills/method-selection/scripts/prepare_job.py"
-    prepare = runpy.run_path(str(helper))["prepare"]
+    from tspi_runtime.executors import prepare
     path = tmp_path / "job.toml"
     text = '''default_environment = "remote"
 [environments.remote]
 kind = "remote"
+ssh_host = "fixture"
+remote_root = "/scratch/jobs"
 [environments.remote.submission]
 queue = "test"
 [environments.remote.python]
@@ -57,17 +57,17 @@ lock_ref = "/opt/locks/cf22d.lock"
 '''
     path.write_text(text)
     xyz = tmp_path / "water.xyz"; xyz.write_text("1\nH\nH 0 0 0\n")
-    job = prepare(path, "remote", "xtb", "xtb", xyz, ["--task", "opt-sp"])
+    job = prepare(path, "remote", "chemical.xtb", "1", {"geometry": xyz}, ["--task", "opt-sp"])
     assert "/opt/runner" in job["command"]
     assert job["platform"] == "remote"
     assert job["metadata"]["python_binding"]["lock_ref"] == "/opt/locks/runner.lock"
     with pytest.raises(ValueError, match="runner_arguments_invalid.*",):
-        prepare(path, "remote", "xtb", "xtb", xyz, ["--task", "opt-sp", "--method", "GFN2-xTB"])
-    with pytest.raises(ValueError, match="owned by the preparation helper"):
-        prepare(path, "remote", "xtb", "xtb", xyz, ["--task", "sp", "--output-dir", "/tmp/escaped"])
+        prepare(path, "remote", "chemical.xtb", "1", {"geometry": xyz}, ["--task", "opt-sp", "--method", "GFN2-xTB"])
+    with pytest.raises(ValueError, match="owned by the execution descriptor"):
+        prepare(path, "remote", "chemical.xtb", "1", {"geometry": xyz}, ["--task", "sp", "--output-dir", "/tmp/escaped"])
     path.write_text(text.replace('[environments.remote.backends.pyscf.python]', '[environments.remote.backends.pyscf]\ncommand = ["/old/python"]\n[environments.remote.backends.pyscf.python]'))
-    with pytest.raises(ValueError, match="sole Python binding"):
-        prepare(path, "remote", "pyscf", "cf22d", xyz, ["--task", "opt-sp"])
+    with pytest.raises(ValueError, match="executor_binding_unused_command"):
+        prepare(path, "remote", "chemical.cf22d", "1", {"geometry": xyz}, ["--task", "opt-sp"])
 
 
 def test_example_and_python_binding_share_public_schema():
@@ -77,6 +77,8 @@ def test_example_and_python_binding_share_public_schema():
     from jsonschema import Draft202012Validator
     root = Path(__file__).resolve().parents[2]
     schema = json.loads((root / 'config/job.schema.json').read_text())
+    from job_runtime.config_contract import job_config_schema
+    assert schema == job_config_schema()
     validator = Draft202012Validator(schema)
     example = tomllib.loads((root / 'config/compute.example.toml').read_text())
     validator.validate(example)
@@ -105,10 +107,42 @@ def test_installer_refuses_unverified_prefix_and_does_not_publish_bad_receipt(tm
     b = {**binding(str(prefix)), 'lock_ref': str(lock)}
     with pytest.raises(ValueError, match='no matching environment receipt'):
         installer(b)
-    monkeypatch.setattr('subprocess.run', lambda *a, **k: SimpleNamespace(stdout='@EXPLICIT\nhttps://example.test/wrong.conda\n'))
+    monkeypatch.setattr('subprocess.run', lambda *a, **k: SimpleNamespace(stdout='@EXPLICIT\nhttps://example.test/wrong.conda\n', returncode=0))
     with pytest.raises(ValueError, match='does not match'):
         installer(b, adopt=True)
     assert not (prefix / 'tspi-environment.json').exists()
+
+
+def test_failed_new_install_removes_only_its_partial_prefix(tmp_path, monkeypatch):
+    import runpy
+    import subprocess
+    root = Path(__file__).resolve().parents[2]
+    installer = runpy.run_path(str(root / 'scripts/install_job_environment.py'))['install']
+    prefix = tmp_path/'partial'
+    lock = tmp_path/'science.lock'
+    lock.write_text('@EXPLICIT\nhttps://example.test/python.conda#' + 'a'*64 + '\n')
+    def broken_install(argv, **kwargs):
+        assert argv[1] == 'create'
+        prefix.mkdir()
+        (prefix/'partial-file').write_text('interrupted installation')
+        raise subprocess.CalledProcessError(1, argv)
+    monkeypatch.setattr('subprocess.run', broken_install)
+    with pytest.raises(subprocess.CalledProcessError):
+        installer({**binding(str(prefix)), 'lock_ref':str(lock)})
+    assert not prefix.exists() and lock.exists()
+
+
+@pytest.mark.parametrize('contents', ['package==1.0\n', 'package>=1.0 --hash=sha256:'+'a'*64+'\n'])
+def test_pip_install_requires_pinned_versions_and_hashes_before_creating_prefix(tmp_path, monkeypatch, contents):
+    import runpy
+    root = Path(__file__).resolve().parents[2]
+    installer = runpy.run_path(str(root/'scripts/install_job_environment.py'))['install']
+    lock = tmp_path/'science.lock'; lock.write_text('@EXPLICIT\nhttps://example.test/python.conda\n')
+    lock.with_suffix('.requirements.txt').write_text(contents)
+    monkeypatch.setattr('subprocess.run', lambda *a, **kw: pytest.fail('invalid lock must fail before installation'))
+    with pytest.raises(ValueError, match='environment_pip_lock_invalid'):
+        installer({**binding(str(tmp_path/'science')), 'lock_ref':str(lock)})
+    assert not (tmp_path/'science').exists()
 
 
 def test_remote_queue_selection_is_explicit_and_allowlisted():
@@ -119,3 +153,31 @@ def test_remote_queue_selection_is_explicit_and_allowlisted():
     with pytest.raises(ValueError,match='not allowed'):resolve_submission(c,'remote','xtb')
     del remote['submission']
     with pytest.raises(ValueError,match='queue_binding_missing'):resolve_submission(c,'remote','xtb')
+
+
+@pytest.mark.parametrize('mutate', [
+    lambda target: target.update(ssh_host='-oProxyCommand=bad'),
+    lambda target: target.update(remote_root='/scratch/../other'),
+    lambda target: target.update(scheduler='slurm'),
+    lambda target: target.update(command_timeout_seconds=0),
+    lambda target: target.update(max_nodes=2),
+    lambda target: target.update(commands={'pbsnodes': 'pbsnodes'}),
+    lambda target: target['backends']['xtb'].update(requires_gpu=False),
+    lambda target: target['backends']['xtb'].update(allowed_queues=['bad queue']),
+])
+def test_runtime_and_generated_schema_reject_invalid_remote_settings(mutate):
+    from jsonschema import Draft202012Validator
+    from job_runtime.config_contract import job_config_schema
+    value = config(); mutate(value['environments']['remote'])
+    with pytest.raises(ValueError): validate_job_config(value)
+    assert list(Draft202012Validator(job_config_schema()).iter_errors(value))
+
+
+def test_platform_selection_has_no_implicit_local_or_remote_alias(tmp_path, monkeypatch):
+    from job_runtime.config import platforms_from_config
+    monkeypatch.delenv('TS_JOB_CONFIG', raising=False)
+    with pytest.raises(ValueError, match='job_config_required'): platforms_from_config()
+    path = tmp_path / 'remote.toml'
+    path.write_text('default_environment="cluster_a"\n[environments.cluster_a]\nkind="remote"\nssh_host="fixture"\nremote_root="/scratch/jobs"\n')
+    platforms, default = platforms_from_config(path)
+    assert set(platforms) == {'cluster_a'} and default == 'cluster_a'

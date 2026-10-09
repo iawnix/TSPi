@@ -104,7 +104,7 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
             "summary": "read_context",
             "liveness": "read_liveness",
             "validate": "read_context",
-            "turn": "turn",
+            "monitor_assess": "monitor_assess",
             "change": "apply_change",
             "checkpoint": "checkpoint",
         }.get(action)
@@ -114,7 +114,7 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
             # checkpoint/liveness envelope. A checkpoint writes the durable
             # projection first; read it back so callers never have to infer
             # lifecycle state from the mutation receipt alone.
-            if action == "checkpoint" or (action == "turn" and request.get("operation") == "checkpoint"):
+            if action == "checkpoint":
                 liveness = dispatch_agent_workspace(root, "read_liveness", request)
                 return {
                     **result,

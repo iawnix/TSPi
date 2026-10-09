@@ -1,0 +1,18 @@
+{
+  "schema_version": "skill-resources/1",
+  "base": "extension",
+  "files": {
+    "skills/mechanism-reasoning/SKILL.md": "sha256:002a83b213eaae168e7aab61001c881099544a2f78a9e75c8132f11171df0130",
+    "skills/mechanism-reasoning/SKILL.zh-CN.md": "sha256:278b0e8f965c4335f1be43845f918e42143c180fe497333d0f34300598c44608",
+    "skills/mechanism-reasoning/references/mechanism_reflection.md": "sha256:000c365420b694b0d26ee5d8100dc1585ee2e185a9f23abb93f24a50001b8811",
+    "skills/mechanism-reasoning/references/mechanism_reflection.zh-CN.md": "sha256:8dc11b3f4115d5efb2e49232f32a6a4734635eba9bd7e8ce5b3325b49d1596a2",
+    "skills/mechanism-reasoning/references/molecular_preparation.md": "sha256:7bb37d059c0fac04bb64de65adaf27c4202897425d4bbcab5715713a45a743e3",
+    "skills/mechanism-reasoning/references/molecular_preparation.zh-CN.md": "sha256:7bb37d059c0fac04bb64de65adaf27c4202897425d4bbcab5715713a45a743e3",
+    "skills/mechanism-reasoning/references/pathway_model.md": "sha256:0e0fb3694aee315f0c29e21655f3edd4619cc0bd9c7602eba7a3dc9a16ae00b1",
+    "skills/mechanism-reasoning/references/pathway_model.zh-CN.md": "sha256:30818e10f6be4e221fffddd2fb89855fad9db823a5511ac968be1c2783f6b8ae",
+    "skills/mechanism-reasoning/references/reaction_mapping.md": "sha256:917edfc01339ce3de47b716a1bb0a8479f9a4c2dec2656ec42007fab08755c80",
+    "skills/mechanism-reasoning/references/reaction_mapping.zh-CN.md": "sha256:917edfc01339ce3de47b716a1bb0a8479f9a4c2dec2656ec42007fab08755c80",
+    "skills/mechanism-reasoning/references/strategy_reflection.md": "sha256:0ba53b1b00422dcd3bc59c31ce9c9d8028991431c0657ef27da53ec950637252",
+    "skills/mechanism-reasoning/references/strategy_reflection.zh-CN.md": "sha256:948ff0495e9f4180ae33a5127be38093757db79c5493c8ceb77a75e9201f8fae"
+  }
+}

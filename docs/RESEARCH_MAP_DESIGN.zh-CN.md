@@ -46,16 +46,19 @@ research.operations 操作目录
 research.decisions  有界 strategy/review/interpretation/checkpoint 历史
 research.evidence   Attempt/Artifact/EvidenceLink 元数据
 research.storage    规范文件系统存储状态
-research.turn       统一 turn admission/checkpoint 边界
 research.strategy   记录或评审 strategy
 research.interpretation 解释 Attempt
-research.checkpoint 用 disposition 结束 turn
+research.checkpoint 记录研究 disposition
 research.change     应用一个 ChangeSet
 ```
 
-Research State port、Pi tools、slash command 和 Root Agent 使用同一组命令。`research.context` 和
-`research.liveness` 是有界的诊断投影，不持久化下一步；`research.checkpoint` 是主要 turn
-边界，生命周期动作通过 `research.change` 作为规范 State 记录管理。liveness 响应只读地提供
+Host 使用只读命令 `research.monitor_assess`，在准入前将 Monitor event 与绑定的
+workspace、session、Attempt 和当前研究状态核对。它不持久化 Pi 输入回执或 turn audit。
+
+Agent-facing Research State port、Pi tools、slash command 和 Root Agent 使用规范命令面；
+Monitor assessment 是 Host 内部调用，不是 Agent tool。`research.context` 和 `research.liveness` 是有界的诊断投影，
+不持久化下一步；`research.checkpoint` 记录 disposition，
+生命周期动作通过 `research.change` 作为规范 State 记录管理。liveness 响应只读地提供
 `continue_required`。
 `research.decisions` 与 `research.evidence` 读取 Research State filesystem boundary 投影中的有界元数据，不加载原始文件。
 `/research` 只是命令服务的交互写法，不是另一套 API。
@@ -77,14 +80,20 @@ filesystem context 的 map-shaped projection 是 TS Web、Root Agent 和报告�
 为了展示进行筛选和分组，但不创建第二个科学状态模型或 registry。操作记录与 map 分开展示。
 Gate 保存 criteria 和评估历史，不会静默修改目标对象。
 
-## Research Harness Turn 边界
+## Harness 工作流与 Monitor 准入
 
-Root Agent 是唯一的科学决策者。每个 turn 读取有界 context，通过注册的 Skill 和
-Capability 选择并执行有界动作，解释证据，并在结束前调用 `research_checkpoint` 登记一种
-disposition：`continue_required`、等待已提交 Attempt 的 `waiting_external`、带原因的
-`deferred`/`blocked`、`terminal` 或 `user_input_required`。提交前的 `prepared` Attempt 仍是
-本地决策点，不能据此等待 Monitor 事件。若 liveness 返回 `decision_needed`，Harness 可以追加
-有界 follow-up，但不会选择下一种科学方法，也不会创建 Finding。
+Root Agent 是唯一的科学决策者。它读取有界 context，通过注册的 Skill 和 Capability
+选择并执行动作、解释证据，并可通过 `research_checkpoint` 登记
+`continue_required`、`waiting_external`、`deferred`、`blocked`、`terminal` 或
+`user_input_required` disposition。该命令负责记录研究状态，不是通用 turn 开始/结束协议。
+Liveness 根据 map 和 runtime 记录派生。run yield 后，如果 active scope 仍缺少 disposition，
+Host 可以请求有界 follow-up；Host 不选择科学方法，也不替 Agent 写 Finding。
+
+普通输入、Monitor wake 和恢复都通过当前 Pi submission 与 Worker 路径进入。Monitor wake
+准入前，Host 调用只读 `research.monitor_assess`，将事件和绑定 session 一起传入。Research
+State 校验 workspace/session 归属，并把 event 与当前 Attempt、interpretation、collection
+及 disposition 对照。Pi submission 是输入持久化的权威；Host 在模型首次消费前再次评估事件。
+尚未提交的 `prepared` Attempt 仍是本地决策点，不能据此等待 Monitor event。
 
 ## 交付检查
 
@@ -97,6 +106,5 @@ disposition：`continue_required`、等待已提交 Attempt 的 `waiting_externa
   消费这些定义；
 - local/remote 计算统一放在一份 `compute.toml` environments 目录后面；
 - 保持 `ResearchMap` 为唯一科学状态模型，不引入平行科学存储或别名。
-- 保持 `tests/node/native/tspi-research-turn-e2e.test.mjs` 作为 Agent -> Research State ->
-  Host -> Monitor -> Agent 的领域无关验收轨迹；任何领域工作流在增加科学策略前都必须
-  先通过这一生命周期契约。
+- 在当前 Host/Worker 测试中覆盖 Monitor event 绑定，以及 Pi 消费前的再次核验；不要
+  增加并行的 Research State turn 协议。

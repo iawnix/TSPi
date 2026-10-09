@@ -89,7 +89,7 @@ def run_pyscf(config: PyscfRunConfig) -> dict[str, Any]:
         "imaginary_frequencies_cm-1": [],
         "thermochemistry_complete": None,
         "gibbs_hartree": None,
-        "stationary_point_valid": None,
+        "imaginary_frequency_count_matches": None,
     }
     artifacts_written: list[str] = [name for name in PYSCF_ARTIFACTS[config.task_type] if name != "pyscf.out"]
     mol = None
@@ -211,9 +211,9 @@ def run_pyscf(config: PyscfRunConfig) -> dict[str, Any]:
                 }
             )
             if geometry_kind == "ts":
-                summary["stationary_point_valid"] = len(imaginary) == 1
+                summary["imaginary_frequency_count_matches"] = len(imaginary) == 1
             elif geometry_kind == "opt":
-                summary["stationary_point_valid"] = len(imaginary) == 0
+                summary["imaginary_frequency_count_matches"] = len(imaginary) == 0
 
         if "thermo" in sequence:
             if mf is None or frequency_data is None:
@@ -241,7 +241,7 @@ def run_pyscf(config: PyscfRunConfig) -> dict[str, Any]:
             )
 
         result = {
-            "schema_version": "pyscf-run/1",
+            "schema_version": "pyscf-run/2",
             "backend": "pyscf",
             "task_type": config.task_type,
             "execution_completed": True,
@@ -270,7 +270,7 @@ def run_pyscf(config: PyscfRunConfig) -> dict[str, Any]:
         return result
     except Exception as exc:
         failure = {
-            "schema_version": "pyscf-run/1",
+            "schema_version": "pyscf-run/2",
             "backend": "pyscf",
             "task_type": config.task_type,
             "execution_completed": False,
@@ -315,7 +315,7 @@ def build_config(args: Any) -> PyscfRunConfig:
     raw = {
         "basis": args.basis,
         "charge": args.charge,
-        "spin": args.spin,
+        "spin": args.multiplicity - 1,
         "unit": args.unit,
         "verbose": args.verbose,
         "xc": args.xc,
@@ -651,28 +651,9 @@ def _settings_payload(config: PyscfRunConfig) -> dict[str, Any]:
 def _read_xyz(path: Path) -> tuple[list[str], list[tuple[float, float, float]]]:
     if path.is_symlink() or not path.is_file():
         raise ValueError(f"PySCF XYZ input is not a regular file: {path}")
-    lines = path.read_text(encoding="utf-8", errors="strict").splitlines()
-    if len(lines) < 2:
-        raise ValueError("PySCF XYZ input is incomplete")
-    try:
-        count = int(lines[0].strip())
-    except ValueError as exc:
-        raise ValueError("PySCF XYZ atom count is invalid") from exc
-    if count < 1 or len(lines) != count + 2:
-        raise ValueError("PySCF XYZ input must contain exactly one complete frame")
-    symbols: list[str] = []
-    coordinates: list[tuple[float, float, float]] = []
-    for line in lines[2:]:
-        fields = line.split()
-        if len(fields) < 4:
-            raise ValueError("PySCF XYZ atom record is invalid")
-        try:
-            xyz = tuple(float(item) for item in fields[1:4])
-        except ValueError as exc:
-            raise ValueError("PySCF XYZ coordinates are invalid") from exc
-        symbols.append(fields[0])
-        coordinates.append(xyz)  # type: ignore[arg-type]
-    return symbols, coordinates
+    from xyz import read_xyz
+    atoms = read_xyz(path)
+    return [atom[0] for atom in atoms], [atom[1:] for atom in atoms]
 
 
 def _make_scratch(output_dir: Path) -> Path:

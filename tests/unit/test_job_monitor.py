@@ -39,18 +39,31 @@ def test_deferred_delivery_retries_only_after_canonical_state_changes(tmp_path):
     (folder/'event_fixture.json').write_text(json.dumps({'schema_version':'ts-job-monitor-delivery/1',
         'event_id':'event_fixture','session_id':'s','request_id':'job-wake:event_fixture','delivered':False,'deferred_state':token}))
     assert command(tmp_path,'pending',{})['deliveries']==[]
-    checkpoint(tmp_path,{'principal':'root_agent','authority':'kernel_write','id':'checkpoint_continue',
-                        'disposition':'continue_required','claim_ids':['claim_1']})
+    checkpoint(tmp_path,{'principal': 'root_agent', 'authority': 'kernel_write', "checkpoint": {'id': 'checkpoint_continue', 'disposition': 'continue_required', 'claim_ids': ['claim_1'], "reason": 'Continue the pending research work'}})
     assert len(command(tmp_path,'pending',{})['deliveries'])==1
 
 
 def test_long_queue_emits_one_diagnostic_event_without_poll_wakes(tmp_path, monkeypatch):
     from types import SimpleNamespace
-    from job_runtime import JobState
+    from job_runtime import JobReceipt, JobState, TorqueSSHPlatform
     from tspi_runtime import job_monitor
     workspace(tmp_path)
+    config = tmp_path/'job.toml'
+    config.write_text('default_environment="cluster"\n[environments.cluster]\nkind="remote"\n'
+                      'ssh_host="fixture"\nremote_root="/scratch"\n'
+                      '[environments.cluster.submission]\nqueue="batch"\nqueue_wait_seconds=60\n')
+    monkeypatch.setenv('TS_JOB_CONFIG', str(config))
+    # Exercise submission and Monitor registration with a queued remote Job;
+    # local processes have no scheduler queue or queue-wait threshold.
+    def submit(platform, spec):
+        receipt = JobReceipt(spec.job_id, platform.name, '2026-10-09T00:00:00+00:00', spec.command,
+                             str(spec.cwd), metadata={**spec.metadata, 'scheduler_id': '123.fixture'},
+                             workspace_id=spec.workspace_id, node_id=spec.node_id, attempt_id=spec.attempt_id)
+        (spec.cwd/'receipt.json').write_text(json.dumps(receipt.__dict__))
+        return receipt
+    monkeypatch.setattr(TorqueSSHPlatform, 'start', submit)
     dispatch('start',{'root':str(tmp_path),'job_id':'job_queue','node_id':'node_1','session_id':'s',
-        'metadata':{'queue_wait_seconds':60},'command':[sys.executable,'-c','pass']})
+        'command':['/bin/true']})
     status = SimpleNamespace(state=JobState.QUEUED,exit_code=None,error=None,diagnostics={'wait_seconds':10})
     monkeypatch.setattr(job_monitor,'_runtime',lambda root:SimpleNamespace(job_status=lambda receipt:status))
     command(tmp_path,'tick',{})
@@ -113,3 +126,26 @@ def test_old_monitor_records_are_rejected_without_conversion(tmp_path):
     delivery.write_text(json.dumps({'schema_version': 'ts-monitor-delivery/1', 'event_id':'event_old'}))
     with pytest.raises(ValueError, match='monitor_delivery_schema_invalid'):
         command(tmp_path, 'pending', {})
+
+
+def test_preconsumption_supersession_preserves_old_identity_and_waits_for_state(tmp_path):
+    from research_state.agent_workspace import read_liveness, checkpoint
+    workspace(tmp_path)
+    folder = tmp_path/'operations/monitors/monitor_fixture/deliveries'
+    folder.mkdir(parents=True)
+    path = folder/'event_fixture.json'
+    path.write_text(json.dumps({'schema_version':'ts-job-monitor-delivery/1', 'event_id':'event_fixture',
+        'session_id':'s', 'request_id':'original', 'delivered':False, 'batch_event_ids':['event_fixture']}))
+    row = command(tmp_path, 'claim', {'event_id':'event_fixture', 'channel':'wake'})
+    state = read_liveness(tmp_path)
+    token = f"{state['revision']}:{state.get('checkpoint_id')}"
+    command(tmp_path, 'complete', {'event_id':'event_fixture', 'channel':'wake', 'claim_token':row['claim_token'],
+        'deferred_state':token, 'superseded_input':True})
+    assert command(tmp_path, 'pending', {})['deliveries'] == []
+    assert json.loads(path.read_text())['request_id'] == 'original'
+    checkpoint(tmp_path, {'principal':'root_agent', 'authority':'kernel_write', 'checkpoint':{
+        'id':'checkpoint_resume', 'disposition':'continue_required', 'reason':'Resume authorized work', 'claim_ids':['claim_1']}})
+    retry = command(tmp_path, 'pending', {})['deliveries'][0]
+    assert retry['request_id'] != 'original'
+    assert retry['superseded_requests'] == ['original']
+    assert command(tmp_path, 'pending', {})['deliveries'][0] == retry

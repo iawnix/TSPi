@@ -6,7 +6,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from tspi_foundation.env import python_payload_sha256, spec_sha256
+from tspi_foundation.env import RUNTIME_PROBE_VERSION, python_payload_sha256, spec_sha256
 
 
 def write_test_suite_manifest(suite_root: Path, *, version: str = "0.10.0") -> Path:
@@ -59,15 +59,10 @@ def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
     for executable in (base_bin / "python", kernel_bin / "python", kernel_bin / "python3"):
         executable.chmod(0o755)
     module_root = base_prefix / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
-    numpy_origin = module_root / "numpy" / "__init__.py"
-    rdkit_origin = module_root / "rdkit" / "__init__.py"
-    matplotlib_origin = module_root / "matplotlib" / "__init__.py"
-    for origin in (numpy_origin, rdkit_origin, matplotlib_origin):
+    origins = {name: module_root / name / "__init__.py" for name in ("jsonschema", "packaging")}
+    for origin in origins.values():
         origin.parent.mkdir(parents=True, exist_ok=True)
         origin.write_text("# test runtime module marker\n", encoding="utf-8")
-    xyzrender = base_bin / "xyzrender"
-    xyzrender.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    xyzrender.chmod(0o755)
     environment_spec = package_root / "environment.yml"
     package = json.loads((package_root / "package.json").read_text(encoding="utf-8"))
     payload_sha256 = python_payload_sha256(package_root)
@@ -78,7 +73,7 @@ def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
         "schema_version": "agent-runtime/3",
         "package_root": str(package_root),
         "environment_spec": str(environment_spec),
-        "runtime_requirements": str(package_root / "requirements-runtime.txt"),
+        "environment_lock": str(package_root / "environment.lock.txt"),
         "spec_sha256": spec_sha256(package_root),
         "python_payload_sha256": payload_sha256,
         "env_prefix": str(base_prefix),
@@ -86,7 +81,7 @@ def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
         "kernel_env_prefix": str(kernel_prefix),
         "python_executable": str(kernel_bin / "python"),
         "runtime_probe": {
-            "schema_version": "ts-runtime-probe/3",
+            "schema_version": RUNTIME_PROBE_VERSION,
             "ok": True,
             "python": {"version": sys.version.split()[0], "executable": str(kernel_bin / "python")},
             "distribution": {
@@ -96,30 +91,8 @@ def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
                 "root": str(kernel_prefix),
                 "payload_sha256": payload_sha256,
             },
-            "modules": {
-                "numpy": {
-                    "version": "2.0.0-test",
-                    "origin": str(numpy_origin),
-                },
-                "rdkit": {
-                    "version": "2024.03.1-test",
-                    "origin": str(rdkit_origin),
-                },
-                "matplotlib": {
-                    "version": "3.9.0",
-                    "origin": str(matplotlib_origin),
-                },
-            },
-            "commands": {
-                "xyzrender": {"version": "0.2.1", "path": str(xyzrender)},
-            },
-            "capabilities": {
-                "rdkit_smiles_parse": True,
-                "rdkit_etkdg_embed": True,
-                "rdkit_uff_optimize": True,
-                "matplotlib_render": True,
-                "xyzrender_cli": True,
-            },
+            "modules": {name: {"version": "1.0-test", "origin": str(origin)} for name, origin in origins.items()},
+            "capabilities": {"json_schema_validation": True, "version_constraints": True},
         },
     }
     manifest_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")

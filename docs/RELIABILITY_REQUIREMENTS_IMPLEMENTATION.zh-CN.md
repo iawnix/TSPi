@@ -5,7 +5,7 @@
 ## 已落实的行为
 
 - **原始要求不随计划消失。** Host 从真实 Pi Submission/Entry 保存用户来源；单个或批量 Monitor 唤醒、State 接续、模型生成消息不算用户要求。普通输入不能占用内部请求 ID 前缀。首次来源记录失败会阻止推进，成功记录后缓存本次 Worker 已处理的 Submission。
-- **验收与科学结论分离。** `requirements` 保存来源原文、约束、输入、贡献 Node 与安装 profile。`review_source`、`create_requirement`、`bind_requirement`、`revise_requirement`、`assess_requirement`、`record_requirement_stop`、`resume_requirement` 为公开操作；`sources`、`profiles`、`requirements` 为读取模式。最低检查不能删减，方法和输入不能被无关回执替代，Gate 或 completion_exemption 不能免除要求。
+- **验收与科学结论分离。** `requirements` 保存来源原文、约束、输入、贡献 Node 与安装 profile。`review_source`、`create_requirement`、`bind_requirement`、`revise_requirement`、`assess_requirement`、`record_requirement_stop`、`resume_requirement` 为公开操作；`sources`、`profiles`、`requirements` 为读取模式。最低检查不能删减，方法和输入不能被无关回执替代，Gate 不能免除要求。
 - **当前证据决定当前验收。** 验证回执绑定输入 Artifact、producer 的当前 result receipt、方法、电子态、核数和内存；platform 约束由所有相关科学 producer 的实际环境核对。证据或范围变化使验收需重审。阶段 Node 可先完成，Claim 可在完成分析后仍无结论。
 - **历史交付不冻结研究。** 完成交付保存当时的 requirement 版本和 assessment。扩展范围或登记新证据可继续推进；旧交付事实保留，新的成功交付及终态仍检查当前要求。
 - **停止不等于成功。** 有来源的用户取消、匹配范围的执行失败或能力失败可停止；未履行要求保留。新增 Node/Attempt 或重试使旧停止失效。没有可信预算记录时，不支持凭 Agent 自报预算耗尽停止。旧工作区缺少 requirements 明确显示未跟踪，不能据此发送 study_completed。

@@ -42,6 +42,14 @@ OPERATION_SCHEMAS = {
     for name, schema in OPERATION_CONTRACT["operations"].items()
 }
 _OPERATION_VALIDATORS = {name: Draft7Validator(schema) for name, schema in OPERATION_SCHEMAS.items()}
+_CHECKPOINT_VALIDATOR = Draft7Validator(_resolve_schema(OPERATION_CONTRACT["$defs"]["checkpoint_request"]))
+
+
+def validate_checkpoint_request(value: dict[str, object]) -> None:
+    error = next(_CHECKPOINT_VALIDATOR.iter_errors(value), None)
+    if error is not None:
+        path = ".".join(str(part) for part in error.absolute_path)
+        raise ContractError(f"checkpoint_request.{path}: {error.message}")
 
 
 @dataclass(frozen=True)

@@ -1,19 +1,18 @@
 import { execFile } from "node:child_process";
-import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
-import { lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { createWorkspaceCatalog } from "./workspace-catalog.mjs";
+import { lstat, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { validate_workspace_files } from "../../packages/agent-core/workspace.mjs";
+import { validate_workspace_manifest } from "../../packages/agent-core/workspace.mjs";
 
 
 const executeFile = promisify(execFile);
 const packageRoot = resolve(process.env.TSPI_PACKAGE_ROOT || fileURLToPath(new URL("../..", import.meta.url)));
-const python = process.env.TSPI_PYTHON || process.env.TSPI_WORKSPACE_PYTHON || "python3";
+const python = process.env.TSPI_PYTHON || "python3";
 
 // Monitor only wakes the owning Agent; notification decisions belong to email Skill.
-export async function deliverMonitorEvent({ workspace, delivery, deliveries = [delivery], runJson, sendWake, recordTurn }) {
+export async function deliverMonitorEvent({ workspace, delivery, deliveries = [delivery], runJson, sendWake }) {
   const errors = [];
   const claims = [];
   try {
@@ -23,35 +22,30 @@ export async function deliverMonitorEvent({ workspace, delivery, deliveries = [d
     }
     if (!claims.length) return errors;
     let hostWorkspaceId;
-    let deferred = false;
-    for (const claim of claims) {
-      const { claimed } = claim;
+    for (const { claimed } of claims) {
       const event = await runJson("event", workspace, ["--event-id", claimed.event_id]);
       hostWorkspaceId = await monitorHostWorkspaceId(workspace, event);
       if (!claimed.session_id) throw new Error("monitor has no owning session; wake remains pending");
-      if (typeof recordTurn === "function") {
-        const turn = await recordTurn({ workspace, workspace_id: hostWorkspaceId, event, delivery: claimed });
-        if (turn?.protocol !== "research_turn_result" || turn.version !== 1 || turn.request_id !== claimed.request_id
-          || turn.status !== "completed" || turn.output?.operation !== "wake" || !turn.provenance) {
-          throw new Error("Research Turn wake boundary returned an invalid result");
-        }
-        if (turn.output.obsolete) claim.result = ["--delivered"];
-        else if (turn.output.admitted === false) {
-          if (!turn.output.state_token) throw new Error("deferred wake has no State token");
-          claim.result = ["--deferred-state", turn.output.state_token];
-          deferred = true;
-        }
-      }
     }
-    if (!deferred && claims.some(claim => !claim.result)) {
+    {
       const first = claims[0].claimed;
       const ids = first.batch_event_ids || claims.map(claim => claim.claimed.event_id);
-      // Send immutable identities; the worker reads events from disk and
-      // assesses them again inside the idle admission transaction.
+      // The Worker authenticates this producer and assesses immutable events
+      // before its short Pi admission transaction.
       const response = await sendWake({ workspace_id: hostWorkspaceId, session_id: first.session_id,
         request_id: first.request_id, client_message_id: first.request_id, source: "monitor", mode: "next_run",
-        text: ["A compute monitor event requires attention.", ...ids.map(id => `event_id=${id}`)].join("\n") });
-      if (["busy", "monitor_deferred"].includes(response?.error?.code)) return errors;
+        event_ids: ids });
+      if (response?.error?.code === "monitor_deferred") {
+        for (const claim of claims) {
+          const assessment = response.assessments?.find(event => event.event_id === claim.claimed.event_id);
+          if (!assessment?.state_token) throw new Error("deferred wake has no State assessment");
+          claim.result = assessment.obsolete ? ["--delivered"] : [
+            ...(assessment.admitted && response.superseded ? [] : ["--deferred-state", assessment.state_token]),
+            ...(response.superseded ? ["--superseded-input"] : [])];
+        }
+        return errors;
+      }
+      if (response?.error?.code === "busy" || response?.pending === true) return errors;
       if (response?.accepted !== true || response?.state === "uncertain") {
         throw new Error(response?.error?.message || "Host returned an uncertain monitor wake");
       }
@@ -76,7 +70,7 @@ export async function monitorHostWorkspaceId(workspace, event) {
     || !identityStat?.isFile() || identityStat.isSymbolicLink()) throw new Error("monitor workspace must be a physical initialized directory");
   const identity = JSON.parse(await readFile(manifestPath, "utf8"));
   try {
-    await validate_workspace_files(identity, root);
+    validate_workspace_manifest(identity, root);
   } catch (error) {
     throw new Error("monitor workspace identity is invalid", { cause: error });
   }
@@ -98,12 +92,16 @@ export function wakeMessage(event) {
 
 export async function runMonitorWorker(options, signal) {
   const { connectHost } = await import("./tspi-host-client.mjs");
+  const token = process.env.TSPI_INTERNAL_MONITOR_TOKEN;
+  delete process.env.TSPI_INTERNAL_MONITOR_TOKEN;
+  if (!token) throw new Error("Monitor must be started by the installation Host");
   let client;
+  const catalog = createWorkspaceCatalog(options.workspaceRoot, { python });
   let lastSuccessfulPoll = null;
   const sendWake = async (params) => {
     try {
       client ??= await connectHost({ socketPath: options.hostSocket });
-      return await client.request("input/send", params);
+      return await client.request("internal/monitor-wake", { ...params, token });
     } catch (error) { client?.close(); client = undefined; throw error; }
   };
   const runJson = (command, workspace, extra) => runMonitorJson(command, workspace, extra, signal);
@@ -111,7 +109,7 @@ export async function runMonitorWorker(options, signal) {
     do {
       const errors = [];
       let pollFailed = false;
-      for (const workspace of discoverWorkspaces(options.workspaceRoot)) {
+      for (const { source_root: workspace } of await catalog.list()) {
         if (signal.aborted) break;
         try {
           const tick = await runJson("tick", workspace);
@@ -127,8 +125,7 @@ export async function runMonitorWorker(options, signal) {
           }
           for (const deliveries of batches.values()) {
             if (signal.aborted) break;
-            deliveryErrors.push(...await deliverMonitorEvent({ workspace, deliveries, runJson, sendWake,
-              recordTurn: recordMonitorTurn }));
+            deliveryErrors.push(...await deliverMonitorEvent({ workspace, deliveries, runJson, sendWake }));
           }
           await runJson("health", workspace, deliveryErrors.length ? ["--error", deliveryErrors.join("; ")] : []);
           errors.push(...deliveryErrors);
@@ -144,52 +141,7 @@ export async function runMonitorWorker(options, signal) {
       if (options.once || signal.aborted) break;
       await delay(options.intervalMs, signal);
     } while (!signal.aborted);
-  } finally { client?.close(); }
-}
-
-/**
- * Record the Monitor -> Agent wake at the canonical Harness boundary before
- * submitting an idle-only wake to the owning worker. A failed boundary keeps the
- * durable delivery pending so the wake cannot be acknowledged without an
- * auditable lifecycle event.
- */
-export async function recordMonitorTurn({ workspace, workspace_id, event, delivery, execute = executeFile } = {}) {
-  if (!workspace || !workspace_id || !event || !delivery?.session_id) throw new TypeError("monitor turn requires workspace, workspace identity, event, and session binding");
-  const request = {
-    protocol: "research_turn_request",
-    version: 1,
-    workspace_id,
-    request_id: delivery.request_id,
-    operation: "wake",
-    input: {
-      trigger: "monitor.wake",
-      event_id: event.event_id,
-      monitor_id: event.monitor_id,
-      job_id: event.job_id,
-      attempt_id: event.attempt_id,
-    },
-    context: { session_id: delivery.session_id },
-  };
-  const directory = await mkdtemp(join(tmpdir(), "tspi-monitor-turn-"));
-  try {
-    const request_file = join(directory, "request.json");
-    await writeFile(request_file, `${JSON.stringify(request)}\n`, { encoding: "utf8", mode: 0o600 });
-    let completed;
-    try {
-      completed = await execute(python, [join(packageRoot, "apps", "agent-cli", "research_api.py"), "research.turn", "--root", workspace, "--request-file", request_file], {
-        cwd: workspace,
-        env: { ...process.env, PYTHONNOUSERSITE: "1" },
-        maxBuffer: 8 * 1024 * 1024,
-      });
-    } catch (error) {
-      throw new Error(monitorCommandError(error), { cause: error });
-    }
-    const result = JSON.parse(String(completed.stdout || "").trim());
-    if (!result || typeof result !== "object" || Array.isArray(result)) throw new Error("Research Turn wake returned invalid JSON");
-    return result;
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
+  } finally { client?.close(); await catalog.close(); }
 }
 
 async function writeHealth(stateRoot, value) {
@@ -200,24 +152,6 @@ async function writeHealth(stateRoot, value) {
   await rename(temporary, join(stateRoot, "monitor-health.json"));
 }
 
-function discoverWorkspaces(root) {
-  const candidate = resolve(root);
-  if (isWorkspace(candidate)) return [candidate];
-  let children;
-  try { children = readdirSync(candidate, { withFileTypes: true }); } catch { return []; }
-  return children.filter((entry) => entry.isDirectory() && isWorkspace(join(candidate, entry.name))).map((entry) => join(candidate, entry.name));
-}
-function isWorkspace(path) {
-  try {
-    const stat = lstatSync(path);
-    if (!stat.isDirectory() || stat.isSymbolicLink()) return false;
-    const manifestPath = join(path, "workspace_manifest.json");
-    if (!existsSync(manifestPath)) return false;
-    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-    return manifest?.schema_version === "research_state_workspace_2" && manifest.workspace_mode === "research";
-  }
-  catch { return false; }
-}
 async function runMonitorJson(command, workspace, extra = [], signal) {
   const completed = await executeFile(python, [join(packageRoot, "apps", "agent-cli", "monitor.py"), command, "--root", workspace, ...extra], {
     cwd: workspace, env: { ...process.env, PYTHONNOUSERSITE: "1" }, maxBuffer: 8 * 1024 * 1024, timeout: 60_000, signal });

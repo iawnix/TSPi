@@ -6,7 +6,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { loadServerExtensions } from "../../../apps/app-server/server-extension-loader.mjs";
-import { filterWorkspaceTools } from "../../../apps/app-server/workspace-mode-tools.mjs";
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "tspi-server-ext-"));
@@ -112,7 +111,7 @@ test("default package server manifest keeps the core tool inventory", async () =
     "artifact_derive",
     "artifact_link",
   ]);
-  const researchNames = filterWorkspaceTools(loaded.tools, "research").map((tool) => tool.name);
+  const researchNames = loaded.tools.map((tool) => tool.name);
   assert.ok(!researchNames.includes("light_compute"));
   assert.ok(researchNames.includes("job_start"));
 });

@@ -27,6 +27,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.test.manifest import suite_paths
+from tools.test import environment as test_environment
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -95,9 +96,8 @@ def _resolve_python(package_root: Path, explicit: str | None, env_root: Path | N
     if explicit:
         candidates.append(Path(explicit).expanduser().resolve())
     else:
-        runtime = load_runtime_environment(package_root)
         if env_root is not None:
-            candidates.append(runtime.env_python(runtime.default_env_prefix(package_root, env_root)))
+            candidates.extend([env_root / "bin/python", test_environment.default_prefix(package_root, env_root) / "bin/python"])
         candidates.append(Path(sys.executable).resolve())
 
     checked: set[Path] = set()
@@ -105,22 +105,12 @@ def _resolve_python(package_root: Path, explicit: str | None, env_root: Path | N
         if candidate in checked or not candidate.is_file() or not os.access(candidate, os.X_OK):
             continue
         checked.add(candidate)
-        probe = subprocess.run(
-            [
-                str(candidate),
-                "-c",
-                "import ase,jsonschema,numpy,pytest,rdkit,scipy; from PIL import Image",
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        if probe.returncode == 0:
+        if test_environment.probe(candidate):
             return candidate
-    detail = str(candidates[0]) if explicit else "the current Python or existing managed base"
+    detail = str(candidates[0]) if explicit else "the current Python or managed test environment"
     raise SystemExit(
-        f"fast source tests require pytest in {detail}; "
-        "prepare the project runtime with scripts/install_env.py or pass --python"
+        f"source-test dependencies are missing in {detail}; "
+        "run tools/bootstrap_dev.py --install or pass --python"
     )
 
 

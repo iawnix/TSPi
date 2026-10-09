@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-TSPi 提供一个领域无关的 Research Harness；当前随附的 17 个 Skill 组成计算化学能力包。`orchestration` 和 `research-state` 是两个核心系统 Skill：它们的摘要始终注入 system prompt，完整参考资料按需提供给 Agent。绑定 Provider 的 Skill 与 Provider 一起位于 `extensions/`。
+TSPi 提供一个领域无关的 Research Harness；当前随附的领域 Skill 组成计算化学能力包。`orchestration` 和 `research-state` 是两个核心系统 Skill：它们的摘要始终注入 system prompt，完整参考资料按需提供给 Agent。领域与交付 Skill 位于各自的扩展目录中。
 Research State Skill 管理规范 ResearchMap 合同；编排 Skill 选择下一项有边界的任务；
 科学与交付 Skill 各自处理一种方法或输出问题，不再重复定义状态。
 
@@ -31,3 +31,5 @@ Skill 仍保持清楚边界：候选生成产生结构，TS 验证建立鞍点�
 每个 Skill 都有内容对应的英文和中文入口，每份详细参考文档也同时维护英文与简体中文
 版本；两种语言的入口只链接同语言参考文档。常用术语见
 [术语表](skills/research-state/references/glossary.zh-CN.md)。
+
+核心与领域 Skill 共用扩展清单校验。核心入口、双语参考资料及执行脚本都固定摘要；配置包外领域扩展不会绕过核心校验。

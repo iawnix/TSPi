@@ -346,7 +346,7 @@ def main(argv: list[str] | None = None) -> int:
         except ImportError:
             from install_wizard import _validate_job_config
         job_source = _regular_file(config / "job.toml", "job.toml")
-        _validate_job_config(tomllib.loads(job_source.read_text()), probe_local=True)
+        _validate_job_config(tomllib.loads(job_source.read_text()))
         if _relay_requested(args):
             if args.phone_access == "disabled":
                 raise ValueError("--with-link-relay requires --phone-access link or auto")

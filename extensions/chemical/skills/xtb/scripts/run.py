@@ -24,7 +24,7 @@ def main():
     a = parse_arguments()
     out = None
     try:
-        if a.spin < 0: raise ValueError('spin must be nonnegative')
+        if a.multiplicity < 1: raise ValueError('multiplicity must be positive')
         out, atoms, result = prepare(a, 'GFN2-xTB')
         executable = shutil.which(a.executable)
         if not executable: raise ValueError('configured xTB executable unavailable after activation')
@@ -32,7 +32,7 @@ def main():
         for task in (['opt','sp'] if a.task == 'opt-sp' else [a.task]):
             step = out / task; step.mkdir()
             shutil.copyfile(geometry, step / 'input.xyz')
-            command = [executable, 'input.xyz', '--gfn', '2', '--chrg', str(a.charge), '--uhf', str(a.spin)]
+            command = [executable, 'input.xyz', '--gfn', '2', '--chrg', str(a.charge), '--uhf', str(a.multiplicity - 1)]
             command += ['--opt', a.opt_level] if task == 'opt' else ['--sp']
             write_json(step / 'command.json', command)
             with (step/'xtb.out').open('w') as log:

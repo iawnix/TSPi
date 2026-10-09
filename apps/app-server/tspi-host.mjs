@@ -2,27 +2,25 @@
 import { createServer, createConnection } from "node:net";
 import { existsSync } from "node:fs";
 import { chmod, lstat, mkdir, readFile, readdir, realpath, rename, unlink, writeFile } from "node:fs/promises";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { createRpcPeer, HOST_PROTOCOL, protocolError } from "./tspi-host-client.mjs";
-import { create_workspace_initializer, validate_workspace_files } from "../../packages/agent-core/workspace.mjs";
+import { createRpcPeer, HOST_PROTOCOL, MAX_FRAME_BYTES, protocolError } from "./tspi-host-client.mjs";
+import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
+import { createWorkspaceCatalog } from "./workspace-catalog.mjs";
 import { is_workspace_id } from "../../packages/agent-core/workspace_id.mjs";
 
 const executeFile = promisify(execFile);
-  // The manifest identity is authoritative. A workspace is normally created
-  // under a directory with the same name, but routing must also work when a
-  // caller chooses a different physical directory name.
-const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u;
 const MONITOR_ID = /^monitor_[a-f0-9]{24}$/u;
 const MONITOR_EVENT_ID = /^event_[a-f0-9]{32}$/u;
 const SESSION_EVENT_HISTORY_LIMIT = 256;
+const SESSION_EVENT_HISTORY_BYTES = MAX_FRAME_BYTES / 4;
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const BASE_CAPABILITIES = ["workspace.list", "workspace.create", "workspace.attach", "session.list", "session.read", "session.create", "session.resume", "session.attach", "session.detach", "session.remove", "input.send", "input.status", "turn.interrupt", "models.list", "model.select"];
-const MONITOR_CAPABILITIES = ["monitor.list", "monitor.status", "monitor.enable", "monitor.disable"];
+const BASE_CAPABILITIES = ["workspace/list", "workspace/create", "workspace/attach", "session/list", "session/read", "session/create", "session/resume", "session/attach", "session/detach", "session/remove", "input/send", "input/status", "turn/interrupt", "models/list", "model/select"];
+const MONITOR_CAPABILITIES = ["monitor/list", "monitor/status", "monitor/enable", "monitor/disable"];
 
 /** Owns routing and durable acceptance records for the Native Pi Harness. */
 export async function startTspiHost(options) {
@@ -30,12 +28,13 @@ export async function startTspiHost(options) {
     socketPath,
     workspaceRoot,
     stateRoot,
-    sessionBackend = null,
+    sessionBackend,
     serverId = "local",
     python = process.env.TSPI_PYTHON || "python3",
     packageRoot = PACKAGE_ROOT,
     releaseId = deriveReleaseId(packageRoot),
     monitorPollMs = 2_000,
+    monitorToken,
   } = options;
   if (!sessionBackend) throw protocolError("native_backend_required", "TSPi Host requires the Native Pi Harness backend");
   for (const [name, value] of Object.entries({ socketPath, workspaceRoot, stateRoot })) {
@@ -79,75 +78,18 @@ export async function startTspiHost(options) {
   let polling = false;
   const keyFor = (workspaceId, sessionId) => `${workspaceId}/${sessionId}`;
 
-  async function readWorkspaceManifestAt(path, { requireReady = true } = {}) {
-    try {
-      const info = await lstat(path);
-      if (!info.isDirectory() || info.isSymbolicLink() || await realpath(path) !== path) return null;
-      const manifestPath = join(path, "workspace_manifest.json");
-      const manifestInfo = await lstat(manifestPath);
-      if (!manifestInfo.isFile() || manifestInfo.isSymbolicLink() || await realpath(manifestPath) !== manifestPath) return null;
-      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-      if (requireReady && manifest.state !== "ready") return null;
-      await validate_workspace_files(manifest, path);
-      return manifest;
-    } catch {
-      return null;
-    }
+  const workspaceCatalog = options.workspaceCatalog || sessionBackend.workspaceCatalog || createWorkspaceCatalog(physicalRoot, { python });
+  const ownsCatalog = !options.workspaceCatalog && !sessionBackend.workspaceCatalog;
+  async function workspace(workspaceId, { allowMissing = false, attach = false } = {}) {
+    return (await workspaceCatalog.resolve(workspaceId, { allow_missing: allowMissing, attach })).source_root;
   }
-
-  async function workspace(workspaceId, { allowMissing = false } = {}) {
-    if (typeof workspaceId !== "string" || !WORKSPACE_ID.test(workspaceId)) throw protocolError("invalid_workspace", "workspace_id is invalid");
-    const direct = join(physicalRoot, workspaceId);
-    const candidates = [];
-    try {
-      const info = await lstat(direct);
-      if (info.isDirectory() && !info.isSymbolicLink() && await realpath(direct) === direct) candidates.push(direct);
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-    }
-    for (const entry of await readdir(physicalRoot, { withFileTypes: true })) {
-      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
-      const candidate = join(physicalRoot, entry.name);
-      if (!candidates.includes(candidate)) candidates.push(candidate);
-    }
-    const matches = [];
-    for (const candidate of candidates) {
-      const manifest = await readWorkspaceManifestAt(candidate);
-      if (manifest?.workspace_id === workspaceId) matches.push(candidate);
-    }
-    if (matches.length > 1) {
-      throw protocolError("invalid_workspace", `Workspace identity is duplicated: ${workspaceId}`);
-    }
-    if (matches.length === 1) return matches[0];
-    if (allowMissing) {
-      if (candidates.includes(direct)) {
-        throw protocolError("invalid_workspace", `Workspace directory already exists with another identity: ${workspaceId}`);
-      }
-      return direct;
-    }
-    throw protocolError("workspace_not_found", `Workspace does not exist: ${workspaceId}`);
-  }
-
   async function listWorkspaces() {
-    const result = [];
-    const identities = new Set();
-    for (const entry of await readdir(physicalRoot, { withFileTypes: true })) {
-      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
-      const root = join(physicalRoot, entry.name);
-      const manifest = await readWorkspaceManifestAt(root);
-      if (!manifest) continue;
-      if (identities.has(manifest.workspace_id)) {
-        throw protocolError("invalid_workspace", `Workspace identity is duplicated: ${manifest.workspace_id}`);
-      }
-      identities.add(manifest.workspace_id);
-      result.push({ workspace_id: manifest.workspace_id, name: manifest.workspace_id, root });
-    }
-    return result.sort((a, b) => a.workspace_id.localeCompare(b.workspace_id));
+    return (await workspaceCatalog.list()).map(row => ({ workspace_id: row.workspace_id, name: row.label, root: row.source_root }));
   }
 
   function liveSummary(record) {
     const { client: _client, ...session } = record.session || {};
-    return { ...session, online: true, read_only: false, is_streaming: record.snapshot.is_streaming === true, turn_id: record.snapshot.turn_id ?? null, model: record.snapshot.model ?? null, updated_at: record.updatedAt };
+    return { ...session, online: true, is_streaming: record.snapshot.is_streaming === true, turn_id: record.snapshot.turn_id ?? null, model: record.snapshot.model ?? null, updated_at: record.updatedAt };
   }
 
   async function listSessions(workspaceId) {
@@ -162,24 +104,28 @@ export async function startTspiHost(options) {
     record.sequence += 1;
     sessionSequences.set(keyFor(record.session.workspace_id, record.session.session_id), record.sequence);
     record.updatedAt = new Date().toISOString();
-    const params = { workspace_id: record.session.workspace_id, session_id: record.session.session_id, epoch, sequence: record.sequence, type, snapshot: { ...record.snapshot, online: true, can_prompt: true, read_only: false }, session: liveSummary(record), event };
+    const params = { workspace_id: record.session.workspace_id, session_id: record.session.session_id, cursor: { epoch, sequence: record.sequence }, type, snapshot: { ...record.snapshot, online: true, can_prompt: true }, session: liveSummary(record), event };
     record.history ??= [];
-    record.history.push(Object.freeze({
-      epoch: params.epoch,
-      sequence: params.sequence,
+    const item = Object.freeze({
+      cursor: params.cursor,
       type: params.type,
       snapshot: params.snapshot,
       session: params.session,
       event: params.event,
-    }));
-    while (record.history.length > SESSION_EVENT_HISTORY_LIMIT) record.history.shift();
+    });
+    const bytes = Buffer.byteLength(JSON.stringify(item));
+    record.history.push({ item, bytes });
+    record.historyBytes = (record.historyBytes || 0) + bytes;
+    while (record.history.length > SESSION_EVENT_HISTORY_LIMIT || record.historyBytes > SESSION_EVENT_HISTORY_BYTES) {
+      record.historyBytes -= record.history.shift().bytes;
+    }
     for (const client of clients) if (client.subscriptions.has(keyFor(params.workspace_id, params.session_id))) {
       try { client.peer.notify("session/event", params); } catch { client.peer.close(); }
     }
   }
 
   function acceptBackendEvent(value) {
-    if (!sessionBackend || !value || typeof value !== "object") return;
+    if (!value || typeof value !== "object") return;
     const workspaceId = value.workspace_id;
     const sessionId = value.session_id;
     if (typeof workspaceId !== "string" || typeof sessionId !== "string") return;
@@ -192,20 +138,20 @@ export async function startTspiHost(options) {
         updatedAt: new Date().toISOString(),
         history: [],
         snapshot: sanitizeSnapshot(value.snapshot),
-        session: { ...(value.session || {}), workspace_id: workspaceId, session_id: sessionId, online: true, read_only: false },
+        session: { ...(value.session || {}), workspace_id: workspaceId, session_id: sessionId, online: true },
       };
       live.set(key, record);
     } else {
       record.snapshot = sanitizeSnapshot(value.snapshot);
-      record.session = { ...record.session, ...(value.session || {}), workspace_id: workspaceId, session_id: sessionId, online: true, read_only: false };
+      record.session = { ...record.session, ...(value.session || {}), workspace_id: workspaceId, session_id: sessionId, online: true };
     }
     emitSession(record, value.event ?? null, value.event === null ? "snapshot" : "event");
   }
 
-  sessionBackend?.setEventHandler?.(acceptBackendEvent);
+  sessionBackend.setEventHandler(acceptBackendEvent);
 
-  async function deduplicate(scope, id, payload, perform, { reconcileUncertain = false } = {}) {
-    validateId(id, scope === "input" ? "client_message_id" : "request_id");
+  async function deduplicate(scope, id, payload, perform) {
+    validateId(id, "request_id");
     const digest = hash(stableJson(payload));
     const recordKey = hash(`${scope}:${id}:${payload.workspace_id ?? ""}:${payload.session_id ?? ""}`);
     const existing = inFlight.get(recordKey);
@@ -218,36 +164,19 @@ export async function startTspiHost(options) {
       let previous;
       try { previous = JSON.parse(await readFile(path, "utf8")); } catch (error) { if (error.code !== "ENOENT") throw error; }
       if (previous && previous.digest !== digest) throw protocolError("request_id_reused", "An idempotency key was reused with different parameters");
-      if (previous?.state === "completed") {
-        // Harness input receipts may be durably marked uncertain when the
-        // admission RPC was interrupted after Pi committed an operation. A
-        // retry with the same business id must be allowed to ask the backend
-        // for reconciliation; treating that result as a completed RPC would
-        // otherwise pin the caller to the stale uncertainty forever.
-        if (!(reconcileUncertain && (previous.result?.state === "uncertain" || previous.result?.retryable === true))) {
-          return { ...previous.result, duplicate: true };
-        }
-      }
-      if (previous?.state === "uncertain" && !reconcileUncertain) {
-        return { ...previous.result, duplicate: true };
-      }
-      // Pending input can be reconciled by the Harness backend using the same business ID.
-      // Other mutations return uncertainty after a Host crash instead of repeating side effects.
-      if (previous?.state === "pending" && !scope.startsWith("input")) throw protocolError("request_uncertain", "Host stopped while applying this request; inspect current state before retrying");
+      if (["completed", "uncertain"].includes(previous?.state)) return { ...previous.result, duplicate: true };
+      // Input never enters this store. Other Host mutations retain uncertainty
+      // after a crash instead of silently repeating a side effect.
+      if (previous?.state === "pending") throw protocolError("request_uncertain", "Host stopped while applying this request; inspect current state before retrying");
       await writeAtomic(path, { digest, state: "pending", created_at: previous?.created_at || new Date().toISOString() });
       try {
         const result = await perform();
-        const state = reconcileUncertain && result?.state === "uncertain"
-          ? "uncertain"
-          : result?.retryable === true
-            ? "retryable"
-            : "completed";
+        const state = result?.retryable === true ? "retryable" : "completed";
         await writeAtomic(path, { digest, state, result });
         return result;
       } catch (error) {
-        // Explicit failures before admission are safe to retry. Unknown connection
-        // outcomes retain pending state and are reconciled by input business ID.
-        if (!scope.startsWith("input") && !["connection_closed", "request_timeout", "session_start_timeout"].includes(error.code)) await unlink(path).catch(() => {});
+        // Preserve unknown transport outcomes for explicit reconciliation.
+        if (!["connection_closed", "request_timeout", "session_start_timeout"].includes(error.code)) await unlink(path).catch(() => {});
         throw error;
       }
     })();
@@ -283,7 +212,7 @@ export async function startTspiHost(options) {
   async function handle(client, method, params) {
     if (!params || typeof params !== "object" || Array.isArray(params)) throw protocolError("invalid_params", "params must be an object");
     if (method === "initialize") {
-      if (params.protocol !== undefined && params.protocol !== HOST_PROTOCOL) throw protocolError("protocol_mismatch", "Unsupported TSPi Host protocol");
+      if (params.protocol !== HOST_PROTOCOL) throw protocolError("protocol_mismatch", "Unsupported TSPi Host protocol");
       client.initialized = true;
       return {
         protocol: HOST_PROTOCOL,
@@ -294,16 +223,10 @@ export async function startTspiHost(options) {
       };
     }
     if (!client.initialized) throw protocolError("not_initialized", "Send initialize before session requests");
-    if (method === "bridge/hello") {
-      throw protocolError("bridge_not_used", "Legacy Pi bridge is removed; connect through the Native Pi Harness protocol");
-    }
-    if (method === "bridge/event") {
-      throw protocolError("bridge_not_used", "Legacy Pi bridge is removed; connect through the Native Pi Harness protocol");
-    }
     if (method === "workspace/list") return { workspaces: await listWorkspaces() };
     if (method === "workspace/attach") {
-      const root = await workspace(params.workspace_id);
-      const manifest = await readWorkspaceManifestAt(root);
+      const root = await workspace(params.workspace_id, { attach: true });
+      const manifest = JSON.parse(await readFile(join(root, "workspace_manifest.json"), "utf8"));
       if (!manifest) throw protocolError("workspace_not_found", `Workspace does not exist: ${params.workspace_id}`);
       return { workspace: { workspace_id: manifest.workspace_id, name: manifest.workspace_id, root, workspace_mode: manifest.workspace_mode, state: manifest.state } };
     }
@@ -316,63 +239,71 @@ export async function startTspiHost(options) {
           workspace_mode: "research",
         });
         const manifest = await workspaceInitializer.admit_workspace(root);
+        await workspaceCatalog.register([root]);
         return { workspace: { workspace_id: manifest.workspace_id, name: manifest.workspace_id, root, workspace_mode: manifest.workspace_mode, state: manifest.state } };
       });
     }
     if (method === "session/list") return { sessions: (await listSessions(params.workspace_id)).map((session) => stripSessionClient(session)) };
     if (method === "session/read" || method === "session/attach") {
       const requestedCursor = parseSessionCursor(params, epoch);
-      const sameEpoch = requestedCursor.epoch === undefined || requestedCursor.epoch === epoch;
+      const sameEpoch = requestedCursor?.epoch === epoch;
       const afterSequence = sameEpoch ? requestedCursor.sequence : 0;
-      const result = sessionBackend && method === "session/attach"
-        ? await sessionBackend.attach(params.workspace_id, params.session_id, { afterSequence, replay: sameEpoch })
-        : await readSession(params.workspace_id, params.session_id);
+      const result = await readSession(params.workspace_id, params.session_id);
       if (method === "session/attach") client.subscriptions.add(keyFor(params.workspace_id, params.session_id));
       const liveRecord = live.get(keyFor(params.workspace_id, params.session_id));
-      const replay = liveRecord
-        ? (sameEpoch ? (liveRecord.history || []).filter((item) => item.sequence > afterSequence) : [])
-        : (sameEpoch && Array.isArray(result?.events) ? result.events : []);
-      const { events: _backendEvents, ...withoutBackendEvents } = result || {};
-      const cursorSequence = liveRecord?.sequence ?? result?.cursor?.sequence ?? result?.sequence ?? 0;
-      const normalizedEvents = replay.map((event) => ({ ...event, epoch }));
-      return sanitizeClientResult({
-        ...withoutBackendEvents,
-        ...(method === "session/attach" ? { events: normalizedEvents } : {}),
+      const replay = sameEpoch ? (liveRecord?.history || []).map(row => row.item).filter(item => item.cursor.sequence > afterSequence) : [];
+      const cursorSequence = liveRecord?.sequence ?? 0;
+      const response = sanitizeClientResult({
+        ...result,
+        ...(method === "session/attach" ? { events: replay } : {}),
         cursor: { epoch, sequence: cursorSequence },
       }, params.presentation === "terminal");
+      // The current snapshot is sufficient when a replay would exceed one frame.
+      if (response.events?.length && Buffer.byteLength(JSON.stringify(response)) > MAX_FRAME_BYTES - 1024) response.events = [];
+      return response;
     }
     if (method === "session/detach") {
       client.subscriptions.delete(keyFor(params.workspace_id, params.session_id));
       return { accepted: true };
     }
     if (method === "session/create" || method === "session/resume") {
+      validateModel(params, false);
       await workspace(params.workspace_id);
       return deduplicate(method, params.request_id, cleanRequest(params), async () => {
         const result = method === "session/create"
-          ? await sessionBackend.createSession({ workspace_id: params.workspace_id, session_id: params.session_id, provider: params.provider, model: params.model })
-          : await sessionBackend.resumeSession({ workspace_id: params.workspace_id, session_id: params.session_id, provider: params.provider, model: params.model });
+          ? await sessionBackend.createSession({ workspace_id: params.workspace_id, session_id: params.session_id, model: params.model })
+          : await sessionBackend.resumeSession({ workspace_id: params.workspace_id, session_id: params.session_id, model: params.model });
         acceptBackendEvent({ workspace_id: params.workspace_id, session_id: result.session.session_id, snapshot: result.snapshot, session: result.session, event: null });
-        return sanitizeClientResult(result, params.presentation === "terminal");
+        return sanitizeClientResult({ ...result, cursor: { epoch, sequence: live.get(keyFor(params.workspace_id, result.session.session_id)).sequence } }, params.presentation === "terminal");
       });
     }
     if (method === "session/remove") {
       await workspace(params.workspace_id);
       return deduplicate(method, params.request_id, cleanRequest(params), () => sessionBackend.removeSession(params.workspace_id, params.session_id));
     }
-    if (method === "session/import") {
-      throw protocolError("method_not_found", "session/import was removed; Native Pi Harness sessions are created or resumed directly");
-    }
-    if (method === "input/send") {
+    if (method === "input/send" || method === "internal/monitor-wake") {
+      const internal = method === "internal/monitor-wake";
+      if (internal) {
+        const expected = Buffer.from(monitorToken || "");
+        const actual = Buffer.from(typeof params.token === "string" ? params.token : "");
+        if (!expected.length || actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+          throw protocolError("internal_producer_required", "Monitor admission requires the supervised producer identity");
+        }
+      } else if (params.source !== undefined && !["phone", "terminal", "user"].includes(params.source)) {
+        throw protocolError("invalid_input_source", "External clients cannot declare an internal producer");
+      }
       await workspace(params.workspace_id);
       validateId(params.request_id, "request_id");
       validateId(params.client_message_id, "client_message_id");
-      if (typeof params.text !== "string" || params.text.length === 0 || params.text.length > 1_000_000) throw protocolError("invalid_input", "Input must contain text within the size limit");
+      if (!internal && (typeof params.text !== "string" || params.text.length === 0 || params.text.length > 1_000_000)) throw protocolError("invalid_input", "Input must contain text within the size limit");
+      if (internal && (!Array.isArray(params.event_ids) || !params.event_ids.length || params.event_ids.length > 256
+        || params.event_ids.some(id => typeof id !== "string" || !MONITOR_EVENT_ID.test(id)))) {
+        throw protocolError("invalid_monitor_events", "Monitor requires structured event_ids");
+      }
       if (params.mode !== undefined && !["auto", "follow_up", "steer", "next_run"].includes(params.mode)) throw protocolError("invalid_input", "Unsupported input mode");
-      const payload = { workspace_id: params.workspace_id, session_id: params.session_id, client_message_id: params.client_message_id, text: params.text, mode: params.mode || "auto", source: params.source || "phone" };
-      const reconcileUncertain = true;
-      const result = await deduplicate("input-request", params.request_id, payload, () => deduplicate("input", params.client_message_id, payload, () => sessionBackend.sendInput(payload), { reconcileUncertain }), { reconcileUncertain });
-      const currentReceipt = live.get(keyFor(params.workspace_id, params.session_id))?.snapshot.receipts?.find((receipt) => receipt.client_message_id === params.client_message_id);
-      return currentReceipt?.state === "uncertain" ? { ...result, accepted: false, state: "uncertain" } : result;
+      const payload = { workspace_id: params.workspace_id, session_id: params.session_id, client_message_id: params.client_message_id,
+        ...(internal ? { event_ids: params.event_ids } : { text: params.text }), mode: params.mode || "auto", source: internal ? "monitor" : "user" };
+      return sessionBackend.sendInput(payload);
     }
     if (method === "input/status") {
       await workspace(params.workspace_id);
@@ -381,7 +312,9 @@ export async function startTspiHost(options) {
       return sessionBackend.inputStatus(params);
     }
     if (method === "turn/interrupt" || method === "model/select") {
+      if (method === "model/select") validateModel(params, true);
       await workspace(params.workspace_id);
+      if (method === "turn/interrupt") validateId(params.turn_id, "turn_id");
       return deduplicate(method, params.request_id, cleanRequest(params), async () => {
         if (method === "turn/interrupt") return sessionBackend.interrupt(params);
         return sessionBackend.selectModel(params);
@@ -420,7 +353,7 @@ export async function startTspiHost(options) {
     for (const client of clients) client.peer.close();
     await new Promise((resolve) => server.close(resolve)).catch(() => {});
     await unlinkOwnedSocket(socketPath, socketIdentity).catch(() => {});
-    try { await sessionBackend?.close?.(); } catch { /* cleanup is best effort */ }
+    try { await sessionBackend.close(); } catch { /* cleanup is best effort */ }
     throw cause;
   }
 
@@ -495,7 +428,8 @@ export async function startTspiHost(options) {
     for (const client of clients) client.peer.close();
     await new Promise((resolve) => server.close(resolve)).catch(() => {});
     await unlinkOwnedSocket(socketPath, socketIdentity).catch(() => {});
-    try { await sessionBackend?.close?.(); } catch { /* cleanup is best effort */ }
+    try { await sessionBackend.close(); } catch { /* cleanup is best effort */ }
+    if (ownsCatalog) await workspaceCatalog.close();
     throw cause;
   }
   let closePromise;
@@ -515,7 +449,7 @@ export async function startTspiHost(options) {
           await unlinkOwnedSocket(socketPath, socketIdentity);
         } finally {
           // Always release Pi bindings/runtime even if socket cleanup failed.
-          await sessionBackend?.close?.();
+          try { await sessionBackend.close(); } finally { if (ownsCatalog) await workspaceCatalog.close(); }
         }
       })();
       return closePromise;
@@ -530,12 +464,7 @@ function deriveReleaseId(packageRoot) {
   if (typeof packageRoot !== "string" || packageRoot.length === 0) return null;
   const root = resolve(packageRoot);
   const release = dirname(root);
-  // Standalone ResearchAgent releases point directly at
-  // ``.../releases/<id>``; the historical suite points at
-  // ``.../releases/<id>/agent``. Accept both layouts while requiring the
-  // literal releases directory as the trust boundary.
-  if (basename(release) === "releases") return basename(root);
-  return basename(dirname(release)) === "releases" ? basename(release) : null;
+  return basename(root) === "agent" && basename(dirname(release)) === "releases" ? basename(release) : null;
 }
 
 function sanitizeSnapshot(snapshot) {
@@ -558,23 +487,28 @@ function sanitizeClientResult(result, includeClient) {
 }
 
 function parseSessionCursor(params, currentEpoch) {
+  if (Object.hasOwn(params, "after_sequence") || Object.hasOwn(params, "after_epoch")) {
+    throw protocolError("invalid_cursor", "Use after_cursor: { epoch, sequence }");
+  }
   const cursor = params.after_cursor;
-  if (cursor !== undefined) {
-    if (!cursor || typeof cursor !== "object" || Array.isArray(cursor)
-      || (cursor.epoch !== undefined && (typeof cursor.epoch !== "string" || cursor.epoch.length === 0))
-      || !Number.isSafeInteger(cursor.sequence) || cursor.sequence < 0) {
-      throw protocolError("invalid_cursor", "after_cursor must contain a non-negative sequence and optional epoch");
-    }
-    return { epoch: cursor.epoch, sequence: cursor.sequence };
+  if (cursor === undefined) return null;
+  if (!cursor || typeof cursor !== "object" || Array.isArray(cursor)
+    || Object.keys(cursor).some(key => !["epoch", "sequence"].includes(key))
+    || typeof cursor.epoch !== "string" || cursor.epoch.length === 0
+    || !Number.isSafeInteger(cursor.sequence) || cursor.sequence < 0) {
+    throw protocolError("invalid_cursor", "after_cursor requires an epoch and a non-negative integer sequence");
   }
-  if (params.after_sequence !== undefined && (!Number.isSafeInteger(params.after_sequence) || params.after_sequence < 0)) {
-    throw protocolError("invalid_cursor", "after_sequence must be a non-negative integer");
+  return cursor;
+}
+
+function validateModel(params, required) {
+  const model = params.model;
+  if (!Object.hasOwn(params, "provider") && model === undefined && !required) return;
+  if (Object.hasOwn(params, "provider") || !model || typeof model !== "object" || Array.isArray(model)
+    || Object.keys(model).some(key => !["provider", "id"].includes(key))
+    || typeof model.provider !== "string" || !model.provider || typeof model.id !== "string" || !model.id) {
+    throw protocolError("invalid_model", "model requires { provider, id }");
   }
-  // The sequence-only spelling remains accepted for clients that have not
-  // upgraded to epoch-aware cursors. It is scoped to this Host process.
-  const epoch = params.after_epoch ?? currentEpoch;
-  if (typeof epoch !== "string" || epoch.length === 0) throw protocolError("invalid_cursor", "after_epoch must be a non-empty string");
-  return { epoch, sequence: params.after_sequence || 0 };
 }
 
 function validateId(value, label) {
@@ -715,12 +649,4 @@ function validMonitorEvent(event, eventId, monitorId, identity, binding) {
     && (typeof event.error === "string" || event.error === null)
     && typeof event.observed_at === "string" && event.observed_at.length > 0
     && event.status && typeof event.status === "object" && !Array.isArray(event.status));
-}
-
-async function main() {
-  throw protocolError("native_backend_required", "Direct TSPi Host startup was removed; use the Native Pi App Server");
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  main().catch((error) => { process.stderr.write(`TSPi Host: ${error.message}\n`); process.exitCode = 1; });
 }

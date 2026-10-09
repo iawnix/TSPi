@@ -1,16 +1,16 @@
 # 科学 Job 合同
 
-Skill 负责科学输入、argv、解析与验证，使用随包安装的脚本，不需要科学注册表或 workflow catalog。
+领域扩展负责科学输入、argv、解析与验证；manifest 声明执行入口，Skill 说明选择条件和结果解释。
 
 ## 提交
 
-method-selection/scripts/prepare_job.py 读取 job.toml，返回 command（argv）、platform（配置的执行环境）、environment（进程环境变量对象）、inputs（source/destination 文件或目录映射）、outputs（path、required、min_bytes、media_type）及普通 metadata。补充 node_id、timeout_seconds 和需要的 metadata.resources（cpus、memory_mb、walltime）后 job_start。cwd 是隔离 Job 根下的相对子目录，不是任意工作区路径。
+`"$TSPI_PYTHON" -m tspi_runtime.executors` 将扩展声明的执行入口与 job.toml 中的命名绑定组合，生成含 argv、目标环境、进程变量、固定输入和输出的请求。检查文件后，将返回的 request_file/request_sha256 连同 node_id 和可选 timeout_seconds 交给 job_start。资源默认值在准备前配置到 job.toml。Runtime 把 prepared_ref、提交意图和 Attempt 一起登记；准备命令不写 Research State。
 
 输入复制为带路径和摘要的快照，保持脚本 import 目录结构。Runtime 负责本地/远程进程控制；Skill 可以在 Job 内同步调用科学程序，不能自行后台化或另行提交调度任务。
 
 ## 环境
 
-job_probe 只检查平台可达，不证明科学方法可用。command 和 activation_script 决定实际程序。CF22D 通过 scripts/doctor.py 检查依赖及方法构建，每个选定环境分别执行。远程包装脚本的 Python 必须明确配置；缺依赖不回退系统 Python 或更换方法。
+job_probe 只检查平台可达，不证明科学方法可用。command 和 activation_script 决定实际程序。CF22D 通过声明入口 `chemical.cf22d-doctor` 准备 Job，逐个选定环境检查依赖及方法构建。远程包装脚本的 Python 必须明确配置；缺依赖不回退系统 Python 或更换方法。
 
 ## 证据
 

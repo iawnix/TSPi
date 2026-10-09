@@ -17,12 +17,14 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
 from datetime import datetime, timezone
+from contextlib import ExitStack
 from pathlib import Path
 
 try:
@@ -302,8 +304,8 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
 
     section("Core")
     field("TSPi terminal client", "required", tone="success")
-    field("Scientific runtime", "required", tone="success")
-    field("Molecular rendering", "required", tone="success")
+    field("Control runtime", "required", tone="success")
+    field("Scientific execution", "configured separately in job.toml", tone="muted")
     field("Pi App Server runtime", "required", tone="success")
 
     section("Optional components")
@@ -716,8 +718,8 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     root = Path(args.install_root)
     section("Core")
     field("ResearchAgent terminal client", f"install - {root / 'ResearchAgent'}", tone="success")
-    field("Scientific runtime", "install and verify", tone="success")
-    field("Molecular rendering", "install and verify (xyzrender, Matplotlib)", tone="success")
+    field("Control runtime", "install from explicit lock and verify", tone="success")
+    field("Scientific execution", "verify configured targets and declared dependencies", tone="muted")
     field("Pi App Server", "install pinned runtime and verify", tone="success")
     field("Local backend policy", "core Python/runtime only; native tools must be selected explicitly", tone="muted")
     field("Job platform config", args.job_config or "preserve <install>/etc/job.toml if present", tone="muted")
@@ -831,9 +833,9 @@ def validate_options(args: argparse.Namespace) -> None:
             parsed_job = tomllib.loads(source.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
             raise ValueError(f"invalid job TOML configuration: {source}: {error}") from error
-        _validate_job_config(parsed_job, probe_local=True)
+        _validate_job_config(parsed_job)
     elif (Path(args.install_root) / "etc/job.toml").is_file():
-        _validate_job_config(tomllib.loads((Path(args.install_root) / "etc/job.toml").read_text()), probe_local=True)
+        _validate_job_config(tomllib.loads((Path(args.install_root) / "etc/job.toml").read_text()))
     if args.name_resolver_config:
         source = Path(args.name_resolver_config).expanduser()
         if not source.is_absolute() or source.is_symlink() or not source.is_file():
@@ -973,6 +975,10 @@ def configure_workspace_root(args: argparse.Namespace) -> dict[str, str]:
     if not workspace_root.is_dir():
         raise ValueError(f"workspace root is not a directory: {workspace_root}")
     workspace_root.chmod(0o700)
+    catalog_directory = workspace_root / ".tspi-catalog"
+    if catalog_directory.is_symlink():
+        raise ValueError("workspace catalog cannot be a symbolic link")
+    catalog_directory.mkdir(mode=0o700, exist_ok=True)
     config = write_workspace_root(root, workspace_root)
     return {"status": "configured", "path": str(config), "workspace_root": str(workspace_root)}
 
@@ -1329,7 +1335,7 @@ def _copy_private_config(source_value: str, destination: Path, *, kind: str) -> 
         raise ValueError(f"invalid {kind} TOML configuration: {source}: {error}") from error
     readiness = None
     if kind == "job":
-        readiness = _validate_job_config(parsed, probe_local=True)
+        readiness = _validate_job_config(parsed)
     elif kind == "name-resolver":
         _validate_name_resolver_config(parsed)
     elif kind == "remote":
@@ -1367,7 +1373,7 @@ def _copy_private_config(source_value: str, destination: Path, *, kind: str) -> 
     return result
 
 
-def _validate_job_config(parsed: dict[str, object], *, probe_local: bool = False) -> dict:
+def _validate_job_config(parsed: dict[str, object]) -> dict:
     """Validate the shared environment shape before installing it."""
     # Import the same public contract as Job Runtime and the Skill helper.
     import importlib.util
@@ -1375,13 +1381,33 @@ def _validate_job_config(parsed: dict[str, object], *, probe_local: bool = False
     contract = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(contract)
     contract.validate_job_config(parsed)
-    for name, environment in parsed["environments"].items():
-        if environment["kind"] == "remote":
-            _validate_remote_config({"default_environment": name, "environments": {name: environment}}, Path("/"))
-    spec = importlib.util.spec_from_file_location("tspi_science_bindings", ROOT / "extensions/chemical/skills/_shared/execution_bindings.py")
-    science = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(science)
-    return science.check_environments(parsed, contract=contract, probe_local=probe_local)
+    # This path runs before the managed Python environment exists. Discovery
+    # and static binding checks use stdlib plus the same Node catalog loader;
+    # dependency imports and version checks run after installation below.
+    try:
+        from ._bootstrap import activate_source_package
+    except ImportError:
+        from _bootstrap import activate_source_package
+    activate_source_package(ROOT)
+    from tspi_runtime.environment_check import check_environments
+    return check_environments(parsed, probe=False)
+
+
+def verify_job_bindings(args, installed, backend_configs):
+    """Probe with the installed control runtime, after extension installation."""
+    job = backend_configs.get("job", {})
+    if job.get("status") == "not_configured":
+        return
+    python = installed.get("runtime", {}).get("python_executable")
+    if not python:
+        raise RuntimeError("environment verification requires the installed Python runtime")
+    environment = {**os.environ, "TSPI_PACKAGE_ROOT": str(Path(installed["package_root"]) / "agent")}
+    completed = subprocess.run([python, "-m", "tspi_runtime.environment_check", "--config", job["path"]],
+                               env=environment, text=True, capture_output=True, check=False)
+    if completed.returncode:
+        raise RuntimeError("job environment verification failed: " + completed.stderr.strip())
+    job["readiness"] = json.loads(completed.stdout)
+    _write_job_readiness(Path(job["path"]), job)
 
 
 def _write_job_readiness(destination: Path, result: dict) -> None:
@@ -1445,89 +1471,12 @@ def _name_resolver_details(path: Path) -> dict[str, str]:
 
 
 def _validate_remote_config(parsed: dict[str, object], base: Path) -> None:
-    environments = parsed.get("environments")
-    default = parsed.get("default_environment")
-    if not isinstance(environments, dict) or not environments or not isinstance(default, str) or default not in environments:
-        raise ValueError("remote config must define default_environment and at least one environment")
-    for name, environment in environments.items():
-        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", name):
-            raise ValueError(f"invalid remote environment name: {name!r}")
-        if not isinstance(environment, dict) or environment.get("scheduler", "torque") != "torque":
-            raise ValueError(f"remote environment {name!r} must use scheduler=torque")
-        ssh_host = environment.get("ssh_host")
-        if not isinstance(ssh_host, str):
-            raise ValueError(f"remote environment {name!r} is missing ssh_host or remote_root")
-        if any(character.isspace() for character in ssh_host):
-            raise ValueError(f"remote environment {name!r} has an invalid ssh_host")
-        remote_root = environment.get("remote_root")
-        if not isinstance(remote_root, str):
-            raise ValueError(f"remote environment {name!r} is missing ssh_host or remote_root")
-        if (
-            not remote_root.startswith("/")
-            or remote_root == "/"
-            or ".." in Path(remote_root).parts
-            or any(not re.fullmatch(r"[A-Za-z0-9_.-]+", part) for part in Path(remote_root).parts[1:])
-        ):
-            raise ValueError(f"remote environment {name!r} has an invalid remote_root")
-        queues = environment.get("allowed_queues")
-        if not isinstance(queues, list) or not queues or any(
-            not isinstance(queue, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", queue)
-            for queue in queues
-        ):
-            raise ValueError(f"remote environment {name!r} must define allowed_queues")
-        for key in ("max_nodes", "connect_timeout_seconds", "command_timeout_seconds"):
-            value = environment.get(key, 1 if key == "max_nodes" else (15 if key == "connect_timeout_seconds" else 60))
-            maximum = {"max_nodes": None, "connect_timeout_seconds": 300, "command_timeout_seconds": 3600}[key]
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, int)
-                or value < 1
-                or (maximum is not None and value > maximum)
-            ):
-                raise ValueError(f"remote environment {name!r} has an invalid {key}")
-        commands = environment.get("commands", {})
-        if not isinstance(commands, dict):
-            raise ValueError(f"remote environment {name!r} commands must be a table")
-        for command_name in ("qsub", "qstat", "qdel", "pbsnodes"):
-            command_value = commands.get(command_name, command_name)
-            if (
-                not isinstance(command_value, str)
-                or not command_value
-                or any(character.isspace() for character in command_value)
-            ):
-                raise ValueError(f"remote environment {name!r} has an invalid scheduler command: {command_name}")
-        backends = environment.get("backends", {})
-        if not isinstance(backends, dict):
-            raise ValueError(f"remote environment {name!r} backends must be a table")
-        for backend, item in backends.items():
-            if not isinstance(backend, str) or not isinstance(item, dict):
-                raise ValueError(f"remote environment {name!r} has an invalid backend binding")
-            command = item.get("command")
-            if "python" not in item and (not isinstance(command, list) or not command or any(not isinstance(value, str) or not value for value in command)):
-                raise ValueError(f"remote environment {name!r} backends.{backend} must define command or python")
-            backend_queues = item.get("allowed_queues", queues)
-            if not isinstance(backend_queues, list) or not backend_queues or any(
-                not isinstance(queue, str) or queue not in queues for queue in backend_queues
-            ):
-                raise ValueError(f"remote environment {name!r} backends.{backend} has invalid allowed_queues")
-            for path_key in ("activation_script", "scratch_root"):
-                path_value = item.get(path_key)
-                if path_value is not None and (
-                    not isinstance(path_value, str)
-                    or not path_value.startswith("/")
-                    or path_value == "/"
-                    or ".." in Path(path_value).parts
-                    or any(not re.fullmatch(r"[A-Za-z0-9_.-]+", part) for part in Path(path_value).parts[1:])
-                ):
-                    raise ValueError(f"remote environment {name!r} backends.{backend}.{path_key} must be a safe absolute path")
-        ssh_config = environment.get("ssh_config")
-        if not isinstance(ssh_config, str) or not ssh_config:
-            raise ValueError(f"remote environment {name!r} is missing ssh_config")
-        ssh_path = Path(os.path.expandvars(os.path.expanduser(ssh_config)))
-        if not ssh_path.is_absolute():
-            raise ValueError(f"remote environment {name!r} ssh_config must be an absolute path")
-        if ssh_path.is_symlink() or not ssh_path.is_file():
-            raise ValueError(f"remote environment {name!r} ssh_config is not a regular file: {ssh_path}")
+    # Structural validation is identical before installation and every runtime load.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("tspi_job_config", ROOT / "packages/job-runtime/job_runtime/config_contract.py")
+    contract = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(contract)
+    contract.validate_job_config(parsed)
 
 
 def _write_private_config_bytes(raw: bytes, destination: Path) -> None:
@@ -1566,7 +1515,7 @@ def configure_backend_configs(args: argparse.Namespace) -> dict[str, dict[str, s
         result["job"] = {"status": "preserved" if destination.is_file() else "not_configured", "path": str(destination)}
         if destination.is_file():
             raw = destination.read_bytes()
-            readiness = _validate_job_config(tomllib.loads(raw.decode()), probe_local=True)
+            readiness = _validate_job_config(tomllib.loads(raw.decode()))
             result["job"].update(sha256=hashlib.sha256(raw).hexdigest(), readiness=readiness)
             _write_job_readiness(destination, result["job"])
 
@@ -1815,10 +1764,6 @@ def configure_model_icons(args: argparse.Namespace, installed: dict[str, object]
         raise RuntimeError("installed package did not report a package root for model icons")
     package_root = Path(package_root_value).expanduser().resolve()
     agent_root = package_root / "agent"
-    if not agent_root.is_dir():
-        # Keep this compatible with direct package fixtures and older package
-        # wrappers that report the Agent root itself.
-        agent_root = package_root
     font_home: Path | None = None
     if args.service_scope == "system" and args.service_user:
         try:
@@ -1902,6 +1847,7 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
         "etc/secrets/smtp-password",
         "etc/job.toml",
         "etc/name-resolver.toml",
+        "var/state/installation/source-provenance.json",
     ]
     paths = {str(root / relative): _snapshot_file(root / relative) for relative in relative_paths}
     external_password = getattr(args, "email_password_file", None)
@@ -1911,6 +1857,7 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
             paths[str(password_path)] = _snapshot_file(password_path)
 
     services: dict[str, object] = {}
+    instances = []
     if getattr(args, "service_scope", "none") != "none":
         unit_dir = _service_unit_directory(args.service_scope)
         names = ["ts-app-server-tspi.service", "ts-web-tspi.service", "ts-app-server-tspi@.service"]
@@ -1924,6 +1871,10 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
                     name,
                 ),
             }
+        if (unit_dir / "ts-app-server-tspi@.service").is_file():
+            scope = [] if args.service_scope == "system" else ["--user"]
+            instances = [_service_status(scope, args.service_scope, name)
+                         for name in app_server_service_instances(scope)]
     releases_root = root / "releases"
     release_ids = sorted(
         path.name
@@ -1936,6 +1887,7 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
         "files": paths,
         "services": services,
         "service_scope": getattr(args, "service_scope", "none"),
+        "service_instances": instances,
         "package_selection": {
             "current": _snapshot_file(package_home / "current"),
             "state": _snapshot_file(root / "var/state/installation/install-state.json"),
@@ -2003,7 +1955,7 @@ def _make_tree_removable(path: Path) -> None:
     visit(path)
 
 
-def restore_install_configuration(root: Path, snapshot: dict[str, object]) -> None:
+def restore_install_configuration(root: Path, snapshot: dict[str, object], *, activate_services=True) -> None:
     files = snapshot.get("files")
     if isinstance(files, dict):
         for raw_path, raw_snapshot in files.items():
@@ -2017,31 +1969,6 @@ def restore_install_configuration(root: Path, snapshot: dict[str, object]) -> No
                 file_snapshot = raw_value.get("file")
                 if isinstance(file_snapshot, dict):
                     _restore_file(Path(raw_path), file_snapshot)
-        service_scope = snapshot.get("service_scope")
-        scope = [] if service_scope == "system" else ["--user"]
-        # Restore the activation state captured before the transaction. A
-        # systemd failure must not hide the original install error.
-        try:
-            _run_systemctl(scope, "daemon-reload")
-            for raw_path, raw_value in services.items():
-                if not isinstance(raw_path, str) or not isinstance(raw_value, dict):
-                    continue
-                status = raw_value.get("status")
-                if not isinstance(status, dict):
-                    continue
-                name = Path(raw_path).name
-                enabled = status.get("enabled")
-                if enabled in {"enabled", "enabled-runtime"}:
-                    _run_systemctl(scope, "enable", name)
-                elif enabled in {"disabled", "masked"}:
-                    _run_systemctl(scope, "disable", name)
-                active = status.get("active")
-                if active == "active":
-                    _run_systemctl(scope, "restart", name)
-                elif active in {"inactive", "failed"}:
-                    _run_systemctl(scope, "stop", name)
-        except RuntimeError:
-            pass
 
     release_ids = snapshot.get("release_ids")
     releases_root = root / "releases"
@@ -2068,6 +1995,51 @@ def restore_install_configuration(root: Path, snapshot: dict[str, object]) -> No
             path = Path(path_value)
             if path.is_dir() and not path.is_symlink() and not any(path.iterdir()):
                 path.rmdir()
+    if activate_services:
+        restore_service_activation(snapshot)
+
+
+def restore_service_activation(snapshot):
+    services = snapshot.get("services", {})
+    if not services:
+        return
+    scope = [] if snapshot.get("service_scope") == "system" else ["--user"]
+    _run_systemctl(scope, "daemon-reload")
+    statuses = [row["status"] for row in services.values() if isinstance(row, dict) and isinstance(row.get("status"), dict)]
+    statuses.extend(snapshot.get("service_instances", []))
+    for status in statuses:
+        name = status["name"]
+        if "@." in name:
+            continue
+        enabled = status.get("enabled")
+        if enabled in {"enabled", "enabled-runtime"}:
+            _run_systemctl(scope, "enable", name)
+        elif enabled in {"disabled", "masked"}:
+            _run_systemctl(scope, "disable", name)
+        if status.get("active") == "active":
+            _run_systemctl(scope, "restart", name)
+        elif status.get("active") in {"inactive", "failed"}:
+            _run_systemctl(scope, "stop", name)
+
+
+def stop_installation_services(args):
+    """Quiesce every managed State/Pi writer before replacing the release."""
+    if args.service_scope == "none":
+        return
+    validate_service_ownership(args)
+    scope = [] if args.service_scope == "system" else ["--user"]
+    unit_dir = _service_unit_directory(args.service_scope)
+    names = [name for name in ("ts-web-tspi.service", "ts-app-server-tspi.service")
+             if (unit_dir / name).is_file()]
+    if (unit_dir / "ts-app-server-tspi@.service").is_file():
+        names.extend(app_server_service_instances(scope))
+    for name in names:
+        _run_systemctl(scope, "stop", name)
+        # systemctl stop waits for the service cgroup, including Pi children.
+        # Do not touch independent tspi-job units or their result directories.
+        status = _service_status(scope, args.service_scope, name)
+        if status["active"] not in {"inactive", "failed"}:
+            raise RuntimeError(f"installation writer did not stop: {name} ({status['active']})")
 
 
 def restore_active_release(root: Path, snapshot: dict[str, object] | None) -> None:
@@ -2583,6 +2555,7 @@ After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory={working_directory}
+Environment={_systemd_quote("TSPI_INSTALL_ROOT=" + str(root))}
 ExecStart={command}
 {f'User={_systemd_value(args.service_user)}' if args.service_scope == 'system' else ''}
 {f'Group={_systemd_value(args.service_group)}' if getattr(args, 'service_group', None) and args.service_scope == 'system' else ''}
@@ -2598,6 +2571,7 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ReadWritePaths={_systemd_quote(root / 'var/state/web')}
 ReadWritePaths={_systemd_quote(root / 'etc/web')}
 ReadOnlyPaths={_systemd_quote(workspace_root)}
+ReadWritePaths={_systemd_quote(workspace_root / '.tspi-catalog')}
 
 [Install]
 WantedBy={wanted_by}
@@ -2719,7 +2693,7 @@ def verify_service_units(args: argparse.Namespace, units: list[tuple[str, str]])
             raise RuntimeError(f"generated systemd service validation failed: {detail}")
 
 
-def configure_services(args: argparse.Namespace) -> list[dict[str, str]]:
+def configure_services(args: argparse.Namespace, *, start: bool | None = None) -> list[dict[str, str]]:
     if args.service_scope == "none":
         return []
     validate_service_ownership(args)
@@ -2763,11 +2737,54 @@ def configure_services(args: argparse.Namespace) -> list[dict[str, str]]:
     if args.enable_services:
         for name in managed_names:
             _run_systemctl(scope, "enable", name)
-    if args.start_services:
+    should_start = args.start_services if start is None else start
+    if should_start:
         for name in managed_names:
             _run_systemctl(scope, "restart", name)
     services = [_service_status(scope, args.service_scope, name) for name in names]
     return services
+
+
+def activate_installed_services(args, services):
+    if args.service_scope == "none" or not args.start_services:
+        return services
+    scope = [] if args.service_scope == "system" else ["--user"]
+    for service in services:
+        _run_systemctl(scope, "restart", service["name"])
+    return [_service_status(scope, args.service_scope, service["name"]) for service in services]
+
+
+def verify_running_services(args, installed, *, timeout_seconds=30):
+    """Verify the selected Host identity and Web's actual State bridge."""
+    if args.service_scope == "none" or not args.start_services:
+        return {"status": "not_started"}
+    from tspi_bootstrap.launcher import resolve_installation, resolve_host_socket, _validate_host_release
+    root = Path(args.install_root)
+    installation = resolve_installation(Path(installed["package_root"]) / "agent", root)
+    deadline = time.monotonic() + timeout_seconds
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    while True:
+        try:
+            _validate_host_release(installation, resolve_host_socket(installation))
+            if args.with_web:
+                host = args.web_host
+                if host in {"0.0.0.0", "::"}:
+                    host = "127.0.0.1" if host == "0.0.0.0" else "::1"
+                if ":" in host:
+                    host = f"[{host}]"
+                token_path = Path(args.web_auth_token_file).expanduser() if args.web_auth_token_file else root / "etc/web/auth.token"
+                token = token_path.read_text().strip()
+                request = urllib.request.Request(f"http://{host}:{args.web_port}/api/workspaces",
+                                                 headers={"Authorization": "Bearer " + token})
+                with opener.open(request, timeout=2) as response:
+                    value = json.load(response)
+                if not isinstance(value, dict) or not isinstance(value.get("workspaces"), list):
+                    raise RuntimeError("Web returned an invalid workspace catalog")
+            return {"status": "verified", "release_id": installed["release_id"], "web": bool(args.with_web)}
+        except (OSError, RuntimeError, ValueError) as error:
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"installed service readiness failed: {error}") from error
+            time.sleep(.1)
 
 
 def align_service_ownership(args: argparse.Namespace) -> None:
@@ -2797,6 +2814,12 @@ def align_service_ownership(args: argparse.Namespace) -> None:
             f"make it accessible to {args.service_user} before installing the system service"
         )
     os.chown(workspace_root, account.pw_uid, account.pw_gid)
+    catalog = workspace_root / ".tspi-catalog"
+    if catalog.is_dir() and not catalog.is_symlink():
+        os.chown(catalog, account.pw_uid, account.pw_gid)
+        for entry in catalog.iterdir():
+            if entry.is_file() and not entry.is_symlink():
+                os.chown(entry, account.pw_uid, account.pw_gid)
 
 
 def app_server_service_instances(scope: list[str]) -> list[str]:
@@ -2865,8 +2888,6 @@ def build_component_summary(
         else {}
     )
     probe = runtime.get("runtime_probe") if isinstance(runtime.get("runtime_probe"), dict) else {}
-    modules = probe.get("modules") if isinstance(probe.get("modules"), dict) else {}
-    commands = probe.get("commands") if isinstance(probe.get("commands"), dict) else {}
     service_by_name = {item["name"]: item for item in services}
     server_id_path = root / "var/state/host/server-id"
     try:
@@ -2879,15 +2900,11 @@ def build_component_summary(
             "launcher": str(root / "ResearchAgent"),
         },
         "runtime": {
-            "status": "ready",
+            "status": "ready" if probe.get("ok") is True else "not_probed",
             "environment": runtime.get("env_prefix"),
             "python": runtime.get("python_executable"),
             "manifest": runtime.get("manifest_path"),
-        },
-        "render": {
-            "status": "ready",
-            "xyzrender": commands.get("xyzrender"),
-            "matplotlib": modules.get("matplotlib"),
+            "capabilities": probe.get("capabilities", {}),
         },
         "app_server": {
             "status": "configured" if args.service_scope == "none" else _service_readiness(service_by_name.get("ts-app-server-tspi.service"), probed=args.start_services),
@@ -2970,29 +2987,14 @@ def show_installed_summary(
     field("Install log", _install_log_path(root))
 
     runtime = components["runtime"]
-    render = components["render"]
-    assert isinstance(runtime, dict) and isinstance(render, dict)
+    assert isinstance(runtime, dict)
     section("Core")
     field("ResearchAgent terminal client", f"ready - {root / 'ResearchAgent'}", tone="success")
     field(
-        "Scientific runtime",
-        f"ready - {runtime.get('environment') or 'verified'}",
-        tone="success",
+        "Control runtime",
+        f"{runtime['status']} - {runtime.get('environment') or 'unavailable'}",
+        tone="success" if runtime["status"] == "ready" else "warning",
     )
-    renderer = (
-        render.get("xyzrender")
-        if isinstance(render.get("xyzrender"), dict)
-        else {}
-    )
-    matplotlib = (
-        render.get("matplotlib")
-        if isinstance(render.get("matplotlib"), dict)
-        else {}
-    )
-    render_detail = renderer.get("path") or "xyzrender verified"
-    if matplotlib.get("version"):
-        render_detail = f"{render_detail}; Matplotlib {matplotlib['version']}"
-    field("Molecular rendering", f"ready - {render_detail}", tone="success")
     model_icons = components.get("model_icons")
     if isinstance(model_icons, dict):
         icon_status = str(model_icons.get("status", "disabled"))
@@ -3054,7 +3056,7 @@ def show_installed_summary(
         field("Status", job_config.get("status", "not configured"), tone="success" if job_config.get("status") in {"configured", "preserved"} else "warning")
         for environment, backends in job_config.get("readiness", {}).items():
             for backend, readiness in backends.items():
-                field(f"{environment}/{backend}", readiness["status"], tone="success" if readiness["status"] == "local_ready" else "warning")
+                field(f"{environment}/{backend}", readiness["status"], tone="success" if readiness["status"] == "verified" else "warning")
                 if readiness.get("error"):
                     note(readiness["error"], tone="warning")
         if job_config.get("configuration_changed"):
@@ -3110,6 +3112,13 @@ def _prepare_installation(args: argparse.Namespace, checks: list[dict[str, objec
     if not args.conda_root:
         require_preflight(checks)
     installation = inspect_installation(Path(args.install_root))
+    try:
+        from .app_layout import paths
+    except ImportError:
+        from app_layout import paths
+    previous_scope = (paths(args.install_root).read_config().get("service") or {}).get("scope")
+    if previous_scope in {"user", "system"} and previous_scope != args.service_scope:
+        raise ValueError(f"an in-place upgrade must retain service scope {previous_scope}; service-scope migration requires a separate installation")
     validate_service_ownership(args)
     return installation
 
@@ -3142,6 +3151,8 @@ def main(argv: list[str] | None = None) -> int:
     previous_release: dict[str, object] | None = None
     previous_configuration: dict[str, object] | None = None
     installation_root: Path | None = None
+    maintenance = None
+    writer_guard = ExitStack()
     try:
         interactive = not args.non_interactive
         if interactive:
@@ -3161,10 +3172,21 @@ def main(argv: list[str] | None = None) -> int:
             installation = _prepare_installation(args, checks)
 
         installation_root = Path(args.install_root)
+        try:
+            from ._bootstrap import activate_source_package
+        except ImportError:
+            from _bootstrap import activate_source_package
+        activate_source_package(ROOT)
+        from tspi_foundation.installation_maintenance import InstallationMaintenance
+        maintenance = InstallationMaintenance(installation_root).acquire()
         previous_release = snapshot_active_release(installation_root)
         previous_configuration = snapshot_install_configuration(installation_root, args)
+        stop_installation_services(args)
         install_uninstaller(Path(args.install_root), ROOT)
         installed = run_install(args)
+        maintenance.transition("preparing", release_id=installed.get("release_id"))
+        from tspi_bootstrap.session_guard import guard_installation_upgrade
+        writer_guard.enter_context(guard_installation_upgrade(installation_root))
         collect_deferred_link_enrollment(args)
         with Spinner("Finalizing installation", stream=sys.stderr, enabled=not args.json) as activity:
             activity.update("Importing Pi model configuration")
@@ -3193,10 +3215,22 @@ def main(argv: list[str] | None = None) -> int:
             notifications = configure_notification_config(args)
             activity.update("Installing backend configuration")
             backend_configs = configure_backend_configs(args)
+            activity.update("Verifying declared execution environments")
+            verify_job_bindings(args, installed, backend_configs)
             activity.update("Configuring services")
-            services = configure_services(args)
+            services = configure_services(args, start=False)
             activity.update("Verifying the installed release")
             verified = inspect_installation(Path(args.install_root))
+            if verified.get("operation") != "update" or verified.get("release_id") != installed.get("release_id"):
+                raise RuntimeError("installed release did not pass inspection")
+            writer_guard.close()
+            maintenance.transition("starting")
+            activity.update("Starting the verified services")
+            services = activate_installed_services(args, services)
+            readiness = verify_running_services(args, installed)
+            if readiness["status"] == "verified":
+                scope = [] if args.service_scope == "system" else ["--user"]
+                services = [_service_status(scope, args.service_scope, service["name"]) for service in services]
             activity.succeed("Installation finalized")
         components = build_component_summary(
             args,
@@ -3237,6 +3271,7 @@ def main(argv: list[str] | None = None) -> int:
             "model_icons": model_icons,
             "model_configuration": model_configuration,
             "verified_release": verified["release_id"],
+            "readiness": readiness,
             "install_log": str(_install_log_path(Path(args.install_root))),
         }
         append_install_log(
@@ -3258,6 +3293,7 @@ def main(argv: list[str] | None = None) -> int:
             f"web_token_file={credentials.get('web_http', {}).get('path', '') if isinstance(credentials.get('web_http'), dict) else ''}",
             "status=success",
         )
+        maintenance.transition("completed")
         if args.json:
             print(json.dumps(result, indent=2, sort_keys=True))
         else:
@@ -3265,16 +3301,27 @@ def main(argv: list[str] | None = None) -> int:
             show_installed_summary(args, installed, components, credentials)
         return 0
     except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
-        if installation_root is not None and previous_release is not None:
+        if maintenance is not None:
             try:
-                restore_active_release(installation_root, previous_release)
-            except (OSError, RuntimeError, ValueError) as rollback_error:
-                error = RuntimeError(f"{error}; release rollback failed: {rollback_error}")
-        if installation_root is not None and previous_configuration is not None:
-            try:
-                restore_install_configuration(installation_root, previous_configuration)
-            except (OSError, RuntimeError, ValueError) as rollback_error:
-                error = RuntimeError(f"{error}; configuration rollback failed: {rollback_error}")
+                stop_installation_services(args)
+                writer_guard.close()
+                if maintenance.rollback_allowed:
+                    if previous_release is not None:
+                        restore_active_release(installation_root, previous_release)
+                    if previous_configuration is not None:
+                        restore_install_configuration(installation_root, previous_configuration, activate_services=False)
+                    maintenance.transition("rolled_back")
+                    if previous_configuration is not None:
+                        restore_service_activation(previous_configuration)
+                else:
+                    maintenance.transition("failed")
+                    error = RuntimeError(f"{error}; services remain stopped and the selected release is retained; rerun the installer to repair forward")
+            except (OSError, RuntimeError, ValueError) as recovery_error:
+                try:
+                    maintenance.transition("failed")
+                except (OSError, RuntimeError, ValueError):
+                    pass  # The previous durable maintenance fence still blocks launch.
+                error = RuntimeError(f"{error}; installation recovery failed: {recovery_error}")
         if installation_root is not None:
             try:
                 append_install_log(
@@ -3289,6 +3336,10 @@ def main(argv: list[str] | None = None) -> int:
                 pass
         failure(f"TSPi installation failed: {error}")
         return 1
+    finally:
+        writer_guard.close()
+        if maintenance is not None:
+            maintenance.close()
 
 
 if __name__ == "__main__":

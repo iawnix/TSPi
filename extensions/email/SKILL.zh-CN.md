@@ -26,4 +26,4 @@ Host/Monitor 只唤醒 Agent，邮件准备和投递由此 Skill 完成，不依
 
 `prepare` 自动保存消费事实和证据版本的 `state_binding`。进度通知可在依赖未结束时准备；完成事件在准备时就必须成立。发送前消费节点、结果或 requirement 有变化，应检查后重新准备，不手工编辑或转抄 `state_binding`。原请求已 sent 时，即使节点或范围关闭，重放仍返回已有回执，无需重新准备。
 
-send/status 后，通过 artifact_register 将持久 `receipt_ref` 登记到交付节点，读取并核验，用返回的 artifact_ref 或 artifact_id 填写 Gate 的 evidence_refs。代理评估字段为 criterion_id、verdict、reason。评估 Gate 并关闭节点后再写 terminal。登记失败只恢复登记，不重发邮件。发送尝试后内容或范围改变，须在用户授权内使用新的 notification_id；尚未核清的 sending/unknown 仍必须先核查。
+send/status 后，通过 artifact_register 将持久 `receipt_ref` 登记到交付节点，读取并核验，在评估交付要求及已附加的 Gate 时引用该 Artifact。核验结果后关闭交付节点，再写 terminal。登记失败只恢复登记，不重发邮件。发送尝试后内容或范围改变，须在用户授权内使用新的 notification_id；尚未核清的 sending/unknown 仍必须先核查。

@@ -3,7 +3,7 @@ export type CommandId =
   | "research.summary"
   | "research.context"
   | "research.liveness"
-  | "research.turn"
+  | "research.monitor_assess"
   | "research.detail"
   | "research.locate"
   | "research.validate"

@@ -16,7 +16,7 @@ Use these names in prompts, tool requests, findings, and reports.
 | Gate | Criteria and evaluations attached to one Node or Claim. `NodeGate` and `ClaimGate` are typed scopes, not separate protocols. |
 | Artifact | Logical reference to an input, output, or analysis file owned by a Node. |
 | Attempt | One bounded calculation or execution record owned by a Node. Retries remain Attempts; a changed question starts a new Node. |
-| Compute environment | Named local or remote execution environment with bound Backends. Query it with `Job Runtime platform configuration` or `/compute`. |
+| Compute environment | Named local or remote execution environment with bound Backends. Read its binding in `job.toml`; use `job_probe` for platform readiness. |
 | Claim relation | Directed relation between Claims, such as support, conflict, or dependency. |
 | ChangeSet | Explicit list of map operations submitted through `research_change`. The Research State validates and commits it as one revision. |
 | Review | Isolated advisory assessment. Root records the disposition in the map. |

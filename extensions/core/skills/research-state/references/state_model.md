@@ -17,7 +17,7 @@ binds identity, mode, root, and admission. Retired SQLite and
 | --- | --- | --- |
 | `ResearchPhase` | optional navigation group for related Nodes | `title`, `objective`, `node_ids` |
 | `ResearchClaim` | statement under investigation | `statement`, `status`, `predictions`, `falsifiers`, `node_ids`, `finding_ids`, `gate_ids` |
-| `ResearchNode` | one bounded question and deliverable | `title`, `objective`, `phase_id`, `claim_ids`, `dependency_ids`, `state`, `outcome`, `finding_ids`, `gate_ids`, `artifact_refs`, `attempt_refs` |
+| `ResearchNode` | one bounded question and deliverable | `title`, `objective`, `phase_id`, `claim_ids`, `dependencies`, `state`, `outcome`, `finding_ids`, `gate_ids`, `artifact_refs`, `attempt_refs` |
 | `Finding` | Node output | `node_id`, `statement`, `kind`, `status`, `claim_ids`, `source_refs` |
 | `FactFinding` | verified value; `kind=fact` | `value`, `datatype`, `unit`, `provenance` |
 | `IssueFinding` | limitation, anomaly, conflict, or open question; `kind=issue` | `severity`, `resolution` |

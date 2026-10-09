@@ -61,6 +61,7 @@ def activate_source_package(package_root: str | Path) -> None:
 
     root = Path(package_root).expanduser().resolve()
     runtime = load_runtime_environment(root)
+    os.environ[runtime.PACKAGE_ROOT_OVERRIDE] = str(root)
     for source_root in runtime.source_python_paths(root):
         value = str(source_root)
         if value not in sys.path: sys.path.insert(0, value)

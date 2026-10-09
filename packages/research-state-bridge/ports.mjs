@@ -12,7 +12,7 @@ const lifecycleContract = createRequire(import.meta.url)("../research-state/rese
 
 import { is_workspace_id, require_workspace_id } from "../agent-core/workspace_id.mjs";
 
-export const RESEARCH_KERNEL_PORT_VERSION = "research_state_port_1";
+export const RESEARCH_KERNEL_PORT_VERSION = "research_state_port_2";
 export const RESEARCH_ADMISSION_REQUEST_SCHEMA = "research_admission_request/1";
 export const RESEARCH_ADMISSION_RESULT_SCHEMA = "research_admission_result/1";
 // These values are part of the Research State write protocol.  Keep them in
@@ -22,13 +22,6 @@ export const RESEARCH_STATE_WRITE_PRINCIPAL = "root_agent";
 export const RESEARCH_STATE_WRITE_AUTHORITY = "kernel_write";
 export const RESEARCH_LIFECYCLE_REQUEST_VERSION = 1;
 export const RESEARCH_ADMISSION_STATES = Object.freeze(["admission_pending", "admitted"]);
-export const RESEARCH_TURN_OPERATIONS = Object.freeze([
-  "start",
-  "orient",
-  "checkpoint",
-  "end",
-  "wake",
-]);
 export const RESEARCH_DISPOSITIONS = Object.freeze(lifecycleContract.dispositions);
 
 const KERNEL_METHODS = Object.freeze([
@@ -36,13 +29,12 @@ const KERNEL_METHODS = Object.freeze([
   "read_liveness",
   "apply_change",
   "checkpoint",
-  "turn",
   "admit_workspace",
 ]);
 
 function validate_method(implementation, method) {
   if (typeof implementation?.[method] !== "function") {
-    throw new TypeError("research_state_port_1 is missing " + method + "()");
+    throw new TypeError(RESEARCH_KERNEL_PORT_VERSION + " is missing " + method + "()");
   }
 }
 
@@ -159,8 +151,6 @@ export function create_research_state_port(implementation) {
     read_context: implementation.read_context.bind(implementation),
     read_liveness: implementation.read_liveness.bind(implementation),
     checkpoint: implementation.checkpoint.bind(implementation),
-    turn: implementation.turn.bind(implementation),
-
     async admit_workspace(request) {
       const admission = create_research_admission_request(request);
       const result = await implementation.admit_workspace(admission);
@@ -193,39 +183,6 @@ export function create_research_state_port(implementation) {
   return Object.freeze(port);
 }
 
-export function create_research_turn_request({ operation, request_id, workspace_id, session_id, payload = {} }) {
-  if (!RESEARCH_TURN_OPERATIONS.includes(operation)) throw new TypeError("invalid research_turn operation: " + operation);
-  require_identifier(request_id, "request_id");
-  require_workspace_id(workspace_id);
-  if (session_id !== undefined) require_identifier(session_id, "session_id");
-  return Object.freeze({
-    protocol: "research_turn_request",
-    version: 1,
-    operation,
-    request_id,
-    workspace_id,
-    input: payload,
-    ...(session_id === undefined ? {} : { context: { session_id } }),
-  });
-}
-
-export function create_research_turn_result({ request_id, status = "completed", output = {}, artifacts = [], provenance = {} }) {
-  require_identifier(request_id, "request_id");
-  if (!["completed", "waiting", "blocked", "failed"].includes(status)) throw new TypeError("invalid research turn status: " + status);
-  if (!output || typeof output !== "object" || Array.isArray(output)) throw new TypeError("output must be an object");
-  if (!Array.isArray(artifacts) || artifacts.some((value) => typeof value !== "string")) throw new TypeError("artifacts must be a string array");
-  if (!provenance || typeof provenance !== "object" || Array.isArray(provenance)) throw new TypeError("provenance must be an object");
-  return Object.freeze({
-    protocol: "research_turn_result",
-    version: 1,
-    request_id,
-    status,
-    output,
-    ...(artifacts.length === 0 ? {} : { artifacts }),
-    provenance,
-  });
-}
-
 /**
  * Construct one canonical durable decision request for the Python State
  * boundary.  Strategy, interpretation, and checkpoint remain separate
@@ -239,6 +196,7 @@ export function create_research_lifecycle_request({
   review,
   interpretation,
   checkpoint,
+  session_id,
   rationale,
   basis_refs = [],
   expected_revision,
@@ -276,6 +234,7 @@ export function create_research_lifecycle_request({
     request.interpretation = interpretation;
   } else {
     request.checkpoint = checkpoint;
+    if (session_id !== undefined) request.session_id = session_id;
   }
   return Object.freeze(request);
 }

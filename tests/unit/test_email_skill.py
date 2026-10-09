@@ -43,6 +43,47 @@ def test_retry_across_revision_and_password_rotation_does_not_resend(tmp_path,mo
     assert len(calls)==1
 
 
+def test_v1_requests_cannot_start_delivery(tmp_path, monkeypatch):
+    request, _ = fixture(tmp_path, monkeypatch)
+    value = json.loads(request.read_text()); value['schema_version'] = 'ts-user-notification/1'
+    request.write_text(json.dumps(value))
+    monkeypatch.setattr(delivery, '_run_transport', lambda *a, **kw: pytest.fail('v1 transport started'))
+    with pytest.raises(ValueError, match='schema_version'):
+        delivery.notify_user(tmp_path, request)
+    assert not (tmp_path / delivery.DELIVERY_DIR_REF).exists()
+
+
+@pytest.mark.parametrize('state', ['sent', 'unknown', 'sending'])
+def test_historical_v2_digest_is_reconciled_without_rewrite_or_resend(tmp_path, monkeypatch, state):
+    request, cfg = fixture(tmp_path, monkeypatch)
+    value = json.loads(request.read_text())
+    normalized = {'schema_version': 'ts-user-notification/1', 'event': value['event'],
+                  'subject': value['subject'], 'summary': value['summary'] + '\n', 'workspace_id': 'ws_email',
+                  'report_artifacts': value['attachments'], 'notification_id': value['notification_id'],
+                  'recipient': cfg.recipient}
+    digest = delivery.sha256_json(normalized)
+    directory = tmp_path / delivery.DELIVERY_DIR_REF; directory.mkdir(parents=True)
+    path = directory / (digest.removeprefix('sha256:') + '.json')
+    receipt = {'schema_version': delivery.RECEIPT_SCHEMA, 'state': state,
+               'notification_digest': digest, 'notification_id': value['notification_id']}
+    path.write_text(json.dumps(receipt)); original = path.read_bytes()
+    monkeypatch.setattr(delivery, '_run_transport', lambda *a, **kw: pytest.fail('historical transport restarted'))
+    if state == 'sent':
+        assert delivery.notify_user(tmp_path, request)['state'] == 'already_sent'
+    elif state == 'sending':
+        with pytest.raises(delivery.NotificationError) as caught:
+            delivery.notify_user(tmp_path, request)
+        assert caught.value.state == 'unknown'
+        current = json.loads(path.read_text())
+        assert current['notification_digest'] == digest
+        assert current['state'] == 'unknown'
+        return
+    else:
+        with pytest.raises(ValueError, match='unknown|sending'):
+            delivery.notify_user(tmp_path, request)
+    assert path.read_bytes() == original
+
+
 def test_unknown_delivery_and_changed_attachment_do_not_send(tmp_path,monkeypatch):
     request,_=fixture(tmp_path,monkeypatch);calls=[]
     def ambiguous(*args, **kwargs):

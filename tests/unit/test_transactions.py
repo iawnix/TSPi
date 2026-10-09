@@ -31,7 +31,7 @@ def test_request_reuse_with_different_payload_is_rejected(tmp_path: Path) -> Non
         raise AssertionError("request reuse must fail")
 
 
-def test_read_path_recovers_a_durable_committing_decision(tmp_path: Path) -> None:
+def test_unsupported_journal_is_rejected_without_replaying(tmp_path: Path) -> None:
     coordinator = TransactionCoordinator(tmp_path)
     writes = {"recovered.json": {"ok": True}}
     _atomic_json(coordinator._receipt_path("request-1"), {
@@ -39,8 +39,11 @@ def test_read_path_recovers_a_durable_committing_decision(tmp_path: Path) -> Non
         "request_id": "request-1", "operation": "test", "request_digest": _digest({"operation": "test", "payload": {}}),
         "state": "committing", "writes": writes, "writes_digest": _digest(writes), "result": {},
     })
-    assert coordinator.get("request-1")["state"] == "committed"
-    assert (tmp_path / "recovered.json").read_text().strip() == '{\n  "ok": true\n}'
+    original = coordinator._receipt_path("request-1").read_text()
+    with pytest.raises(TransactionError, match="unsupported_transaction_journal"):
+        coordinator.get("request-1")
+    assert not (tmp_path / "recovered.json").exists()
+    assert coordinator._receipt_path("request-1").read_text() == original
 
 
 def test_recovery_pointer_before_decision_does_not_commit(tmp_path: Path, monkeypatch) -> None:
@@ -120,17 +123,15 @@ def test_interrupted_recovery_index_bootstrap_can_resume(tmp_path: Path, monkeyp
     assert (tmp_path / transactions._WRITER_MARKER).is_file()
     assert not index_path.exists()
     assert TransactionCoordinator(tmp_path).recover()["recovered"] is True
-    assert transactions.read_json(index_path)["writer_version"] == 2
+    assert transactions.read_json(index_path)["writer_version"] == transactions._WRITER_VERSION
 
 
 def test_indexed_recovery_does_not_parse_committed_history(tmp_path: Path, monkeypatch) -> None:
     coordinator = TransactionCoordinator(tmp_path)
-    # Bootstrap old history once; later reads must scale with unfinished work.
-    for index in range(500):
-        _atomic_json(coordinator._receipt_path(f"history-{index}"), {
-            "schema_version": "agent_transaction/1", "state": "committed", "result": {"index": index},
-        })
-    coordinator.recover()
+    # Reads scale with unfinished work, not the completed journal size.
+    for index in range(30):
+        coordinator.commit_files(f"history-{index}", "test", {"index": index},
+                                 writes={}, result={"index": index})
     parsed_paths = []
     original_read = coordinator._read
 
@@ -139,11 +140,8 @@ def test_indexed_recovery_does_not_parse_committed_history(tmp_path: Path, monke
         return original_read(path)
 
     monkeypatch.setattr(coordinator, "_read", counted_read)
-    assert coordinator.get("history-499")["result"] == {"index": 499}
-    assert parsed_paths == [tmp_path / transactions._WRITER_MARKER, coordinator._receipt_path("history-499")]
-    # Old v1 writers scan the root journal and reject this schema, so they
-    # cannot publish unindexed committing decisions after migration.
-    assert original_read(tmp_path / transactions._WRITER_MARKER)["schema_version"] == "agent_transaction/2"
+    assert coordinator.get("history-29")["result"] == {"index": 29}
+    assert parsed_paths == [tmp_path / transactions._WRITER_MARKER, coordinator._receipt_path("history-29")]
 
 
 def test_recovery_pointer_without_receipt_fails_closed(tmp_path: Path) -> None:

@@ -99,7 +99,6 @@ function splitNativeProviderArgs(values) {
       kept.push(value);
     }
   }
-  if ((provider === undefined) !== (model === undefined)) throw new Error("--provider and --model must be provided together");
   return { kept, provider, model };
 }
 
@@ -113,13 +112,15 @@ async function main() {
   const socketPath = options.socket_path;
   const workspaceId = requireOption("workspace_id");
   const workspaceRoot = validateWorkspaceRoot(requireOption("workspace_root"));
-  const { kept, provider, model } = splitNativeProviderArgs(piArgs);
+  const native = splitNativeProviderArgs(piArgs);
+  const { kept } = native;
+  const provider = options.provider ?? native.provider;
+  const model = options.model ?? native.model;
+  if ((provider === undefined) !== (model === undefined)) throw new Error("--provider and --model must be provided together");
   const packageRoot = resolve(requireOption("package_root"));
   const releaseRoot = dirname(packageRoot);
   const expectedReleaseId = options.expected_release_id
-    || (basename(releaseRoot) === "releases"
-      ? basename(packageRoot)
-      : (basename(dirname(releaseRoot)) === "releases" ? basename(releaseRoot) : undefined));
+    || (basename(packageRoot) === "agent" && basename(dirname(releaseRoot)) === "releases" ? basename(releaseRoot) : undefined);
   const remote = options.ssh_host !== undefined;
   if (remote && socketPath) throw new Error("--socket-path cannot be combined with --ssh-host");
   if (!remote && !socketPath) throw new Error("Missing terminal option --socket-path or --ssh-host");
@@ -136,7 +137,7 @@ async function main() {
   let descriptor;
   try {
     const listed = await peer.request("session/list", { workspace_id: workspaceId });
-    const sessions = Array.isArray(listed) ? listed : listed?.sessions || [];
+    const sessions = listed.sessions;
     const requestedId = options.session_id;
     const selected = selectSession(sessions, requestedId, options.continue === true || options.resume === true);
 
@@ -146,6 +147,7 @@ async function main() {
         request_id: requestId,
         workspace_id: workspaceId,
         session_id: selected.session_id,
+        ...(provider === undefined ? {} : { model: { provider, id: model } }),
         presentation: "terminal",
       });
       descriptor = resumed.client;
@@ -154,19 +156,10 @@ async function main() {
         request_id: requestId,
         workspace_id: workspaceId,
         ...(requestedId ? { session_id: requestedId } : {}),
-        ...(provider === undefined ? {} : { provider, model }),
+        ...(provider === undefined ? {} : { model: { provider, id: model } }),
         presentation: "terminal",
       });
       descriptor = created.client;
-    }
-    if (provider !== undefined && model !== undefined) {
-      await peer.request("model/select", {
-        request_id: `model-${process.pid}-${Date.now()}`,
-        workspace_id: workspaceId,
-        session_id: descriptor.session_id,
-        provider,
-        model,
-      });
     }
   } finally {
     peer.close();
@@ -193,7 +186,6 @@ async function main() {
     process.env.PI_EXPERIMENTAL = "1";
     process.env.PI_SERVER_DIR = appProxy?.directory || descriptor.server_directory || dirname(descriptor.socket_path);
     process.env.TSPI_PACKAGE_ROOT = packageRoot;
-    process.env.TSPI_NATIVE_WRITES = "1";
     const child = spawn(process.execPath, childArgs, {
       cwd: workspaceRoot,
       env: {

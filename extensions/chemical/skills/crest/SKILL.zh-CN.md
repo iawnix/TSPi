@@ -23,3 +23,5 @@ CREST 搜索之外的 xTB 计算由 `xtb` 负责。
 将集合大小、相对能量表、所选几何和选择理由记录为不同事实。调度器成功但缺失主要输出
 属于运行故障，不是空构象集合。详见
 [crest_ensemble.zh-CN.md](references/crest_ensemble.zh-CN.md)。
+
+临时包装脚本通过通用准备器的 `--script` 和明确的 `--backend` 提交，见[方法选择](../method-selection/SKILL.zh-CN.md)。此路径记录脚本、环境、输入和输出。本 Skill 提供科学方法指导，当前没有内置该方法的执行入口。

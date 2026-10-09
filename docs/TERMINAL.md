@@ -31,14 +31,14 @@ Monitor -- Host RPC ---------+      Harness / Pi App Server / SessionWorker
 ```
 
 The Host is the Agent Server API and hosting layer. It owns routing, authentication,
-idempotency receipts, scheduler leases, session discovery, transactions, and
+session discovery, non-input RPC receipts, and
 the Monitor supervisor. The Pi Harness worker inside that same Agent Server
-owns the Root Agent loop, model, tools, transcript, and durable SQLite lane.
+owns input admission and idempotency, the Root Agent loop, model, tools, transcript, and durable SQLite lane.
 The native Pi TUI, Phone, and Monitor all address that same lane; none starts
 another agent loop.
 
 The Host client's RPC transport can be a local Unix socket or an SSH-launched
-`tspi-host-proxy`, which forwards the same `tspi-host/1` NDJSON over SSH
+`tspi-host-proxy`, which forwards the same `tspi-host/2` NDJSON over SSH
 stdin/stdout to a private remote socket. SSH changes the connection path, not
 the owner of the workspace, session, or Agent lane.
 
@@ -121,19 +121,24 @@ not restored.
 
 Disconnect, interrupt, and quit are different states. A detached terminal is
 only a disconnected client. `Esc` or Host `turn/interrupt` requests an active
-turn interruption. `/quit` closes only this terminal connection. If a request loses the connection after
-dispatch, Host reports `uncertain` and does not silently replay it; an on-disk
-`dispatching` receipt is also not reported as accepted until Pi has reached the
-submitted/observed boundary. Inspect the session before retrying with the same
-business ID.
+turn interruption. `/quit` closes only this terminal connection. If an input response is lost after dispatch, query `input/status` with the
+same `client_message_id`. Pi's durable submission owns acceptance and completion;
+retrying the same business ID does not create another input.
 
 ## Phone and browser
 
-TS Phone uses the versioned `tspi-host/1` NDJSON methods through TSPi Link. The
+Phone clients must implement the versioned `tspi-host/2` NDJSON methods through TSPi Link. The
 Relay transports opaque frames and does not own sessions or research state.
 Phone and the terminal receive the same Pi snapshot and events. The optional
 browser gateway attaches to one existing session over loopback HTTP/SSE; it
 does not start Pi or a worker.
+
+Host accepts only `initialize` with `protocol: "tspi-host/2"`. Version 1 clients
+must be updated. Capability names are the callable slash-separated methods.
+Session reads and attachments accept only `after_cursor: {epoch, sequence}`;
+a different Host epoch returns a current snapshot without replaying old events.
+Session creation/resumption and `model/select` use `model: {provider, id}`.
+Session lists use `{sessions: [...]}` and contain no legacy backend or format flags.
 
 ## Monitor
 

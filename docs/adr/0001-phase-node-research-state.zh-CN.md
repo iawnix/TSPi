@@ -24,7 +24,7 @@ ResearchClaim -> 科学陈述、预测、反证条件和状态
 
 Phase 包含通用 map 对象身份和 metadata、标题、目标及 Node 反向索引，不是生命周期、
 权限或 Gate。Node 可以通过可选 `phase_id` 属于至多一个已有 Phase；跨 Phase 依赖有效。
-Node 拥有一个 bounded objective 和主交付物，记录 `claim_ids`、`dependency_ids`、
+Node 拥有一个 bounded objective 和主交付物，记录 `claim_ids`、`dependencies`、
 `finding_ids`、`gate_ids`、`attempt_refs`、`artifact_refs`、明确 state 和可选终态结果。
 保持同一目标的重试留在该 Node 的 `attempts/` 下；问题或交付物改变时创建新的依赖 Node。
 

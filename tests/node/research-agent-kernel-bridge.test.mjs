@@ -30,10 +30,11 @@ test("kernel bridge binds workspace and forwards all port methods over injected 
   await bridge.admit_workspace({ authority: "host" });
   await bridge.apply_change({ operations: [] });
   await bridge.checkpoint({});
-  await bridge.turn({ operation: "orient" });
   assert.deepEqual(calls.map(([method]) => method), [
-    "read_context", "read_liveness", "admit_workspace", "apply_change", "checkpoint", "turn",
+    "read_context", "read_liveness", "admit_workspace", "apply_change", "checkpoint",
   ]);
+  assert.equal(bridge.protocol_version, "kernel_bridge_port_2");
+  assert.equal(bridge.turn, undefined);
   assert.equal(calls.every(([, payload]) => payload.workspace_root === "/tmp/research-bridge"), true);
   await assert.rejects(bridge.read_context({ workspace_root: "/tmp/other" }), /workspace_root_mismatch/);
 });
@@ -46,7 +47,6 @@ test("Research State port preserves optional bridge cleanup", async () => {
     async admit_workspace() { return { accepted: true, state: "admitted" }; },
     async apply_change() { return { accepted: true }; },
     async checkpoint() { return { accepted: true }; },
-    async turn() { return { accepted: true }; },
     async close() { closed = true; },
   });
   await port.close();
@@ -81,7 +81,7 @@ test("local Python bridge reads and persists Host admission across bridge restar
     const options = {
       workspace_root: root,
       workspace_id: "workspace_python_bridge",
-      command: process.env.TS_PYTHON || "python3",
+      command: process.env.TSPI_PYTHON || "python3",
     };
     const first = create_python_kernel_bridge(options);
     assert.equal((await first.read_context()).lifecycle_state, "admission_pending");
@@ -107,7 +107,7 @@ test("local Python bridge mutates the new context/liveness workspace without res
     const options = {
       workspace_root: root,
       workspace_id: "workspace_python_native",
-      command: process.env.TS_PYTHON || "python3",
+      command: process.env.TSPI_PYTHON || "python3",
     };
     const bridge = create_python_kernel_bridge(options);
     await assert.rejects(
@@ -139,8 +139,7 @@ test("local Python bridge mutates the new context/liveness workspace without res
     const checkpoint = await bridge.checkpoint({
       principal: "root_agent",
       authority: "kernel_write",
-      checkpoint_id: "checkpoint_1",
-      disposition: "continue_required",
+      checkpoint: { id: "checkpoint_1", disposition: "continue_required", reason: "Continue pending work" },
     });
     assert.equal(checkpoint.revision, 1);
     await bridge.close();
@@ -149,17 +148,11 @@ test("local Python bridge mutates the new context/liveness workspace without res
     const context = await restarted.read_context();
     assert.equal(context.nodes[0].id, "node_1");
     assert.deepEqual(context.focus, { claim_ids: ["claim_1"], node_ids: ["node_1"] });
-    assert.equal((await restarted.turn({
-      protocol: "research_turn_request", version: 1, request_id: "turn_orient_1",
-      operation: "orient", input: {},
-    })).protocol, "research_turn_result");
-    assert.equal((await restarted.turn({
-      protocol: "research_turn_request", version: 1, request_id: "turn_checkpoint_2",
+    assert.equal((await restarted.checkpoint({
       principal: "root_agent",
       authority: "kernel_write",
-      operation: "checkpoint",
-      input: { checkpoint_id: "checkpoint_2", disposition: "continue_required" },
-    })).output.checkpoint_id, "checkpoint_2");
+      checkpoint: { id: "checkpoint_2", disposition: "continue_required", reason: "Continue pending work" },
+    })).checkpoint_id, "checkpoint_2");
     await restarted.close();
 
     await assert.rejects(access(join(root, "research_map.json")), /ENOENT/);

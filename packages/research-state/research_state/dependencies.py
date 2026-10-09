@@ -3,12 +3,9 @@ from __future__ import annotations
 
 
 def normalize_dependencies(context, operation):
-    legacy = operation.get("dependency_ids", [])
-    explicit = operation.get("dependencies", [])
-    if not isinstance(legacy, list) or not isinstance(explicit, list):
-        raise ValueError("dependency_contract_invalid: dependencies must be arrays")
-    rows = [{"node_id": ref, "condition": "completed"} for ref in legacy]
-    rows.extend(explicit)
+    rows = operation.get("dependencies", [])
+    if not isinstance(rows, list):
+        raise ValueError("dependency_contract_invalid: dependencies must be an array")
     known = {node["id"] for node in context.get("nodes", [])}
     seen = set()
     normalized = []
@@ -28,9 +25,7 @@ def normalize_dependencies(context, operation):
 
 def dependency_evaluation(context, node):
     nodes = {item["id"]: item for item in context.get("nodes", [])}
-    declared = node.get("dependencies")
-    if declared is None:
-        declared = [{"node_id": ref, "condition": "completed"} for ref in node.get("dependency_ids", [])]
+    declared = node.get("dependencies", [])
     rows = []
     for dependency in declared:
         ref, condition = dependency.get("node_id"), dependency.get("condition")

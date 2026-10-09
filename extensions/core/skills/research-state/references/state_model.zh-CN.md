@@ -15,7 +15,7 @@
 | --- | --- | --- |
 | `ResearchPhase` | 相关 Node 的可选导航分组 | `title`、`objective`、`node_ids` |
 | `ResearchClaim` | 正在研究的陈述 | `statement`、`status`、`predictions`、`falsifiers`、`node_ids`、`finding_ids`、`gate_ids` |
-| `ResearchNode` | 一个有边界的问题与交付物 | `title`、`objective`、`phase_id`、`claim_ids`、`dependency_ids`、`state`、`outcome`、`finding_ids`、`gate_ids`、`artifact_refs`、`attempt_refs` |
+| `ResearchNode` | 一个有边界的问题与交付物 | `title`、`objective`、`phase_id`、`claim_ids`、`dependencies`、`state`、`outcome`、`finding_ids`、`gate_ids`、`artifact_refs`、`attempt_refs` |
 | `Finding` | Node 输出 | `node_id`、`statement`、`kind`、`status`、`claim_ids`、`source_refs` |
 | `FactFinding` | 已核验值；`kind=fact` | `value`、`datatype`、`unit`、`provenance` |
 | `IssueFinding` | 局限、异常、冲突或未决问题；`kind=issue` | `severity`、`resolution` |

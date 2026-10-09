@@ -30,7 +30,7 @@ from .errors import NotificationError
 CONFIG_ENV = "TS_NOTIFICATION_CONFIG"
 CONFIG_SCHEMA = "ts-notification-config/1"
 SMTP_CONFIG_SCHEMA = "ts-notification-config/2"
-REQUEST_SCHEMA = "ts-user-notification/1"
+REQUEST_SCHEMA = "ts-user-notification/2"
 RECEIPT_SCHEMA = "ts-user-notification-receipt/1"
 DELIVERY_DIR_REF = "reports/email/deliveries"
 SMTP_PRESETS: dict[str, dict[str, Any]] = {
@@ -98,8 +98,6 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
     """Send one bounded research notification using installation-owned addressing."""
     workspace = workspace_root(root)
     request = _load_request(request_file)
-    if request.get("schema_version") != "ts-user-notification/2":
-        return _notify_user(workspace, request)
     identity = bounded_text(request.get("notification_id"), "notification_id", 256)
     lock_path = workspace / DELIVERY_DIR_REF / ("id-" + sha256_json(identity).removeprefix('sha256:') + ".guard")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -147,29 +145,34 @@ def _notify_user(workspace: Path, request: dict[str, Any]) -> dict[str, Any]:
         "report_artifacts": attachment_records,
         "notification_config_digest": config.digest,
     }
-    if request.get("schema_version") == "ts-user-notification/2":
-        if request.get("recipient") != config.recipient:
-            raise ValueError("configured recipient changed since preparation")
-        notification["notification_id"] = bounded_text(request.get("notification_id"), "notification_id", 256)
-        notification["recipient"] = config.recipient
-        if request.get("state_binding") is not None:
-            notification["state_binding"] = request["state_binding"]
-        notification.pop("workspace_revision")
-        notification.pop("notification_config_digest")
-        # Older receipts did not preserve enough data to prove v2 identity.
-        # Preserve them and require reconciliation instead of silently resending.
-        for old_path in (workspace / DELIVERY_DIR_REF).glob("*.json"):
-            if not old_path.stat().st_size: continue
-            old = json.loads(old_path.read_text())
-            if not old.get("notification_id") and old.get("event") == event and old.get("subject") == subject and old.get("state") in {"sent","sending","unknown"}:
-                raise ValueError(f"legacy delivery requires reconciliation before new send: {old_path.name}")
+    if request.get("recipient") != config.recipient:
+        raise ValueError("configured recipient changed since preparation")
+    notification["notification_id"] = bounded_text(request.get("notification_id"), "notification_id", 256)
+    notification["recipient"] = config.recipient
+    if request.get("state_binding") is not None:
+        notification["state_binding"] = request["state_binding"]
+    notification.pop("workspace_revision")
+    notification.pop("notification_config_digest")
+    # Older receipts did not preserve enough data to prove v2 identity.
+    # Preserve them and require reconciliation instead of silently resending.
+    for old_path in (workspace / DELIVERY_DIR_REF).glob("*.json"):
+        if not old_path.stat().st_size: continue
+        old = json.loads(old_path.read_text())
+        if not old.get("notification_id") and old.get("event") == event and old.get("subject") == subject and old.get("state") in {"sent","sending","unknown"}:
+            raise ValueError(f"legacy delivery requires reconciliation before new send: {old_path.name}")
     notification_digest = sha256_json(notification)
-    if request.get("schema_version") == "ts-user-notification/2":
-        for path in (workspace / DELIVERY_DIR_REF).glob("*.json"):
-            if not path.stat().st_size: continue
-            old = json.loads(path.read_text())
-            if old.get("notification_id") == request["notification_id"] and old.get("notification_digest") != notification_digest:
+    for path in (workspace / DELIVERY_DIR_REF).glob("*.json"):
+        if not path.stat().st_size: continue
+        old = json.loads(path.read_text())
+        if old.get("notification_id") == request["notification_id"] and old.get("notification_digest") != notification_digest:
+            # Earlier v2 requests were hashed with a v1 schema label. Read
+            # that exact historical identity; never rewrite or resend sent/unknown.
+            historical = sha256_json({**notification, "schema_version": "ts-user-notification/1"})
+            if old.get("notification_digest") != historical:
                 raise ValueError("notification_id_reused: changed delivery content requires a new notification_id")
+            previous = _existing_delivery_result(str(path.relative_to(workspace)), path, historical)
+            if previous is not None:
+                return previous
     receipt_ref = f"{DELIVERY_DIR_REF}/{notification_digest.removeprefix('sha256:')}.json"
     _, receipt_path = workspace_path(workspace, receipt_ref, must_exist=False, allow_existing=True)
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
@@ -523,7 +526,7 @@ def _load_request(request_file: Path) -> dict[str, Any]:
     unknown = sorted(set(value) - allowed)
     if unknown:
         raise ValueError(f"notification request contains unknown fields: {', '.join(unknown)}")
-    if value.get("schema_version") not in {REQUEST_SCHEMA, "ts-user-notification/2"}:
+    if value.get("schema_version") != REQUEST_SCHEMA:
         raise ValueError(f"notification request schema_version must be {REQUEST_SCHEMA}")
     return value
 

@@ -117,23 +117,8 @@ export function toolErrorResult(error, toolName, toolCallId) {
   };
 }
 
-export function wrapToolWithEnvelope(tool) {
-  if (!tool || typeof tool.execute !== "function") throw new TypeError("tool envelope requires an executable tool");
-  return {
-    ...tool,
-    async execute(toolCallId, ...args) {
-      try {
-        const response = await tool.execute(toolCallId, ...args);
-        return withToolResultEnvelope(response, tool.name, toolCallId);
-      } catch (error) {
-        throw attachToolErrorEnvelope(error, tool.name, toolCallId);
-      }
-    },
-  };
-}
-
-/** Wrap a production Harness tool without losing its structured error result. */
-export function wrapToolForHarness(tool) {
+/** One Durable boundary for policy, execution and typed results. */
+export function wrapToolForHarness(tool, { toolContext, invocation } = {}) {
   if (!tool || typeof tool.execute !== "function") throw new TypeError("tool envelope requires an executable tool");
   const originalParameters = tool.parameters;
   if (tool.metadata !== undefined) {
@@ -148,30 +133,29 @@ export function wrapToolForHarness(tool) {
   const exposedTool = !enforceInvocationContext && originalParameters
     ? { ...tool, parameters: { type: "object", additionalProperties: true } }
     : tool;
-  const wrapped = wrapToolWithEnvelope(exposedTool);
   return {
-    ...wrapped,
-    async execute(toolCallId, ...args) {
+    ...exposedTool,
+    replay: ["safe", "idempotent"].includes(tool.metadata?.replay) ? "safe" : "unsafe",
+    executionMode: "sequential",
+    async execute(params, api, context) {
       try {
-        let executionArgs = args;
         if (!enforceInvocationContext && originalParameters) {
-          const params = args[0] === undefined ? {} : args[0];
           validateToolArguments(
             { name: tool.name, parameters: originalParameters },
-            { name: tool.name, arguments: params },
+            { name: tool.name, arguments: params ?? {} },
           );
         }
-        if (enforceInvocationContext) {
-          // Harness-native tools receive (params, onUpdate, toolContext,
-          // invocation, context). Bind and validate the trusted context before
-          // any implementation code or external side effect can run.
-          const [params, onUpdate, toolContext, invocation, context] = args;
-          const boundContext = validateToolInvocationContext(tool, toolContext, invocation, toolCallId);
-          executionArgs = [params, onUpdate, boundContext, invocation, context];
-        }
-        return await wrapped.execute(toolCallId, ...executionArgs);
+        const bound = enforceInvocationContext
+          ? validateToolInvocationContext(tool, toolContext, invocation?.(api), api.callId)
+          : toolContext;
+        // Keep Pi's async progress/cancellation API intact. The branded TSPi
+        // context comes only from the Worker, never from model arguments.
+        const result = withToolResultEnvelope(
+          await tool.execute(params, { ...api, tspi: bound }, context), tool.name, api.callId,
+        );
+        return result.details?.envelope?.ok === false ? { ...result, isError: true } : result;
       } catch (error) {
-        return toolErrorResult(error, tool.name, toolCallId);
+        return { ...toolErrorResult(error, tool.name, api.callId), isError: true };
       }
     },
   };

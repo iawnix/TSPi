@@ -15,13 +15,12 @@ before using an ensemble member in a later Node.
 
 The remote environment's `crest` Backend binding must select an operator-managed, versioned
 CREST binary. Its activation script must make the compatible xTB executable
-available without changing the research workspace. Run `TSPi --check-remote`
-after deployment or environment changes and before the first calculation. A missing
+available without changing the research workspace. Check the declared target with `"$TSPI_PYTHON" -m tspi_runtime.environment_check --config "$TS_JOB_CONFIG"` after installation changes, then run a bounded scientific Job. A missing
 command or activation script is an operational failure, not a scientific
 result.
 
 Do not install or upgrade CREST from a calculation job. Follow the
-[remote compute configuration](../../../../../docs/INSTALLATION.md#configure-remote-execution-compute-backends),
+[execution target configuration](../../../../../docs/INSTALLATION.md#configure-execution-targets),
 then use a bounded compute-node smoke search. A zero scheduler exit status with
 any required primary artifact missing is a program or integration failure, not
 an empty conformer ensemble.

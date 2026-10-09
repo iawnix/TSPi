@@ -48,11 +48,28 @@ def test_missing_or_empty_outputs_do_not_rewrite_exit_code(tmp_path):
     assert result['output_validation']=={'complete':False,'errors':[{'path':'empty','error':'too_small'},{'path':'missing','error':'missing'}]}
 
 
+def test_same_job_name_in_distinct_directories_does_not_reuse_a_terminal_observation(tmp_path):
+    platform = LocalProcessPlatform()
+    first = tmp_path / 'first'; first.mkdir()
+    second = tmp_path / 'second'; second.mkdir()
+    old = platform.start(JobSpec(command=(sys.executable, '-c', 'pass'), cwd=first, job_id='job_same'))
+    wait_reaped(old)
+    assert platform.status(old).state == JobState.SUCCEEDED
+    new = platform.start(JobSpec(command=(sys.executable, '-c', 'import time; time.sleep(.3); raise SystemExit(23)'),
+                                 cwd=second, job_id='job_same'))
+    try:
+        assert platform.status(new).state == JobState.RUNNING
+    finally:
+        wait_reaped(new)
+    assert platform.status(new).state == JobState.FAILED
+    assert platform.status(old).state == JobState.SUCCEEDED
+
+
 def workspace(root):
     initialize_workspace(root,'ws_jobs','research');admit_workspace(root,{'authority':'host'})
     apply_change(root,{'principal':'root_agent','authority':'kernel_write','operations':[
         {'type':'create_claim','id':'claim_1','statement':'water energy'},
-        {'type':'create_node','id':'node_1','title':'Calculation','objective':'water energy','completion_exemption':'Unit fixture checks execution only','claim_ids':['claim_1']},
+        {'type':'create_node','id':'node_1','title':'Calculation','objective':'water energy','claim_ids':['claim_1']},
         {'type':'set_focus','claim_ids':['claim_1'],'node_ids':['node_1']},
         {'type':'create_strategy_plan','id':'strategy_1','claim_id':'claim_1','node_id':'node_1','objective':'Run','rationale':'Need evidence'}]})
 

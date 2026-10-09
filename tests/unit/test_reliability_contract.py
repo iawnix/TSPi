@@ -25,8 +25,7 @@ def test_public_queries_find_current_attempt_and_validate_real_state(tmp_path):
     assert execute("research.validate", tmp_path)["valid"]
 
     with pytest.raises(AgentWorkspaceError, match="terminal_with_active_attempts"):
-        checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "id": "checkpoint_final",
-                             "disposition": "terminal", "claim_ids": ["claim_1"], "node_ids": ["node_1"]})
+        checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "checkpoint": {"id": "checkpoint_final", "disposition": "terminal", "claim_ids": ["claim_1"], "node_ids": ["node_1"], "reason": 'All scoped work is settled'}})
 
 
 def test_interpretation_rejects_wrong_producer_but_accepts_comparison(tmp_path):
@@ -102,7 +101,7 @@ def test_context_resolves_nonfocused_strategy_nodes_and_dependencies(tmp_path):
     workspace(tmp_path)
     change(tmp_path, [
         {"type": "create_node", "id": "node_dependency", "title": "Dependency", "objective": "Prepare input", "claim_ids": ["claim_1"]},
-        {"type": "create_node", "id": "node_hidden", "title": "Other scope", "objective": "Calculate", "claim_ids": ["claim_1"], "dependency_ids": ["node_dependency"]},
+        {"type": "create_node", "id": "node_hidden", "title": "Other scope", "objective": "Calculate", "claim_ids": ["claim_1"], "dependencies": [{"node_id": "node_dependency", "condition": "completed"}]},
         {"type": "create_node", "id": "node_unrelated", "title": "Unrelated", "objective": "Another question"},
         {"type": "create_strategy_plan", "id": "strategy_hidden", "claim_id": "claim_1", "node_id": "node_hidden", "objective": "Run", "rationale": "Need evidence"},
         {"type": "set_focus", "claim_ids": ["claim_1"], "node_ids": ["node_1"]},
@@ -111,7 +110,7 @@ def test_context_resolves_nonfocused_strategy_nodes_and_dependencies(tmp_path):
     assert [node["id"] for node in view["nodes"]] == ["node_1"]
     related = {node["id"]: node for node in view["related_nodes"]}
     assert related["node_hidden"]["state"] == "planned"
-    assert related["node_hidden"]["dependency_ids"] == ["node_dependency"]
+    assert related["node_hidden"]["dependencies"] == [{"node_id": "node_dependency", "condition": "completed"}]
     assert "node_dependency" in related
     assert view["scope"]["omitted_nodes"] == 1
     assert view["scope"]["unlisted_objects"] == "not_necessarily_missing"
@@ -124,15 +123,14 @@ def test_context_resolves_nonfocused_strategy_nodes_and_dependencies(tmp_path):
 def test_context_distinguishes_ready_work_from_recovery_and_preserves_focus_dependencies(tmp_path):
     workspace(tmp_path)
     change(tmp_path, [
-        {"type": "create_node", "id": "node_dependent", "title": "Dependent", "objective": "Use calculation", "dependency_ids": ["node_1"], "claim_ids": ["claim_1"]},
+        {"type": "create_node", "id": "node_dependent", "title": "Dependent", "objective": "Use calculation", "dependencies": [{"node_id": "node_1", "condition": "completed"}], "claim_ids": ["claim_1"]},
         {"type": "set_focus", "claim_ids": ["claim_1"], "node_ids": ["node_dependent"]},
     ])
     view = build_decision_context(tmp_path)
-    assert view["nodes"][0]["dependency_ids"] == ["node_1"]
+    assert view["nodes"][0]["dependencies"] == [{"node_id": "node_1", "condition": "completed"}]
     assert any(node["id"] == "node_1" for node in view["related_nodes"])
     assert view["lifecycle"]["recovery_required"] is False
-    checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "id": "checkpoint_wait",
-                         "disposition": "blocked", "reason": "External input is unavailable", "node_ids": ["node_dependent"]})
+    checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "checkpoint": {"id": "checkpoint_wait", "disposition": "blocked", "reason": "External input is unavailable", "node_ids": ["node_dependent"]}})
     assert build_decision_context(tmp_path)["lifecycle"]["recovery_required"] is True
 
 
@@ -211,7 +209,7 @@ def test_gate_requires_executed_registered_validator(tmp_path):
     with pytest.raises(AgentWorkspaceError, match='gate_validator_receipt_required'):
         change(tmp_path, [evaluation])
     job = dispatch('start', {'root': str(tmp_path), 'job_id': 'job_validate', 'node_id': 'node_1',
-                            'validator_id': 'chemical.gaussian_frequency', 'input_artifact_ids': [raw]})
+                            'validator_id': 'chemical.gaussian_frequency', "validator_version": "1", 'input_artifact_ids': [raw]})
     for _ in range(200):
         if dispatch('status', {'root': str(tmp_path), 'job_id': job['job_id']})['state'] in {'succeeded', 'failed'}:
             break
@@ -227,7 +225,7 @@ def test_gate_requires_executed_registered_validator(tmp_path):
     assert 'completed_gate_not_current' in {i['code'] for i in execute('research.validate', tmp_path)['issues']}
     from tspi_runtime.validators import prepare
     with pytest.raises(ValueError, match='validator_input_stale'):
-        prepare(tmp_path, {'validator_id': 'chemical.gaussian_frequency', 'input_artifact_ids': [raw]})
+        prepare(tmp_path, {'validator_id': 'chemical.gaussian_frequency', "validator_version": "1", 'input_artifact_ids': [raw]})
 
 
 def test_monitor_commit_recovers_both_state_and_event(tmp_path, monkeypatch):
@@ -356,7 +354,7 @@ def test_missing_submission_receipt_updates_attempt_on_explicit_status(tmp_path,
 
 def test_retired_command_fields_fail_before_workspace_or_runtime_access(tmp_path):
     from tspi_runtime.evidence import dispatch as artifact
-    before = {path: path.read_bytes() for path in tmp_path.iterdir()}
+    before = {path: path.read_bytes() if path.is_file() else None for path in tmp_path.rglob('*')}
     for key in ('jobId', 'intent_id', 'unexpected_option'):
         with pytest.raises(ValueError, match='schema_field_invalid'):
             execute('job.collect', tmp_path, {key: 'old'})
@@ -368,4 +366,4 @@ def test_retired_command_fields_fail_before_workspace_or_runtime_access(tmp_path
     for key in ('node_ref', 'storage_operation'):
         with pytest.raises(ValueError, match='schema_field_invalid'):
             execute('research.evidence', tmp_path, {key: 'old'})
-    assert {path: path.read_bytes() for path in tmp_path.iterdir()} == before
+    assert {path: path.read_bytes() if path.is_file() else None for path in tmp_path.rglob('*')} == before

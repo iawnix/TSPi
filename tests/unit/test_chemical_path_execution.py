@@ -62,7 +62,7 @@ def test_candidates_are_reproducible_bound_ordered_inputs_and_keep_branches(tmp_
     from input_job import inspect_input
     for row in first['candidates']:
         path=Path(row['files']['ts.gjf']['path'])
-        assert 'QST2' in inspect_input(path,'M062X','6-31G**',0,0,12,4000)['routes'][0]
+        assert 'QST2' in inspect_input(path,'M062X','6-31G**',0,1,12,4000)['routes'][0]
         molecule=path_spec(json.loads(Path(row['files']['spec.json']['path']).read_text()))[1][0]
         assert len(json.loads(Path(row['files']['atom_order.json']['path']).read_text())['atoms'])==Chem.AddHs(molecule).GetNumAtoms()
     bad=copy.deepcopy(SPEC);bad['mapped_smiles']=REACTANTS+'>>'+WRONG
@@ -197,12 +197,12 @@ def test_registered_validator_rejects_resource_target_collisions(tmp_path, monke
     package=tmp_path/'package';extension=package/'extensions'/'fixture';extension.mkdir(parents=True)
     script=extension/'validator.py';script.write_text('print("fixture")\n')
     digest='sha256:'+hashlib.sha256(script.read_bytes()).hexdigest()
-    descriptor={'id':'fixture.validator','version':'1','entry':'validator.py','sha256':digest,
+    descriptor={'id':'fixture.validator','version':'1','entry':'validator.py','sha256':digest,'backend':'validation',
                 'resources':{name:{'path':'validator.py','sha256':digest} for name in destinations}}
-    (extension/'manifest.json').write_text(json.dumps({'validators':[descriptor]}))
-    monkeypatch.setenv('TSPI_PACKAGE_ROOT',str(package))
-    with pytest.raises(ValueError,match='resource_destination_invalid'):
-        prepare(tmp_path,{'validator_id':'fixture.validator','input_artifact_ids':['art_unused']})
+    (extension/'manifest.json').write_text(json.dumps({'schema_version':'tspi-extension/1','name':'fixture','version':'1.0.0','skills':[],'validators':[descriptor]}))
+    monkeypatch.setenv('TSPI_EXTENSION_MANIFESTS',str(extension/'manifest.json'))
+    with pytest.raises(ValueError,match='resource destination'):
+        prepare(tmp_path,{'validator_id':'fixture.validator', "validator_version": "1",'input_artifact_ids':['art_unused']})
 
 
 def test_generic_jobs_execute_candidate_gaussian_and_registered_validators(tmp_path):
@@ -213,11 +213,11 @@ def test_generic_jobs_execute_candidate_gaussian_and_registered_validators(tmp_p
     _,row=candidate(tmp_path);spec,logs=synthetic_logs(row)
     spec_record=artifact('register',{'root':str(tmp_path),'node_id':'node_1','path':row['files']['spec.json']['path']})
     ref=spec_record['artifact_id']
-    mapping=run_job(tmp_path,{'job_id':'job_mapping','validator_id':'chemical.reaction_mapping','input_artifact_ids':[ref]})
+    mapping=run_job(tmp_path,{'job_id':'job_mapping','validator_id':'chemical.reaction_mapping', "validator_version": "1",'input_artifact_ids':[ref]})
     assert mapping['result_receipt']['validator_result']['verdict']=='pass'
     assert mapping['result_receipt']['validator_result']['bindings']['spec_artifact_id']==ref
     with pytest.raises(ValueError,match='collected_output'):
-        prepare(tmp_path,{'validator_id':'chemical.gaussian_frequency','input_artifact_ids':[ref]})
+        prepare(tmp_path,{'validator_id':'chemical.gaussian_frequency', "validator_version": "1",'input_artifact_ids':[ref]})
     fixture=tmp_path/'fixture_solver.py'
     fixture.write_text(f'#!{sys.executable}\nimport sys,json\nfrom pathlib import Path\nlogs=json.loads({json.dumps(json.dumps(logs))})\ntext=sys.stdin.read()\nkey="forward" if "IRC=(Forward" in text else "reverse" if "IRC=(Reverse" in text else "ts"\nPath(key+".chk").write_bytes(b"synthetic fixture checkpoint")\nprint(logs[key])\n')
     fixture.chmod(0o755)
@@ -232,13 +232,13 @@ def test_generic_jobs_execute_candidate_gaussian_and_registered_validators(tmp_p
         return run_job(tmp_path,{'job_id':job_id,'command':command,'inputs':inputs,'outputs':outputs})
     ts=gaussian(row['files']['ts.gjf']['path'],'job_ts','saddle')
     raw=selected(ts,'gaussian.out')['artifact_id']
-    validated=run_job(tmp_path,{'job_id':'job_saddle','validator_id':'chemical.gaussian_saddle','input_artifact_ids':[ref,raw]})
+    validated=run_job(tmp_path,{'job_id':'job_saddle','validator_id':'chemical.gaussian_saddle', "validator_version": "1",'input_artifact_ids':[ref,raw]})
     assert validated['result_receipt']['validator_result']['verdict']=='pass'
     checkpoint=selected(ts,'ts.chk')
     irc=helper.prepare_irc(Path(row['files']['spec.json']['path']),Path(checkpoint['location']),tmp_path/'irc')
     forwards=gaussian(irc['inputs'][0]['path'],'job_forward','irc',irc['checkpoint']['path'])
     reverse=gaussian(irc['inputs'][1]['path'],'job_reverse','irc',irc['checkpoint']['path'])
-    joined=run_job(tmp_path,{'job_id':'job_connectivity','validator_id':'chemical.gaussian_irc_connectivity',
+    joined=run_job(tmp_path,{'job_id':'job_connectivity','validator_id':'chemical.gaussian_irc_connectivity', "validator_version": "1",
         'input_artifact_ids':[ref,raw,selected(forwards,'gaussian.out')['artifact_id'],selected(reverse,'gaussian.out')['artifact_id']]})
     proof=joined['result_receipt']['validator_result']
     assert proof['verdict']=='pass',proof
@@ -247,4 +247,4 @@ def test_generic_jobs_execute_candidate_gaussian_and_registered_validators(tmp_p
     # Registered source bytes cannot be modified behind the bound Artifact manifest.
     Path(spec_record['location']).write_text('{}')
     with pytest.raises(ValueError,match='digest_mismatch'):
-        prepare(tmp_path,{'validator_id':'chemical.reaction_mapping','input_artifact_ids':[ref]})
+        prepare(tmp_path,{'validator_id':'chemical.reaction_mapping', "validator_version": "1",'input_artifact_ids':[ref]})

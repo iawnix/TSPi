@@ -20,7 +20,7 @@ from tools.test.manifest import load_manifest, suite, suite_paths
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-prefix", help="Managed scientific base for the source suite.")
+    parser.add_argument("--base-prefix", help="Managed test environment for the source suite.")
     parser.add_argument("--conda-root", help="Conda root used when preparing the source suite.")
     parser.add_argument(
         "--env-root",
@@ -69,6 +69,8 @@ def _run_python_suite(name: str, kind: str, script_options: list[str], extra: li
 
 
 def _run_native_pi(selected: dict[str, object], extra: list[str]) -> int:
+    # Child Node tests must use the interpreter selected for this test lane.
+    os.environ.setdefault("TSPI_PYTHON", sys.executable)
     pi_source = os.environ.get("TSPI_TEST_PI_RUNTIME_ROOT")
     if not pi_source:
         raise SystemExit("native-pi tests require TSPI_TEST_PI_RUNTIME_ROOT pointing at a prepared Pi checkout")

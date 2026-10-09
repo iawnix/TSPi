@@ -69,8 +69,8 @@ def dispatch(operation: str, params: dict[str, Any]) -> dict[str, Any]:
         input_artifact_ids = []
         if job_id:
             spec = json.loads((Path(job.cwd) / "spec.json").read_text())
-            if spec.get("metadata", {}).get("validator"):
-                input_artifact_ids = list(spec["metadata"]["validator"]["input_versions"])
+            if spec.get("metadata", {}).get("input_evidence_basis"):
+                input_artifact_ids = list(spec["metadata"]["input_artifact_ids"])
                 provenance["derivation_executed"] = True
         if operation == "register":
             path = Path(params["path"]).expanduser()

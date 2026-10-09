@@ -1,7 +1,6 @@
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { dispositions } = require("../../research-state/research_state/contracts/lifecycle.json");
 const gateContract = require("../../research-state/research_state/contracts/gates.json");
 const operationContract = require("../../research-state/research_state/contracts/operations.json");
 
@@ -18,11 +17,28 @@ function resolveOperationSchema(value) {
 
 const operationSchemas = Object.values(operationContract.operations).map(resolveOperationSchema);
 
+function decisionPayload(name) {
+  const schema = resolveOperationSchema(operationContract.operations[name]);
+  const omit = new Set(["type", "actor", "metadata", "created_at"]);
+  return { ...schema, properties: Object.fromEntries(Object.entries(schema.properties).filter(([key]) => !omit.has(key))),
+    required: schema.required.filter(key => !omit.has(key)) };
+}
+const decisionFields = resolveOperationSchema(operationContract.$defs.decision_fields).properties;
+const decision = (properties, required) => ({ type: "object", properties: { ...decisionFields, ...properties }, required, additionalProperties: false });
+const decisionSchemas = {
+  strategy: decision({ strategy_operation: { enum: ["plan", "review"] },
+    plan: decisionPayload("create_strategy_plan"), review: decisionPayload("create_strategy_review") }, ["strategy_operation"]),
+  interpretation: decision({ interpretation: decisionPayload("create_interpretation") }, ["interpretation"]),
+  checkpoint: decision({ checkpoint: resolveOperationSchema(operationContract.$defs.checkpoint) }, ["checkpoint"]),
+};
+
 const TOOL_ROWS = [
-  ["systemPrompt", "sys_prompt", "deterministic_runtime"],
+  ["systemPrompt", "system_prompt", "deterministic_runtime"],
   ["state", "research_read", "deterministic_workspace"],
   ["change", "research_change", "deterministic_workspace"],
-  ["lifecycle", "research_lifecycle", "deterministic_workspace"],
+  ["strategy", "research_strategy", "deterministic_workspace"],
+  ["interpretation", "research_interpretation", "deterministic_workspace"],
+  ["checkpoint", "research_checkpoint", "deterministic_workspace"],
   ["jobStart", "job_start", "execution_runtime"],
   ["jobStatus", "job_status", "execution_runtime"],
   ["jobCollect", "job_collect", "execution_runtime"],
@@ -38,58 +54,24 @@ const TOOL_ROWS = [
 
 // Semantic Harness names are the stable interface exposed to Agents. The
 // Tool factories expose semantic names directly and are never duplicated in inventory.
-export const PUBLIC_TOOL_CANONICAL_NAMES = Object.freeze({
-  systemPrompt: "system_prompt",
-  state: "research_read",
-  change: "research_change",
-  strategy: "research_strategy",
-  interpretation: "research_interpretation",
-  checkpoint: "research_checkpoint",
-  jobStart: "job_start",
-  jobStatus: "job_status",
-  jobCollect: "job_collect",
-  jobCancel: "job_cancel",
-  jobProbe: "job_probe",
-  jobReconcile: "job_reconcile",
-  artifactRegister: "artifact_register",
-  artifactCreate: "artifact_create",
-  artifactRead: "artifact_read",
-  artifactDerive: "artifact_derive",
-  artifactLink: "artifact_link",
-});
-
 export const PUBLIC_TOOL_NAMES = Object.freeze(Object.fromEntries(
   TOOL_ROWS.map(([key, name]) => [key, name]),
 ));
 
-export const PUBLIC_TOOL_ALIASES = Object.freeze(Object.fromEntries(
-  Object.entries(PUBLIC_TOOL_CANONICAL_NAMES).map(([key, canonicalName]) => [
-    canonicalName, Object.freeze({ canonicalName, deprecated: false }),
-  ]),
-));
-
-const TOOL_EXECUTION = Object.fromEntries(
+export const PUBLIC_TOOL_EXECUTION = Object.freeze(Object.fromEntries(
   TOOL_ROWS.map(([, name, execution]) => [name, execution]),
-);
-for (const [key, canonicalName] of Object.entries(PUBLIC_TOOL_CANONICAL_NAMES)) {
-  if (!TOOL_EXECUTION[canonicalName]) {
-    const row = TOOL_ROWS.find(([rowKey]) => rowKey === key);
-    const execution = row?.[2] || (key === "strategy" || key === "interpretation" || key === "checkpoint"
-      ? TOOL_ROWS.find(([rowKey]) => rowKey === "lifecycle")?.[2]
-      : undefined);
-    if (execution) TOOL_EXECUTION[canonicalName] = execution;
-  }
-}
-export const PUBLIC_TOOL_EXECUTION = Object.freeze(TOOL_EXECUTION);
+));
 
 // Canonical Harness metadata. Tool implementations remain transport adapters;
 // this registry is the shared authority/effect/replay contract used by Hosts,
 // audits, and future transports.
-const SOURCE_TOOL_METADATA = Object.freeze({
-  sys_prompt: Object.freeze({ authority: "host_read", effect: "read", replay: "safe", phase: "orient" }),
+export const PUBLIC_TOOL_METADATA = Object.freeze({
+  system_prompt: Object.freeze({ authority: "host_read", effect: "read", replay: "safe", phase: "orient" }),
   research_read: Object.freeze({ authority: "kernel_read", effect: "read", replay: "safe", phase: "orient" }),
   research_change: Object.freeze({ authority: "kernel_write", effect: "research_write", replay: "idempotent", phase: "advance" }),
-  research_lifecycle: Object.freeze({ authority: "kernel_write", effect: "lifecycle_write", replay: "idempotent", phase: "checkpoint" }),
+  research_strategy: Object.freeze({ authority: "kernel_write", effect: "lifecycle_write", replay: "idempotent", phase: "advance" }),
+  research_interpretation: Object.freeze({ authority: "kernel_write", effect: "lifecycle_write", replay: "idempotent", phase: "interpret" }),
+  research_checkpoint: Object.freeze({ authority: "kernel_write", effect: "lifecycle_write", replay: "idempotent", phase: "checkpoint" }),
   job_start: Object.freeze({ authority: "execution_runtime", effect: "execution_control", replay: "never", phase: "execute" }),
   job_status: Object.freeze({ authority: "execution_runtime", effect: "read", replay: "safe", phase: "execute" }),
   job_collect: Object.freeze({ authority: "execution_runtime", effect: "attempt_artifact", replay: "idempotent", phase: "interpret" }),
@@ -101,33 +83,6 @@ const SOURCE_TOOL_METADATA = Object.freeze({
   artifact_read: Object.freeze({ authority: "artifact_runtime", effect: "read", replay: "safe", phase: "interpret" }),
   artifact_derive: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "interpret" }),
   artifact_link: Object.freeze({ authority: "kernel_write", effect: "research_write", replay: "idempotent", phase: "interpret" }),
-});
-
-// Canonical tools carry the same lifecycle contract as their private source
-// factory. Keep this registry separate from the four-field execution metadata
-// so tool factories remain implementation details.
-const CANONICAL_TOOL_METADATA = Object.fromEntries(
-  Object.entries(PUBLIC_TOOL_CANONICAL_NAMES).map(([key, canonicalName]) => {
-    const sourceName = PUBLIC_TOOL_NAMES[key] || "research_lifecycle";
-    return [canonicalName, SOURCE_TOOL_METADATA[sourceName] || SOURCE_TOOL_METADATA.research_lifecycle];
-  }),
-);
-// The workflow source factory serves several semantic decisions. Their
-// lifecycle phases are different even though they share one implementation.
-// Keep the public aliases aligned with the Research Turn graph so orientation
-// can advance into planning and completed Attempts can be interpreted before
-// the final checkpoint.
-CANONICAL_TOOL_METADATA.research_strategy = Object.freeze({
-  ...SOURCE_TOOL_METADATA.research_lifecycle,
-  phase: "advance",
-});
-CANONICAL_TOOL_METADATA.research_interpretation = Object.freeze({
-  ...SOURCE_TOOL_METADATA.research_lifecycle,
-  phase: "interpret",
-});
-export const PUBLIC_TOOL_METADATA = Object.freeze({
-  ...SOURCE_TOOL_METADATA,
-  ...CANONICAL_TOOL_METADATA,
 });
 
 const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]*$/u;
@@ -152,21 +107,6 @@ export function validateHarnessToolDefinition(tool, { source = "tool", requireCa
   }
   if (typeof tool.name !== "string" || !TOOL_NAME_PATTERN.test(tool.name)) {
     throw new TypeError(`${source} has an invalid tool name`);
-  }
-  const descriptor = PUBLIC_TOOL_ALIASES[tool.name];
-  // Existing Host fixtures may provide only the four-field lifecycle
-  // metadata. Enforce alias markers whenever a tool opts into the identity
-  // fields, while preserving that minimal fixture shape.
-  if (descriptor && ("canonicalName" in tool || "deprecated" in tool || "aliasFor" in tool)) {
-    if (tool.canonicalName !== descriptor.canonicalName) {
-      throw new TypeError(`${source} ${tool.name} has an invalid canonicalName`);
-    }
-    if (tool.deprecated !== descriptor.deprecated) {
-      throw new TypeError(`${source} ${tool.name} has an invalid deprecated marker`);
-    }
-    if (descriptor.aliasFor !== undefined && tool.aliasFor !== descriptor.aliasFor) {
-      throw new TypeError(`${source} ${tool.name} has an invalid aliasFor marker`);
-    }
   }
   if (typeof tool.label !== "string" || !tool.label.trim()) {
     throw new TypeError(`${source} ${tool.name} has no label`);
@@ -252,7 +192,7 @@ export function createPublicToolContracts(Type) {
     state: contract("state", "TS State", "Read bounded ResearchMap state.", stateReadSchema, {
       promptSnippet: "Read bounded ResearchMap state",
     }),
-    change: contract("change", "TS Change", "Validate and atomically apply one Root-authored ResearchMap ChangeSet.", Type.Object({
+    change: contract("change", "TS Change", "Apply operations in order as one atomic ResearchMap ChangeSet. Create each object before referencing it. On failure nothing commits: correct the reported operation and retry using the current revision; a tool argument error alone is not an external blocker.", Type.Object({
       rationale: Type.String({ minLength: 1, maxLength: 12_000 }),
       operations: Type.Array(changeOperation, { minItems: 1, maxItems: 128 }),
       basis_refs: Type.Optional(Type.Array(Type.String(), { maxItems: 256, uniqueItems: true })),
@@ -262,27 +202,16 @@ export function createPublicToolContracts(Type) {
       executionMode: "sequential",
       promptSnippet: "Apply an auditable ResearchMap ChangeSet",
     }),
-    lifecycle: contract("lifecycle", "Research Lifecycle", "Record a strategy, interpretation, or checkpoint.", Type.Object({
-      operation: enumString(["strategy", "interpret", "checkpoint"]),
-      strategy_operation: Type.Optional(enumString(["plan", "review"])),
-      plan: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 32 })),
-      review: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 32 })),
-      interpretation: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 32 })),
-      checkpoint: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 32 })),
-      rationale: Type.Optional(Type.String({ minLength: 1, maxLength: 12_000 })),
-      basis_refs: Type.Optional(Type.Array(Type.String(), { maxItems: 256, uniqueItems: true })),
-      expected_revision: Type.Optional(Type.Integer({ minimum: 0 })),
-      event_id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-      root: optionalRoot,
-    }, { additionalProperties: false }), {
-      executionMode: "sequential",
-      replay: "never",
-    }),
-    jobStart: contract("jobStart", "Start Job", "Start a durable scientific computation Job. Prefer the immutable prepared_ref returned by a scientific Skill helper. Use native bash for email, report formatting and request preparation; these do not create calculation Attempts.", Type.Object({
+    ...Object.fromEntries(["strategy", "interpretation", "checkpoint"].map(key => [key,
+      contract(key, `Research ${key}`, `Record a research ${key}.`, decisionSchemas[key],
+        { executionMode: "sequential", replay: "never" }),
+    ])),
+    jobStart: contract("jobStart", "Start Job", "Start a durable scientific computation Job. Pass a reviewed request_file with its request_sha256; Job Runtime resolves it and registers its immutable prepared_ref at submission. Existing prepared_ref values can be reused. For prepared submissions, pass only the reference/digest, node_id and optional timeout_seconds/repeat/root; request_id, work_id, command and execution fields are already fixed inside the request. Use native bash for email, report formatting and request preparation; these do not create calculation Attempts.", Type.Object({
       node_id: Type.Optional(nodeReference),
       attempt_id: Type.Optional(identifier(128)),
       request_id: Type.Optional(identifier(128)),
       validator_id: Type.Optional(identifier(128)),
+      validator_version: Type.Optional(identifier(64)),
       input_artifact_ids: Type.Optional(Type.Array(identifier(256), { minItems: 1, maxItems: 256 })),
       work_id: Type.Optional(identifier(128)),
       repeat: Type.Optional(Type.Object({ predecessor_job_id: identifier(256), reason: Type.String({ minLength: 1 }), budget: Type.String({ minLength: 1 }) }, { additionalProperties: false })),
@@ -294,11 +223,11 @@ export function createPublicToolContracts(Type) {
       cwd: Type.Optional(Type.String({ minLength: 1, maxLength: 4096, description: "Relative subdirectory of the isolated runs/jobs/<job_id> directory; omit for its root. Absolute workspace paths are invalid." })),
       environment: Type.Optional(Type.Record(Type.String({ maxLength: 128 }), Type.String({ maxLength: 16_384 }))),
       inputs: Type.Optional(Type.Array(Type.Union([Type.String({ minLength: 1, maxLength: 4096 }), Type.Object({ source: Type.String({ minLength: 1 }), sha256: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })), destination: Type.String({ minLength: 1, description: "Relative path under Job cwd; source is absolute or workspace-relative and is copied before execution." }) }, { additionalProperties: false })]), { maxItems: 256 })),
-      outputs: Type.Optional(Type.Array(Type.Object({ path: Type.String({ minLength: 1, maxLength: 4096, description: "Relative to Job cwd; declare paths produced by the command, never absolute workspace paths." }), required: Type.Optional(Type.Boolean()), min_bytes: Type.Optional(Type.Integer({ minimum: 0 })), media_type: Type.Optional(Type.String({ maxLength: 256 })) }, { additionalProperties: false }), { maxItems: 256 })),
+      outputs: Type.Optional(Type.Array(Type.Object({ path: Type.String({ minLength: 1, maxLength: 4096, description: "Relative to Job cwd; declare paths produced by the command, never absolute workspace paths." }), required: Type.Optional(Type.Boolean()), min_bytes: Type.Optional(Type.Integer({ minimum: 0 })), recursive: Type.Optional(Type.Boolean({ description: "Collect every file in this declared output directory, preserving Job provenance." })), media_type: Type.Optional(Type.String({ maxLength: 256 })) }, { additionalProperties: false }), { maxItems: 256 })),
       timeout_seconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 604800 })),
       platform: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
       root: optionalRoot,
-    }, { additionalProperties: false, anyOf: [{ required: ["command"] }, { required: ["prepared_ref"] }, { required: ["request_file", "request_sha256"] }, { required: ["validator_id", "input_artifact_ids"] }] }), { executionMode: "sequential", replay: "never" }),
+    }, { additionalProperties: false, anyOf: [{ required: ["command"] }, { required: ["prepared_ref"] }, { required: ["request_file", "request_sha256"] }, { required: ["validator_id", "validator_version", "input_artifact_ids"] }] }), { executionMode: "sequential", replay: "never" }),
     jobStatus: contract("jobStatus", "Job Status", "Read the status of a durable job.", selectorSchema, { executionMode: "sequential" }),
     jobCollect: contract("jobCollect", "Collect Job", "Collect declared job outputs without requiring a domain parser.", selectorSchema, { executionMode: "sequential" }),
     jobCancel: contract("jobCancel", "Cancel Job", "Cancel a durable job.", selectorSchema, { executionMode: "sequential" }),
@@ -319,159 +248,12 @@ export function createPublicToolContracts(Type) {
 function contract(key, label, description, parameters, extra = {}) {
   const metadata = PUBLIC_TOOL_METADATA[PUBLIC_TOOL_NAMES[key]];
   if (!metadata) throw new Error(`missing Harness metadata for ${PUBLIC_TOOL_NAMES[key]}`);
-  const canonicalName = PUBLIC_TOOL_CANONICAL_NAMES[key] || PUBLIC_TOOL_NAMES[key];
   return {
     name: PUBLIC_TOOL_NAMES[key],
-    canonicalName,
-    deprecated: false,
-    aliasFor: undefined,
     label,
     description,
     parameters,
     metadata,
     ...extra,
-  };
-}
-
-/**
- * Clone one executable contract under its semantic canonical name.
- *
- * ``mapParams`` is used for the operation-specific research decision aliases;
- * all other aliases forward parameters and execution context unchanged.
- */
-export function createPublicToolAlias(tool, canonicalName, { mapParams } = {}) {
-  if (!tool || typeof tool !== "object" || typeof tool.execute !== "function") {
-    throw new TypeError("tool alias requires an executable tool");
-  }
-  const descriptor = PUBLIC_TOOL_ALIASES[canonicalName];
-  if (!descriptor) {
-    throw new TypeError(`unknown canonical tool: ${canonicalName}`);
-  }
-  const source = tool;
-  return {
-    ...source,
-    name: canonicalName,
-    canonicalName,
-    deprecated: false,
-    aliasFor: source.name,
-    parameters: DECISION_ALIAS_SCHEMAS[canonicalName] || source.parameters,
-    metadata: PUBLIC_TOOL_METADATA[canonicalName],
-    execute(toolCallId, params, ...rest) {
-      return source.execute(toolCallId, mapParams ? mapParams(params) : params, ...rest);
-    },
-  };
-}
-
-const SEMANTIC_ALIAS_SOURCES = Object.freeze({
-  "system_prompt": "sys_prompt",
-  "research_read": "research_read",
-  "research_change": "research_change",
-  "research_strategy": "research_lifecycle",
-  "research_interpretation": "research_lifecycle",
-  "research_checkpoint": "research_lifecycle",
-  "job_start": "job_start",
-  "job_status": "job_status",
-  "job_collect": "job_collect",
-  "job_cancel": "job_cancel",
-  "job_probe": "job_probe",
-  "job_reconcile": "job_reconcile",
-  "artifact_register": "artifact_register",
-  "artifact_create": "artifact_create",
-  "artifact_read": "artifact_read",
-  "artifact_derive": "artifact_derive",
-  "artifact_link": "artifact_link",
-});
-
-// Decision aliases intentionally expose only operation-specific fields. They
-// forward to one workflow implementation without copying the full
-// lifecycle_action schema into three additional Agent context slots.
-function identifierSchema() {
-  return { type: "string", minLength: 1, maxLength: 256 };
-}
-
-function nodeIdentifierSchema() {
-  return { type: "string", pattern: "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$", maxLength: 128 };
-}
-
-function claimIdentifierSchema() {
-  return { type: "string", pattern: "^claim_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$", maxLength: 128 };
-}
-
-function textSchema(maxLength = 12_000) {
-  return { type: "string", minLength: 1, maxLength };
-}
-
-function record(properties, required) {
-  return { type: "object", properties, required, additionalProperties: false };
-}
-const refs = { type: "array", maxItems: 256, uniqueItems: true, items: identifierSchema() };
-const common = {
-  rationale: textSchema(), basis_refs: refs,
-  expected_revision: { type: "integer", minimum: 0 }, event_id: identifierSchema(), root: { type: "string" },
-};
-const DECISION_ALIAS_SCHEMAS = Object.freeze({
-  research_strategy: record({
-    ...common, strategy_operation: { enum: ["plan", "review"] },
-    plan: record({ id: identifierSchema(), claim_id: claimIdentifierSchema(), node_id: nodeIdentifierSchema(),
-      objective: textSchema(), rationale: textSchema(),
-      steps: { type: "array", items: { type: "object" }, maxItems: 128 },
-      alternatives: { type: "array", items: { type: "object" }, maxItems: 128 },
-      stop_conditions: refs, switch_conditions: refs,
-      status: { enum: ["proposed", "active", "superseded", "completed", "blocked"] },
-    }, ["id", "claim_id", "objective", "rationale"]),
-    review: record({ id: identifierSchema(), claim_id: claimIdentifierSchema(),
-      decision: { enum: ["continue", "switch", "stop", "blocked"] }, rationale: textSchema(),
-      selected_strategy_id: identifierSchema(), trigger_refs: refs, attempt_refs: refs,
-    }, ["id", "claim_id", "decision", "rationale"]),
-  }, ["strategy_operation"]),
-  research_interpretation: record({ ...common, interpretation: record({
-    id: identifierSchema(), claim_id: claimIdentifierSchema(), node_id: nodeIdentifierSchema(),
-    attempt_ref: identifierSchema(), summary: textSchema(),
-    outcome: { enum: ["supports", "contradicts", "inconclusive", "invalid"] },
-    kind: { enum: ["result", "observation", "execution_issue"] },
-    direct_evidence_refs: { ...refs, description: "Registered Artifact IDs produced by this Attempt, returned by job_collect or research_read mode=evidence. Attempt IDs and Job IDs are not Artifact IDs." },
-    comparison_evidence_refs: refs, background_evidence_refs: refs,
-    result_receipt_ref: identifierSchema(), execution_observation_ref: identifierSchema(),
-    supersedes_id: identifierSchema(), finding_ids: refs, gate_ids: refs,
-  }, ["id", "claim_id", "attempt_ref", "summary", "outcome", "kind"]) }, ["interpretation"]),
-  research_checkpoint: record({ ...common, checkpoint: record({
-    id: identifierSchema(), turn_id: identifierSchema(), disposition: { enum: dispositions },
-    reason: textSchema(), claim_ids: refs, node_ids: refs, unresolved_refs: refs,
-    map_revision: { type: "integer", minimum: 0 },
-  }, ["disposition", "reason"]) }, ["checkpoint"]),
-});
-
-/** Create all semantic aliases available in a transport's tool list. */
-export function createPublicToolAliases(tools, { includeDecisionAliases = true } = {}) {
-  if (!Array.isArray(tools)) throw new TypeError("tool aliases require an array");
-  const byName = new Map(tools.map((tool) => [tool?.name, tool]));
-  return Object.entries(SEMANTIC_ALIAS_SOURCES).flatMap(([canonicalName, sourceName]) => {
-    if (!includeDecisionAliases && [
-      "research_strategy",
-      "research_interpretation",
-      "research_checkpoint",
-    ].includes(canonicalName)) return [];
-    const source = byName.get(sourceName);
-    if (!source) return [];
-    const mapParams = canonicalName === "research_strategy"
-      ? (params) => ({
-        ...params,
-        operation: "strategy",
-        strategy_operation: params?.strategy_operation || "plan",
-      })
-      : canonicalName === "research_interpretation"
-        ? (params) => ({ ...params, operation: "interpret" })
-        : canonicalName === "research_checkpoint"
-          ? (params) => ({ ...params, operation: "checkpoint" })
-          : undefined;
-    return [createPublicToolAlias(source, canonicalName, { mapParams })];
-  });
-}
-
-function requiredOperationBranch(operation, requiredFields) {
-  return {
-    type: "object",
-    properties: { operation: { const: operation } },
-    required: ["operation", ...requiredFields],
   };
 }

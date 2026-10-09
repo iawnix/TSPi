@@ -62,13 +62,13 @@ def test_public_document_set_covers_install_architecture_and_maintenance() -> No
         "## Prerequisites",
         "## Install Or Select A Release",
         "## Managed Python Runtime",
-        "## Configure Remote Execution",
+        "## Configure execution targets",
         "## Configure Notifications",
         "## Start The Installation Host",
         "## Workspace Bootstrap",
         "## Run The Research Explorer",
         "## Upgrade",
-        "## Rollback",
+        "## Installation Failure Recovery",
         "## Operational Recovery",
     ]:
         assert heading in installation

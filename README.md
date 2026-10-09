@@ -44,8 +44,9 @@ the Host automatically. When the Relay must run elsewhere, set
 `install-link-relay.sh` remains available when the Relay must run on a
 separate machine.
 
-The core installation always includes the Agent, scientific runtime, and
-molecular rendering. TS Web is optional. The installer configures one
+The core installation includes the Agent and a minimal control runtime.
+Scientific computation, validation, and rendering use separately configured
+Job environments. TS Web is optional. The installer configures one
 installation-wide TSPi Host; there is no TS Phone daemon to install.
 
 Interactive installation also offers the optional TSPi Model Icons font.

@@ -16,7 +16,7 @@ from .transactions import TransactionCoordinator, _safe_path, read_json, state_t
 
 _REFERENCE = re.compile(r"^([ap])([1-9][0-9]*)$")
 _INDEX = "operations/references/index.json"
-_REQUEST_FIELDS = {"request_id", "work_id", "command", "platform", "environment", "inputs", "outputs", "metadata", "timeout_seconds"}
+_REQUEST_FIELDS = {"request_id", "work_id", "command", "platform", "environment", "inputs", "outputs", "metadata", "timeout_seconds", "input_artifact_ids"}
 _REFERENCE_FIELDS = {"artifact_id", "artifact_ref", "source_ref", "source_refs", "evidence_refs", "basis_refs",
                      "direct_evidence_refs", "comparison_evidence_refs", "background_evidence_refs",
                      "input_artifact_ids", "output_artifact_ids", "artifact_refs"}
@@ -99,9 +99,8 @@ def _workspace(root):
     return path
 
 
-@state_transaction("job.prepare")
-def prepare_job(root, params=None):
-    """Capture a reviewed file and pin every input before handing back a name."""
+def read_prepared_file(root, params=None):
+    """Read and pin a file once, without registering or executing anything."""
     params = params or {}
     root = _workspace(root)
     request_file = params.get("request_file")
@@ -114,6 +113,9 @@ def prepare_job(root, params=None):
     encoded = path.read_bytes()
     if len(encoded) > 1_000_000:
         raise ReferenceError("prepared_request_invalid", "request_file exceeds 1 MB")
+    expected = params.get("request_sha256")
+    if expected is not None and hashlib.sha256(encoded).hexdigest() != expected:
+        raise ReferenceError("prepared_request_changed", "prepared Job digest mismatch; inspect the current request")
     request = json.loads(encoded)
     if (not isinstance(request, dict) or set(request) - _REQUEST_FIELDS
             or not isinstance(request.get("request_id"), str) or not request["request_id"]
@@ -144,9 +146,20 @@ def prepare_job(root, params=None):
     request["inputs"] = pinned
     payload = {"source_path": str(path.relative_to(root)), "source_sha256": hashlib.sha256(encoded).hexdigest(),
                "request_sha256": _digest(request), "request": request}
+    return payload
+
+
+def register_prepared_payload(root, payload):
+    """Register the resolved bytes within the caller's State transaction."""
+    request = payload["request"]
     ref = _register(root, "prepared_job", _digest(payload), payload)
     return {"prepared_ref": ref, "request_id": request["request_id"], "work_id": request["work_id"],
             "request_sha256": payload["request_sha256"]}
+
+
+@state_transaction("job.prepare")
+def prepare_job(root, params=None):
+    return register_prepared_payload(_workspace(root), read_prepared_file(root, params))
 
 
 def resolve_prepared_job(root, params):

@@ -20,7 +20,7 @@ ResearchMap 的领域概念继续保留；实际写入、校验和视图由 agen
 
 - Workspace 校验、模式策略、身份和 Research State bridge。
 - Native Host 活动记录和规范 ResearchMap reader。
-- 连接现行 Host 的 HTTP adapter。
+- 连接现行 Host 的鉴权浏览器网关；无鉴权 HTTP adapter 和直连 Pi 网关已经删除。
 - 原有持久计数器与 CLI ID 分配能力，迁入 research_state.operational_ids。
 - research_web_bridge.py 中 TS Web 使用的 research-map-provider/1 JSONL 服务。
 - 第三方扩展的 provider 发现元数据；它不提供通用执行调度。

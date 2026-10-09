@@ -1,5 +1,4 @@
 """Prepare bounded mapped DA QST2 candidates or bidirectional IRC inputs; never submit Jobs."""
-import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -161,15 +160,8 @@ def prepare_irc(spec_file, checkpoint, output, max_points=80):
 
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__)
-    sub=p.add_subparsers(dest='action',required=True)
-    for name in ('candidates','irc'):
-        command=sub.add_parser(name);command.add_argument('--spec',required=True,type=Path);command.add_argument('--output-dir',required=True,type=Path)
-        if name=='candidates':
-            command.add_argument('--conformers',type=int,default=1);command.add_argument('--enumerate-stereo',action='store_true')
-        else:
-            command.add_argument('--checkpoint',type=Path,required=True);command.add_argument('--max-points',type=int,default=80)
-    a=p.parse_args()
+    from cli import parse_arguments
+    a=parse_arguments()
     result=prepare_candidates(a.spec,a.output_dir,a.conformers,a.enumerate_stereo) if a.action=='candidates' else prepare_irc(a.spec,a.checkpoint,a.output_dir,a.max_points)
     print(json.dumps(result,allow_nan=False))
     return 0

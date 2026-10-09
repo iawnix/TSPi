@@ -14,14 +14,14 @@ def parse_arguments(argv=None):
     p.add_argument('--method', default='M062X')
     p.add_argument('--basis', default='6-31G**')
     p.add_argument('--charge', type=int, default=0)
-    p.add_argument('--spin', type=int, default=0, help='2S; multiplicity is spin+1')
+    p.add_argument('--multiplicity', type=int, default=1, help='spin multiplicity 2S+1')
     p.add_argument('--threads', type=int, default=1)
     p.add_argument('--memory-mb', type=int, default=2000)
     a=p.parse_args(argv)
     if a.input_gjf and a.task: p.error('--task is only for the XYZ shortcut')
     if a.xyz and not a.task: p.error('--xyz requires --task')
     if a.xyz and a.validation != 'none': p.error('--validation requires --input-gjf; XYZ uses --task validation')
-    if a.spin < 0 or a.threads < 1 or a.memory_mb < 1: p.error("invalid spin/resources")
+    if a.multiplicity < 1 or a.threads < 1 or a.memory_mb < 1: p.error("invalid multiplicity/resources")
     if not all(re.fullmatch(r"[A-Za-z0-9+*(),._-]+", v) for v in [a.method,a.basis]):
         p.error("method/basis must be single Gaussian route tokens")
     return a

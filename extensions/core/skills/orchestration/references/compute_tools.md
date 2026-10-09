@@ -11,15 +11,21 @@ job_probe -> job_start -> job_status -> job_collect
 ```
 
 `job_start` accepts an arbitrary argv vector and a workspace-relative working
-directory. It creates a durable receipt and captures stdout and stderr. It does
+directory; it does not require a scientific registry. For a domain-declared
+executor, prepare it through native bash, then pass its returned
+`request_file` and `request_sha256` with `node_id` to `job_start`. Execution
+identity and parameters are already inside the file; adding a new request_id
+or work_id at submission is rejected. Use the tool parameter contract for
+other input forms. The Job creates a durable receipt and captures stdout and stderr. It does
 not select a scientific method, parse output, validate a Claim, or create a
 Finding automatically.
 
 Use `job_status` while a process is running. Use `job_reconcile` after a monitor
 wake or service restart when the receipt state is uncertain. Use `job_collect`
-only after the job reaches a terminal state. Register each meaningful output with
-`artifact_register`; create a Finding with `research_change` and cite the
-Artifact as a source reference.
+only after the job reaches a terminal state. Collection registers the declared
+outputs and returns their Artifact references. Inspect those outputs, then cite
+them when recording a meaningful Finding. Use `artifact_register` for material
+not produced by collection, such as imported data or an externally supplied report.
 
 A Skill may describe Gaussian, xTB, PySCF, or any other program. The Skill may
 also provide scripts and validation references. Those instructions are data for

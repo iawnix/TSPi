@@ -1,69 +1,33 @@
-# Root Agent Change Protocol
+# Research decision procedure
 
-Root owns scientific judgment. The Research State owns structural validity and atomic
-storage. Keep those responsibilities separate.
+Use the supplied State snapshot and read only missing or stale details. Before
+changing the map, identify the question, uncertainty, owning Node and evidence.
+Reuse the Node for retries; create a dependent Node when the question or deliverable
+changes. Preserve user obligations independently of the selected plan.
 
-## Before A Change
+Choose the next step from available evidence. Inspect actual outputs and their
+execution records before recording a scientific conclusion. An operational failure
+may warrant recovery without producing a scientific Finding. Record a Finding
+when the verified result or limitation will help later decisions.
 
-Use the current State snapshot. For missing or stale information, read the smallest
-useful `research_read` view: `detail` for an object, `evidence` for source records,
-or `context`/`liveness` for the current decision. These are alternatives, not a required read sequence.
+Keep one coherent decision in a ChangeSet with its rationale. Consult
+`research_read mode=operations query=<operation>` for current fields and examples;
+[Research State decision guidance](../../research-state/references/decision_contract.md)
+explains evidence and reassessment. A rejected batch commits nothing. Repair the
+identified prerequisite without repeating an external effect.
 
-State the question, the current uncertainty, the Node that owns the work, and
-the source records supporting the proposed change. Reuse existing IDs. Create a
-new dependent Node when the question, deliverable, or Claim scope changes;
-retrying the same calculation remains an Attempt under the same Node.
+After a change, use the returned State to select independent ready work, wait for
+running work, or describe the remaining blocker. Node completion, Claim assessment
+and requirement satisfaction answer different questions. A completed phase of work
+may leave the requested deliverable unmet. Preserve this distinction in reports.
 
-## During A Change
+Before ending the turn, record a checkpoint matching the actual remaining work.
+The [generated public contract](public_contract.md) supplies supported dispositions.
+Continue authorized work when possible; request user input when a missing decision
+prevents further progress. Use State's returned admission result to decide whether
+a requested continuation or wait was accepted. Monitor wakes are reminders to inspect
+changed execution facts, not instructions to select a scientific method.
 
-Submit one `research_change` request with a concrete rationale and ordered operations.
-Use `create_finding` for verified Node outputs and choose `kind=fact` or
-`kind=issue`. Keep a Finding's statement narrow and cite `source_refs` such as
-Artifact IDs. Use `create_gate` only for a criterion that needs to be visible
-in the map, then `evaluate_gate` with the current evidence references.
-`source_refs` may contain only registered Artifact or EvidenceLink IDs. Strategy-plan,
-Claim, Node, and request IDs are not evidence; use request-level `basis_refs` when a
-ChangeSet or strategy is the decision basis instead of placing its ID in a Finding.
-
-Do not infer a scientific conclusion from a successful tool return. Check the
-primary Artifact and execution record first. A scheduler or parser failure is
-operational information; record an IssueFinding only when its scientific impact
-has been established.
-
-## After A Change
-
-Read the returned revision and, when useful, `research_read mode=summary`. A Node can be
-closed as `completed` only when its completion criteria are satisfied and every
-attached NodeGate has a passing latest evaluation. Use `inconclusive` or
-`stopped` when the question is not resolved. Use `assess_claim` with a reason and registered evidence for scientific Claim status;
-Node state and Claim status do not imply one another.
-
-For a new question, create the successor Node with a dependency on the prior
-Node and set focus in the same or a subsequent ChangeSet. Preserve the old
-Node, Findings, Gates, Artifacts, and Attempts as history.
-
-## Research Turn Checkpoint
-
-At the end of a research turn, use the latest snapshot, reading `context` or
-`liveness` only when needed information is missing or stale. Record any needed strategy or Attempt interpretation,
-and call `research_checkpoint` with an explicit disposition:
-`continue_required`, `waiting_external`, `deferred`, `blocked`, `terminal`, or
-`user_input_required`. `research_checkpoint` is the canonical turn checkpoint.
-Parsed or completed operational records do not close a scientific question by themselves.
-`decision_needed` requires the Root Agent to continue and record a checkpoint.
-When liveness also reports `execution_ready=true`, an active StrategyPlan covers
-the focused scope and the Root Agent may execute that declared plan before the
-checkpoint; the Host still requires the checkpoint before the turn ends. A
-Harness follow-up may enforce that boundary but never chooses a method. A
-`continue_required` plan is a valid next-turn checkpoint and must not be forced
-to execute in the same turn. Monitor `next_run` is only an operational wake-up.
-
-## Review
-
-Review is an isolated advisory assessment and never writes the map. Give it
-only the Claim and registered Artifacts it needs. It cannot mutate Claims,
-Nodes, Findings, Gates, choose a method, launch/cancel Compute, or serve as
-evidence by itself. Answer it through `research_interpretation`, then record Root's
-accepted, rejected, or qualified interpretation with ordinary map operations.
-
-`artifact_derive` records a derivation descriptor only. Execute actual analysis with Skill scripts through Job Runtime, then register its outputs.
+Use advisory review for a specific uncertainty. Give the reviewer the relevant
+Claim and registered evidence, then record the accepted, rejected or qualified
+interpretation yourself. The review is not evidence or a substitute for execution.

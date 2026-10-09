@@ -7,17 +7,15 @@ import re
 from pathlib import Path
 from typing import Any
 
-from xtb_scan import parse_xtb_scan_artifact
 from xyz import xyz_frame_metadata
 
 
-XTB_TASK_TYPES = frozenset({"sp", "opt", "freq", "opt_freq", "scan", "md"})
+XTB_TASK_TYPES = frozenset({"sp", "opt", "freq", "opt_freq", "md"})
 XTB_ARTIFACTS = {
     "sp": ("xtb.out",),
     "opt": ("xtbopt.xyz", "xtb.out"),
     "freq": ("vibspectrum", "xtb.out"),
     "opt_freq": ("xtbopt.xyz", "vibspectrum", "xtb.out"),
-    "scan": ("xtbscan.log", "xtbopt.xyz", "xtb.out"),
     "md": ("xtb.trj", "xtb.out"),
 }
 XTB_REQUIRED_ARTIFACTS = {
@@ -41,8 +39,6 @@ _FLOAT = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[EeDd][-+]?\d+)?"
 def parse_xtb_artifacts(
     task_type: str,
     artifacts: dict[str, Path],
-    *,
-    control: Path | None = None,
 ) -> dict[str, Any]:
     if task_type not in XTB_TASK_TYPES:
         raise ValueError(f"unsupported xTB task_type: {task_type}")
@@ -98,7 +94,7 @@ def parse_xtb_artifacts(
     }
 
     details: dict[str, Any] = {}
-    if task_type in {"opt", "opt_freq", "scan"} and "xtbopt.xyz" in artifacts:
+    if task_type in {"opt", "opt_freq"} and "xtbopt.xyz" in artifacts:
         geometry = xyz_frame_metadata(artifacts["xtbopt.xyz"])
         summary["optimized_geometry_atom_count"] = geometry["atom_count"]
         summary["optimized_geometry_energy_hartree"] = geometry["frames"][0].get("energy_hartree")
@@ -115,17 +111,6 @@ def parse_xtb_artifacts(
             }
         )
         details["frequencies_cm-1"] = frequencies
-    if task_type == "scan":
-        if control is None:
-            raise ValueError("xTB scan parsing requires the bound control input")
-        scan = parse_xtb_scan_artifact(control, artifacts.get("xtbscan.log"))
-        scan_detected = "RELAXED SCAN" in text
-        summary.update(scan["summary"])
-        summary["scan_detected"] = scan_detected
-        summary["scan_complete"] = bool(
-            scan_detected and summary.pop("scan_data_complete")
-        )
-        details["scan_points"] = scan["points"]
     if task_type == "md":
         summary.update(_parse_md_log(text))
         if "xtb.trj" in artifacts:

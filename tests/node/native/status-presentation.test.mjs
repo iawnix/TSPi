@@ -35,7 +35,7 @@ test('monitor waiting, outbox and inbox are distinct, scoped and health-aware',(
  const state={view:{docs:{}},monitor,sessionId:'s',now};
  assert.equal(activityStatus(state).text,'Waiting for jobs · 1 running · Monitor active');
  assert.match(activityStatus({...state,monitor:{...monitor,pending_deliveries:[{session_id:'s'}]}}).text,/Wake pending delivery/);
- assert.match(activityStatus({...state,view:{docs:{'pi.inbox':{items:[{mode:'followUp',content:'A compute monitor event requires attention.\nevent_id=event_one'}]}}}}).text,/Wake queued/);
+ assert.doesNotMatch(activityStatus({...state,view:{docs:{'pi.inbox':{items:[{mode:'followUp',content:'A compute monitor event requires attention.\nevent_id=event_one'}]}}}}).text,/Wake queued/);
  assert.doesNotMatch(activityStatus({...state,view:{docs:{'pi.inbox':{items:[{mode:'followUp',content:'ordinary user input'}]}}}}).text,/Wake queued/);
  assert.equal(activityStatus({...state,sessionId:'absent'}).text,'');
  assert.match(activityStatus({...state,now:now+31000}).text,/stale/);

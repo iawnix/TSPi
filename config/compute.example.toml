@@ -1,4 +1,5 @@
-# Unified compute configuration.
+# Execution bindings; edit these example target paths before installation.
+# Provision the shipped extensions/chemical/environments locks first.
 # Copy to the installation-owned etc/job.toml and edit the backend bindings
 # available in each compute environment. The kind selects the execution platform.
 
@@ -9,51 +10,57 @@ kind = "local"
 
 [environments.local.python]
 manager = "conda"
-conda_executable = "/home/iaw/soft/miniconda/26.7.1-1/bin/conda"
-prefix = "/home/iaw/soft/tspi/envs/runner-20261007"
-lock_ref = "/home/iaw/soft/tspi/locks/runner.lock"
+conda_executable = "/opt/conda/bin/conda"
+prefix = "/opt/tspi/envs/wrapper-20261009"
+lock_ref = "/opt/tspi/locks/wrapper.lock"
+
+# These Python-only methods use the selected target's RDKit/NumPy environment.
+[environments.local.backends.structure]
+[environments.local.backends.structure.python]
+manager = "conda"
+conda_executable = "/opt/conda/bin/conda"
+prefix = "/opt/tspi/envs/structure-20261009"
+lock_ref = "/opt/tspi/locks/structure.lock"
+[environments.local.backends.validation]
+[environments.local.backends.validation.python]
+manager = "conda"
+conda_executable = "/opt/conda/bin/conda"
+prefix = "/opt/tspi/envs/structure-20261009"
+lock_ref = "/opt/tspi/locks/structure.lock"
 
 [environments.local.backends.gaussian]
-command = "/home/iaw/soft/gaussian/16-A.03/g16/g16"
-activation_script = "/home/iaw/soft/gaussian/activate_gaussian16.sh"
+command = "/opt/gaussian/g16/g16"
+activation_script = "/opt/gaussian/activate.sh"
+[environments.local.backends.gaussian.environment]
+GAUSS_SCRDIR = "{scratch}"
 
 [environments.local.backends.xtb]
-command = "/home/iaw/soft/xtb/6.7.1/bin/xtb"
-activation_script = "/home/iaw/soft/xtb/6.7.1/activate_xtb.sh"
+command = "/opt/xtb/bin/xtb"
+activation_script = "/opt/xtb/activate.sh"
 
-[environments.local.backends.ase_neb_xtb]
-command = "/home/iaw/soft/xtb/6.7.1/bin/xtb"
-activation_script = "/home/iaw/soft/xtb/6.7.1/activate_xtb.sh"
-
-# Scientific dependencies are isolated from both Host and wrapper scripts.
+# CF22D uses its own complete Conda lock; no custom LD_PRELOAD is needed.
 [environments.local.backends.pyscf]
-activation_script = "/home/iaw/soft/tspi/envs/cf22d-20261007/activate_science.sh"
 
 [environments.local.backends.pyscf.python]
 manager = "conda"
-conda_executable = "/home/iaw/soft/miniconda/26.7.1-1/bin/conda"
-prefix = "/home/iaw/soft/tspi/envs/cf22d-20261007"
-lock_ref = "/home/iaw/soft/tspi/locks/cf22d.lock"
-
-[environments.local.backends.crest]
-command = "/home/iaw/soft/crest/3.0.2/bin/crest"
-activation_script = "/home/iaw/soft/crest/activate_crest.sh"
+conda_executable = "/opt/conda/bin/conda"
+prefix = "/opt/tspi/envs/cf22d-20261009"
+lock_ref = "/opt/tspi/locks/cf22d.lock"
 
 # Local remains the default. Select the remote explicitly with
-# execution_target.kind = "remote" and environment = "remote".
+# platform = "remote" in the prepared Job request.
 # Remote paths below must exist on the remote host.
 # Commands are arrays because the remote scheduler script may need fixed arguments.
 
 [environments.remote]
 kind = "remote"
-ssh_host = "agent.1w"
-ssh_config = "/home/iaw/.ssh/config"
+ssh_host = "research-cluster"
 scheduler = "torque"
-remote_root = "/home/agent/ts-remote-workspaces"
+remote_root = "/scratch/tspi/jobs"
 allowed_queues = ["batch", "fat", "fata"]
-max_nodes = 1
 connect_timeout_seconds = 15
 command_timeout_seconds = 60
+transfer_timeout_seconds = 3600
 
 # Choose an installation-approved queue explicitly; allowed_queues is not a default.
 [environments.remote.submission]
@@ -66,49 +73,49 @@ walltime = "01:00:00"
 
 [environments.remote.python]
 manager = "conda"
-conda_executable = "/home/agent/soft/tspi/conda/bin/conda"
-prefix = "/home/agent/soft/tspi/envs/runner-20261007"
-lock_ref = "/home/agent/soft/tspi/locks/runner.lock"
+conda_executable = "/opt/conda/bin/conda"
+prefix = "/opt/tspi/envs/wrapper-20261009"
+lock_ref = "/opt/tspi/locks/wrapper.lock"
+
+[environments.remote.backends.structure]
+[environments.remote.backends.structure.python]
+manager = "conda"
+conda_executable = "/opt/conda/bin/conda"
+prefix = "/opt/tspi/envs/structure-20261009"
+lock_ref = "/opt/tspi/locks/structure.lock"
+[environments.remote.backends.validation]
+[environments.remote.backends.validation.python]
+manager = "conda"
+conda_executable = "/opt/conda/bin/conda"
+prefix = "/opt/tspi/envs/structure-20261009"
+lock_ref = "/opt/tspi/locks/structure.lock"
 
 [environments.remote.commands]
 qsub = "qsub"
 qstat = "qstat"
 qdel = "qdel"
-pbsnodes = "pbsnodes"
 checkjob = "checkjob"
 
 [environments.remote.backends.gaussian]
 command = ["g16"]
-activation_script = "/home/agent/soft/gaussian/activate_gaussian16.sh"
+activation_script = "/opt/gaussian/activate.sh"
 allowed_queues = ["batch", "fat", "fata"]
-requires_gpu = false
 
 [environments.remote.backends.xtb]
-command = ["/home/agent/soft/xtb/current/bin/xtb"]
+command = ["/opt/xtb/bin/xtb"]
 allowed_queues = ["batch", "fat", "fata"]
-requires_gpu = false
-
-[environments.remote.backends.crest]
-command = ["/home/agent/soft/crest/current/bin/crest"]
-activation_script = "/home/agent/soft/crest/activate_crest.sh"
-allowed_queues = ["batch", "fat", "fata"]
-requires_gpu = false
-
-[environments.remote.backends.ase_neb]
-command = ["/home/agent/soft/ase-neb/current/.pixi/envs/default/bin/python"]
-allowed_queues = ["batch", "fat", "fata"]
-requires_gpu = false
-
-[environments.remote.backends.ase_neb.environment]
-TS_ASE_NEB_XTB = "/home/agent/soft/xtb/current/bin/xtb"
-# Required when an ase.neb intent selects calculator = "gaussian_cli".
-TS_ASE_NEB_GAUSSIAN = "/home/agent/soft/gaussian/current/g16/g16"
 
 [environments.remote.backends.pyscf]
-activation_script = "/home/agent/soft/tspi/envs/cf22d-20261007/activate_science.sh"
 
 [environments.remote.backends.pyscf.python]
 manager = "conda"
-conda_executable = "/home/agent/soft/tspi/conda/bin/conda"
-prefix = "/home/agent/soft/tspi/envs/cf22d-20261007"
-lock_ref = "/home/agent/soft/tspi/locks/cf22d.lock"
+conda_executable = "/opt/conda/bin/conda"
+prefix = "/opt/tspi/envs/cf22d-20261009"
+lock_ref = "/opt/tspi/locks/cf22d.lock"
+
+# Optional molecular images; text reports need no rendering libraries.
+[environments.local.backends.render.python]
+manager = "conda"
+conda_executable = "/opt/conda/bin/conda"
+prefix = "/opt/tspi/envs/render-20261009"
+lock_ref = "/opt/tspi/locks/render.lock"

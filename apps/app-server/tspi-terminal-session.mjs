@@ -18,8 +18,7 @@ export function createTerminalSession({ request, workspaceId, sessionId, switchS
       signal?.throwIfAborted();
       const result = await request("session/list", { workspace_id: workspaceId });
       signal?.throwIfAborted();
-      return (result.sessions || []).filter((session) => session.workspace_id === workspaceId
-        && session.read_only !== true && session.format === "pi-harness");
+      return result.sessions.filter(session => session.workspace_id === workspaceId);
     },
     async resume(targetId) {
       signal?.throwIfAborted();

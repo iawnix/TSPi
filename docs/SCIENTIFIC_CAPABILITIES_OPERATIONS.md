@@ -1,67 +1,43 @@
-# Scientific Capabilities: Usage and Operations
+# Scientific execution and operations
 
-[English](SCIENTIFIC_CAPABILITIES_OPERATIONS.md) | [简体中文](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)
+[简体中文](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)
 
-This guide describes the current independent-analysis and Node-dispatch
-contracts. It is an operational reference, not a second research protocol.
+The extension manifest declares executable methods and validators. Skills explain method selection, scientific limitations and interpretation. Research State records requirements and evidence; adding an executor does not require a method-specific State change.
 
-## Software And Dependencies
+## Prepare and execute
 
-The managed runtime supplies Python, RDKit, ASE, NumPy, jsonschema, rendering
-support, and the `tspi-runtime` wheel. Gaussian, xTB, CREST, and other
-native programs remain administrator-managed Backends. Discover supported
-capabilities through the versioned catalog rather than assuming a command is
-installed.
+List installed entries with `"$TSPI_PYTHON" -m tspi_runtime.executors --list`. Select an executor id/version and a named environment from installation-owned `etc/job.toml`. The descriptor supplies its backend key, pinned scripts, pure CLI parser, input roles and output declarations. Native entries need no Python binding; Python entries use the selected target's configured interpreter.
 
-## Node Operations And Recovery
+The preparation command writes a request and returns `request_file` and `request_sha256`. Submit these with `node_id` to `job_start`. Runtime checks the file and inputs, applies State admission, and registers `prepared_ref`, Attempt and dispatch intent together. Preparation alone creates no Attempt and proves no scientific outcome.
 
-An analysis or dispatch belongs to one ResearchNode and writes only to its
-Node-owned artifact area. Pause/resume receipts are operational records and do
-not change the scientific Node state. Inspection, collection, parsing, and
-exact cancellation remain available while a Node is paused. A restart must
-reconcile the latest receipt before another submission.
+A task-specific Python method can use `--script <file.py> --backend <binding>` instead of executor/version. Declare staged dependencies and collected outputs. For registered input evidence, pass `--input-artifact <id-or-ref>` so Runtime verifies its actual staged bytes and preserves lineage.
 
-Use the same public `job_start/job_status/job_collect` operations for local and remote environments:
+Recover a lost response with the original request identity. Use `job_status`, `job_reconcile` and `job_collect`; a timeout or disconnected client does not authorize another submission. Intentional repetition needs a new identity and the predecessor/reason/budget declaration.
 
-```text
-launch   -> prepare, submit
-inspect  -> status, optional tail
-finalize -> collect, parse
-cancel   -> cancel
-```
+## Environments and ownership
 
-The actions on the right are private child-runtime steps. Callers do not invoke
-them as a second public lifecycle.
+The selected job.toml backend provides the command, Python binding, activation and resource defaults. Structure generation uses the chemical extension's `structure` backend; registered chemical validators use `validation`. Executors and validators can declare `requirements`: Python version specifiers in `python` and `packages`, and modules to actually import in `imports`. Native entries do not declare Python dependencies.
 
-Remote completion is not proof that collection succeeded. Unknown submission or
-cancellation outcomes must be inspected before retrying.
+Preparation probes the selected local or SSH target: interpreter prefix, explicit Conda lock, pinned pip versions, installation receipt, package inventory, executable and activation file digests. This observation contributes to request identity. New submissions recheck it, and the staged, digest-pinned guard checks again when execution begins. Activation is verified before sourcing. Drift prevents execution; retries of an existing Job still return its original identity. Environment agreement does not itself prove a scientific method works.
 
-## Findings, Reports, And Web
+Installation receipts now include `inventory_sha256`. Reverify an existing environment using `scripts/install_job_environment.py --config … --environment … --backend … --adopt` before publishing a new receipt; do not hand-fill a digest. The installer first validates configuration structure, then uses the installed control runtime and extension catalog to run `"$TSPI_PYTHON" -m tspi_runtime.environment_check --config "$TS_JOB_CONFIG"` for all configured entries, including remote targets. `job_probe` continues to describe platform availability only.
 
-Analysis outputs live under `nodes/<node_id>/outputs/analysis/` and are bound
-to input digests, generated files, and transient parser candidates. The Root
-Agent verifies a candidate before promoting it through `research_change` to a
-`FactFinding` or `IssueFinding`. Reports and TS Web consume the canonical
-`ResearchMap` serialization directly; they do not create a second scientific
-state store or choose the next Node.
+Application-submitted local Jobs run in independent transient systemd user services. They survive Host restarts, receive a minimal environment plus explicit Job variables, and use CPUQuota/MemoryMax when resources are requested. Runtime creates a private scratch directory inside the Job or below the configured scratch_root; explicit environment values can reference `{scratch}`. Receipts remain in the workspace after a transient unit is removed.
 
-Thermochemistry is limited to compatible HF/Kohn-Sham SCF energies, analytical
-thermal corrections, and explicit RRHO models. Generic correlated-energy
-parsing, isotope RRHO/KIE, conformer ensembles, and microkinetics are outside
-this release. Missing or incompatible evidence cannot be replaced by an
-electronic energy.
+Resource defaults merge once at preparation or submission, in target, backend, then explicit-request order. Prepared entries keep their resolved resources; submission cannot override them. The Attempt and execution fingerprint record the actual values. `allowed_queues` is a permission boundary, not a default for `submission.queue`. Local targets reject queue fields. Torque translates cpus/memory_mb to nodes/ppn and mem; PBS uses select (which cannot be combined with cpus/memory_mb). When both walltime and program timeout_seconds are present, the shorter limit applies.
 
-## Verification Entry Points
+Remote Jobs use the configured SSH/PBS target and share the local minimal process environment, thread defaults and scratch rules. They do not inherit scientific settings from the login shell: required paths and activation scripts belong in the binding. Remote directory names include a digest of the local Job path, keeping same-name Jobs in different workspaces separate. Recovery uses the saved actual directory and scheduler.id; historical directories are used only to recover their original tasks.
 
-Run focused tests while iterating and the release-backed source suite before
-publishing:
+`command_timeout_seconds` limits SSH control commands (60 seconds by default); `transfer_timeout_seconds` separately limits each rsync operation (3600 seconds by default). Neither is the scientific program's execution deadline. Collection excludes the local spec, receipt, status and other control files so calculation outputs cannot overwrite them. Solver completion and successful output collection remain separate observations.
 
-```bash
-python3 tools/test/runner.py fast -- -q
-python3 tools/test/runner.py source -- -q
-```
+Submission disables scheduler mail and automatic reruns; the research workflow owns notifications and intentional repeats. Successful `qdel` records a cancellation request. The Job becomes cancelled only after a terminal scheduler state or confirmation that its record has been removed. Connection failures during cancellation remain unknown; a program that finishes first retains its actual exit result.
 
-Remote smoke tests require an explicit `TS_COMPUTE_CONFIG` pointing to a
-unified compute TOML with an administrator-configured remote environment. They
-validate transport and parser integration only; a small molecule job is not
-evidence for a chemical mechanism.
+## Evidence and support boundaries
+
+Job files live below `runs/jobs/<job_id>`. Collection registers declared files as Artifacts belonging to their producing Attempt, including all files in an explicitly declared recursive output directory. Findings interpret that evidence. Requirements and scientific validators decide whether it supports the requested result; exit zero or a formatted report alone does not establish success.
+
+Bundled executable entries cover CF22D, xTB, Gaussian inputs, structure/graph preparation, mapped DA candidates, IRC-input preparation and CF22D readiness. Gaussian's explicit-input runner also handles supported TS/Freq/IRC routes. CREST/QBICS guidance and NEB discussion do not imply a bundled callable runner: use a verified installed program or an explicitly bound task script and describe its actual scope.
+
+## Validation
+
+Use `tools/test/runner.py` to select the source, Native and package lanes. Real solver and remote acceptance use isolated workspaces and configured bindings. Synthetic Gaussian fixtures verify parsing and evidence linkage; they do not establish that a real transition-state search converges.

@@ -11,7 +11,7 @@ TS Phone 是独立的 Flutter 应用。Relay 仍然是独立服务和独立安�
 - Linux、Git 和 Node.js 22.19+。
 - Python 3.11+、Conda/Mamba，以及可写的用户安装目录。
 - `config/pi-source.json` 指定版本的 Pi 源码 checkout；安装器也可以自动下载并修补。
-- 正常安装需要 systemd user 或 system service；TS Web 端口是可选的。创建受管科学运行时需要
+- 正常安装需要 systemd user 或 system service；TS Web 端口是可选的。创建受管控制运行时需要
   Conda/Mamba；它不是可选的后端依赖。
 
 启动脚本默认使用公开 HTTPS 仓库；Git 传输中断时会有限重试，仍失败则回退到普通
@@ -24,7 +24,8 @@ TS Phone 是独立的 Flutter 应用。Relay 仍然是独立服务和独立安�
 ## 安装或选择版本
 
 运行 `./install.sh`，确认安装目录、TSPi revision、workspace root、Conda root、
-可选 TS Web 组件和服务策略。Core Agent、科学运行时和分子渲染工具始终安装。
+可选 TS Web 组件和服务策略。Core Agent 和控制运行时始终安装；科学计算、验证和渲染
+依赖单独配置的执行环境。
 
 `install-configured.sh` 默认在同一次非交互安装中部署本机 Relay、生成一次性 enrollment
 code 并完成 Host 注册。默认 Relay URL 是 `https://tsphone.iawnix.xyz`；如果 Relay 已经
@@ -75,7 +76,10 @@ fontconfig 缓存；已打开的终端可能需要重启才能加载回退字体
 
 Host Python 环境默认位于 `~/soft/tspi/host-envs/<installation-id>`，元数据位于
 `<install>/var/state/installation/python`；缓存位于 `<install>/var/cache`，可删除后
-重建而不会影响工作区。运行时探针会检查反应解析、ASE 热模型、几何和渲染。
+重建而不会影响工作区。Host 通过 `environment.lock.txt` 安装固定 Conda 构建，
+不按 `environment.yml` 重新求解。基础环境身份包含 YAML 和显式锁摘要，Python overlay
+身份同时绑定基础环境和发行代码。Host 探针检查 JSON Schema、版本约束和 wheel 来源；
+科学依赖由扩展执行入口声明，在 `job.toml` 绑定的本地或远程目标检查。
 固定版本的 Pi 源码还需要模型数据和 workspace build 产物，缺失时运行：
 
 ```bash
@@ -83,38 +87,35 @@ scripts/prepare_pi_source.py --install <root>
 ```
 
 能力发现、Node 暂停/恢复和选择性远程或模型 smoke 命令见
-[科学能力运维](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。同一步会验证固定的 Pi v1
-运行时和唯一的 TSPi 集成补丁；运行时使用下文说明的按 workspace 隔离的 SQLite session
+[科学能力运维](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。同一步会验证固定版本的 Pi
+运行时及文档列出的 TSPi 补丁集；运行时使用下文说明的按 workspace 隔离的 SQLite session
 布局。
 
 ## 配置计算后端
 
-本地计算在持久化 Attempt 子进程中执行；远程执行临时镜像输入并将结果收回本地。
-两者共享 `job_start/job_status/job_collect` 的公开生命周期；选择 `execution_target.kind = "local"` 或
-`"remote"`，并在计算意图中填写统一配置文件里的环境名。只有 remote 环境包含 SSH/Torque
-传输字段。安装器统一接收一份计算后端 TOML 文件：
-交互安装时在提示处输入文件路径，非交互安装时使用
-`--compute-config /absolute/path/compute.toml`。项目模板位于
-`config/compute.example.toml`；复制后按目标机器修改 local/remote environment 及其 backend
-绑定，再交给安装器。
-安装后的文件为 `<install>/.pi/compute.toml`，权限为 `0600`。
+本地 Job 运行在独立 systemd 用户服务中；SSH/Torque 或 PBS 目标暂存输入并回收声明
+输出。所有目标使用 `job_start/job_status/job_collect`，由 Job 的 `platform` 字段选择
+已配置环境，不隐式添加本地回退或 remote 别名。
 
-`/compute` 和 `compute.environments` 会列出已配置的本地与远端环境，
-TSPi 不会下载 Gaussian 或其他站点管理的本地化学软件，SSH 凭据仍由 SSH
-配置管理，不会复制到该 TOML 文件中。
+复制 `config/compute.example.toml` 并修改目标路径与绑定，再通过
+`--job-config /absolute/path/job.toml` 交给安装器。安装管理的私有副本位于
+`<install>/etc/job.toml`。SSH 凭据仍保留在 SSH 配置中。TSPi 不安装站点管理的
+Gaussian 或 xTB 原生程序。
 
-添加 `--probe-remote` 时，安装过程会运行 `ResearchAgent --check-remote`；若 SSH、scheduler、
-可写远程根目录或软件探针未就绪，安装会失败。不添加该参数时，摘要只报告 `not_probed`，
-不会把远程环境误报为可用：
+化学扩展随包提供 wrapper、结构/验证、CF22D 和渲染环境锁。在安装或更新 Host 前，
+通过 `scripts/install_job_environment.py` 准备所需目标，具体步骤见
+[目标环境安装说明](../extensions/chemical/environments/README.zh-CN.md)。示例路径需要
+按实际安装修改；远端锁须匹配远端系统与 CPU。原生执行入口不强制要求 Python。
+
+安装器检查统一配置契约，再到实际目标核验每个已配置执行入口。维护时可运行：
 
 ```bash
-./ResearchAgent --check-remote
+"$TSPI_PYTHON" -m tspi_runtime.environment_check --config "$TS_JOB_CONFIG"
 ```
 
-当前远程合同只支持 Torque/PBS。配置必须声明 SSH、可写远程根目录、允许队列及站点
-管理的 Gaussian/xTB/CREST/ASE-NEB 命令；配置文件应保持 `0600`。执行层会在准备远端
-计算时完成必要的就绪性检查；交互查看配置使用 `/compute`。远程执行代码和软件环境属于
-配置的计算节点；App Server 只提交并记录作业，不会把凭据复制到手机端。
+结果区分已核验与未配置入口；配置了却不可用的目标会使核验失败。探针成功不代表科学
+验证通过，还须执行有时限的 Job 来验证方法。资源、scratch、取消和恢复行为见
+[科学执行运维说明](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。
 
 ## 安装日志
 
@@ -221,11 +222,6 @@ Pi 负责 Agent loop、模型/工具调用和持久 transcript，TSPi 负责研�
 统一管理；独立 runtime 注入、HTTP session store 和 `.pi/research-agent/server.json`
 配置已删除。
 
-`apps/app-server/server.mjs` 仅是连接已有 Host socket 的可选本机 HTTP 适配器。运行时
-使用 `TSPI_HOST_SOCKET` 指定 socket，支持 `GET /health_read` 和 `POST /rpc`，请求体为
-`{ "method": "workspace.list", "params": {} }`。它不会启动 Agent runtime。远程 Phone/Web
-仍通过 Link 连接。
-
 创建新会话或继续项目中的最新会话：
 
 ```bash
@@ -233,7 +229,7 @@ Pi 负责 Agent loop、模型/工具调用和持久 transcript，TSPi 负责研�
 ./ResearchAgent --workspace reaction-a -c
 ```
 
-Host 身份位于 `<install>/var/state/host/server-id`；请求回执、scheduler lease、
+Host 身份位于 `<install>/var/state/host/server-id`；非输入 RPC 回执、内部生产者身份、
 Monitor 健康状态和规范 Pi SQLite durable session repository 也位于同一目录。每个会话存储在 `var/state/pi/sessions/<workspace-id>/<session-id>/`，目录中有 `meta.json` 和 `session.sqlite`；元数据保存 `workspace_id`、`session_id` 和 `cwd`，因此 agent loop 继续在 workspace 目录执行。Native Pi
 Harness 不接受 workspace `.pi/sessions`。
 工作区必须是配置的 workspace root 下、经过验证的直接子目录。
@@ -268,7 +264,7 @@ Host 上线后使用以下命令管理 Phone 授权：
 
 内网客户端可以使用 SSH transport 连接远端 Host。远端安装必须包含
 `apps/app-server/tspi-host-proxy.mjs`，客户端通过 SSH 为 Host 和 Pi socket 启动该 proxy，
-不监听公网 TCP 端口。SSH host key 校验由 OpenSSH 完成，Host 仍执行 `tspi-host/1` protocol
+不监听公网 TCP 端口。SSH host key 校验由 OpenSSH 完成，Host 仍执行 `tspi-host/2` protocol
 协商。可用重复的 `--ssh-option` 传入 `-i` 等 OpenSSH 选项。
 
 安装器可以持久化该配置，之后直接运行 `ResearchAgent --workspace`：
@@ -348,18 +344,19 @@ token 文件不存在时，安装器会生成随机 TS Web token。也可以传�
 ## 升级、回滚和恢复
 
 再次运行 `./install.sh` 并选择相同安装根目录。安装器下载或构建新的 content-addressed release，
-验证 package inventory，再原子切换 `current`。已有 workspace、App Server
-identity 和 TS Web credential 会保留。
-启动器会把固定 Pi checkout 作为 Native client 使用的内部变量 `TSPI_PI_RUNTIME_ROOT` 导出，用户不应
-手工设置它。如果旧 release 报告 `TSPI_PI_RUNTIME_ROOT is required for the native Pi client`，请升级
-该安装；修复后的启动器会根据 `config/pi-source.json` 自动选择
-`<install>/runtimes/pi` 中的固定 checkout。
+验证 package inventory，再原子切换 `current`。保留模型配置和凭据。本版本只接受当前工作区与
+会话协议；替换不兼容版本时使用全新工作区和会话，安装器不导入或转换旧研究状态及 Web 登记。
 
-升级失败时，安装器会事务性恢复旧 release、launcher、runtime manifest、凭据、backend 文件、
-Phone manifest 和受管 service unit。当前 CLI 没有单独的 rollback selector；要切换到旧版本，
-用目标 pinned revision 再执行一次正常且经过验证的升级。不要直接编辑 release 目录或手改 `current`
-指针。
+安装器串行执行升级，在切换版本前停止受管 Host/Web 写入进程。独立托管的计算服务继续运行。
+配置及环境检查先于服务启动；启动后核验 Host 的实际版本和 Web 的 State 通道。
+同一安装的更新必须保留原有 service scope。
 
+服务启动前捕获失败，可恢复之前的程序和配置快照。服务开始接收新任务后，失败会保留选定版本
+并停止服务，通过再次运行安装器继续修复。安装进程意外终止后也继续修复，因为原配置快照已不可用。
+`var/state/installation/maintenance.json` 持久记录这一边界，其中不包含凭据。未完成维护期间阻止普通
+启动；这是对当前版本写入的保护，不承担历史数据迁移。
+
+以下恢复只针对当前协议下创建的任务与会话。
 如果 Host 退出，重启唯一的 Host service。进程退出会释放 Root lock，Pi SQLite session 保持完整。
 本地计算 worker 在可用时运行于独立的临时 user service，Host 重启通常不会中断；恢复后仍须检查
 Attempt 状态。终端或 Phone 重连时首先接收新的 session snapshot；传输失败且结果不确定时，prompt
@@ -382,8 +379,8 @@ systemctl status ts-app-server-tspi.service         # system scope
 
 ## 科学计算绑定就绪检查
 
-安装配置位于 `<install>/etc/job.toml`。维护绑定后同步重装配置源，避免重装导入旧格式。安装前检查声明的本地科学后端：结构化 Conda 绑定、环境回执、explicit 锁文件及固定依赖、CF22D 运行库、激活后的可执行路径。环境级 Python 可被后端覆盖；移除旧 pyscf.command。
+安装配置位于 `<install>/etc/job.toml`。维护绑定后同步重装配置源，避免重装导入旧格式。安装前使用统一契约检查配置；安装控制环境和扩展后，按扩展声明的执行入口和验证器检查所有已配置的本地及 SSH 目标，包括 explicit 锁、安装回执、包版本、实际导入模块、激活文件和程序摘要。环境级 Python 可被后端覆盖；原生程序可使用不依赖 Python 的入口。
 
-摘要区分配置导入与 local_ready、static_valid、remote_not_probed、invalid、not_probed。非默认远程配置缺口明确报告，不自动访问远程；默认目标或声明的本地科学后端不就绪则安装失败。`var/state/installation/job-readiness.json` 保存就绪结果、配置摘要和之前的摘要。探针不提交计算，实际执行仍需有界科学 Job 验证。
+摘要区分配置导入与 `configuration_validated`、`verified`、`not_configured`。缺少能力绑定不阻止登记研究要求；已配置目标核验失败则安装失败。`var/state/installation/job-readiness.json` 保存逐目标、逐入口的实际就绪结果及配置摘要。探针不提交计算，实际执行仍需有界科学 Job 验证。Host 安装成功不代表分子渲染或任一求解器可用。
 
 报告整理和邮件 check/prepare/send/status 通过原生 bash 执行；job_* 用于科学计算。邮件继续使用安装凭据和持久化投递回执。

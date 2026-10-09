@@ -95,7 +95,7 @@ password_env = "TSPI_FIXTURE_PASSWORD"
         def change(operations):
             return apply_change(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "operations": operations})
         change([{'type': 'create_node', 'id': 'node_delivery', 'title': 'Deliver', 'objective': 'Deliver report',
-                 'claim_ids': ['claim_1'], 'dependency_ids': ['node_1']},
+                 'claim_ids': ['claim_1'], "dependencies": [{"node_id": 'node_1', "condition": "completed"}]},
                 {'type': 'create_gate', 'id': 'gate_delivery', 'scope': 'node', 'target_id': 'node_delivery',
                  'criteria': [{'id': 'receipt', 'source_type': 'agent_assessment', 'description': 'Inspect registered SMTP acceptance'}]}])
         draft.write_text(json.dumps({"notification_id": "fixture-progress-v1", "event": "progress", "node_id": "node_delivery",
@@ -143,8 +143,7 @@ password_env = "TSPI_FIXTURE_PASSWORD"
                  'assessments': [{'criterion_id': 'receipt', 'verdict': 'pass', 'reason': 'Read the SMTP accepted receipt'}],
                  'evidence_refs': [evidence['artifact_id']]},
                 {'type': 'set_node_state', 'node_id': 'node_delivery', 'state': 'closed', 'outcome': 'completed'}])
-        checkpoint(tmp_path, {'principal': 'root_agent', 'authority': 'kernel_write', 'id': 'checkpoint_delivered',
-                              'disposition': 'terminal', 'node_ids': ['node_1', 'node_delivery'], 'claim_ids': ['claim_1']})
+        checkpoint(tmp_path, {'principal': 'root_agent', 'authority': 'kernel_write', "checkpoint": {'id': 'checkpoint_delivered', 'disposition': 'terminal', 'node_ids': ['node_1', 'node_delivery'], 'claim_ids': ['claim_1'], "reason": 'All scoped work is settled'}})
         _, replay = cli('email_after_terminal', 'send', '--request-file', str(prepared))
         assert replay['state'] == 'already_sent'
         assert len(read_context(tmp_path)['attempts']) == 1  # Delivery creates no calculation Attempt.

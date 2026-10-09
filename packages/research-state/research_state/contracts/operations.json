@@ -162,6 +162,172 @@
         "version"
       ],
       "additionalProperties": false
+    },
+    "checkpoint": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "turn_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "disposition": {
+          "enum": [
+            "continue_required",
+            "waiting_external",
+            "deferred",
+            "blocked",
+            "terminal",
+            "user_input_required"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12000
+        },
+        "claim_ids": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "node_ids": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "unresolved_refs": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "map_revision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "disposition",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "decision_fields": {
+      "type": "object",
+      "properties": {
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12000
+        },
+        "basis_refs": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "root": {
+          "type": "string"
+        }
+      }
+    },
+    "checkpoint_request": {
+      "type": "object",
+      "properties": {
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12000
+        },
+        "basis_refs": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "root": {
+          "type": "string"
+        },
+        "checkpoint": {
+          "$ref": "#/$defs/checkpoint"
+        },
+        "principal": {
+          "const": "root_agent"
+        },
+        "authority": {
+          "const": "kernel_write"
+        },
+        "workspace_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "protocol": {
+          "const": "research_checkpoint_request"
+        },
+        "version": {
+          "const": 1
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "principal",
+        "authority",
+        "checkpoint"
+      ],
+      "additionalProperties": false
     }
   },
   "operations": {
@@ -373,17 +539,11 @@
         "objective": {
           "$ref": "#/$defs/text"
         },
-        "completion_exemption": {
-          "$ref": "#/$defs/text"
-        },
         "phase_id": {
           "$ref": "#/$defs/identifier"
         },
         "claim_ids": {
           "$ref": "#/$defs/claim_refs"
-        },
-        "dependency_ids": {
-          "$ref": "#/$defs/node_refs"
         },
         "created_at": {
           "$ref": "#/$defs/identifier"
@@ -935,6 +1095,13 @@
         },
         "node_ids": {
           "$ref": "#/$defs/node_refs"
+        },
+        "criteria": {
+          "$ref": "#/$defs/gate_criteria"
+        },
+        "execution_required": {
+          "type": "boolean",
+          "description": "True only when this requirement demands a computation executed and collected by Job Runtime. For report writing, interpretation and email delivery use false and assess their artifacts/delivery receipt with explicit criteria. This flag cannot later be disabled; it does not mean merely that an action must actually happen."
         }
       },
       "required": [
@@ -942,8 +1109,7 @@
         "id",
         "source_ref",
         "source_quote",
-        "statement",
-        "acceptance_profile"
+        "statement"
       ],
       "additionalProperties": false
     },
@@ -999,15 +1165,46 @@
         },
         "constraints": {
           "$ref": "#/$defs/requirement_constraints"
+        },
+        "criteria": {
+          "$ref": "#/$defs/gate_criteria"
+        },
+        "execution_required": {
+          "type": "boolean",
+          "description": "True when the requested deliverable requires actual computation. It cannot later be disabled."
+        },
+        "acceptance_profile": {
+          "$ref": "#/$defs/acceptance_profile"
         }
       },
       "required": [
         "type",
         "requirement_id",
-        "reason",
-        "constraints"
+        "reason"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "constraints"
+          ]
+        },
+        {
+          "required": [
+            "criteria"
+          ]
+        },
+        {
+          "required": [
+            "execution_required"
+          ]
+        },
+        {
+          "required": [
+            "acceptance_profile"
+          ]
+        }
+      ]
     },
     "assess_requirement": {
       "type": "object",
@@ -1029,6 +1226,9 @@
         },
         "result_receipt_refs": {
           "$ref": "#/$defs/result_refs"
+        },
+        "assessments": {
+          "$ref": "#/$defs/gate_assessments"
         }
       },
       "required": [
@@ -1127,6 +1327,340 @@
         "type",
         "requirement_id",
         "reason"
+      ],
+      "additionalProperties": false
+    },
+    "create_strategy_plan": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "claim_id": {
+          "type": "string",
+          "pattern": "^claim_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "maxLength": 128
+        },
+        "node_id": {
+          "$ref": "#/$defs/node_ref"
+        },
+        "objective": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12000
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12000
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "maxItems": 128
+        },
+        "alternatives": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "maxItems": 128
+        },
+        "stop_conditions": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "switch_conditions": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "status": {
+          "enum": [
+            "proposed",
+            "active",
+            "superseded",
+            "completed",
+            "blocked"
+          ]
+        },
+        "type": {
+          "const": "create_strategy_plan"
+        },
+        "created_at": {
+          "$ref": "#/$defs/text"
+        },
+        "actor": {
+          "type": "object"
+        },
+        "metadata": {
+          "type": "object"
+        },
+        "supersedes_id": {
+          "$ref": "#/$defs/identifier"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "objective",
+        "rationale"
+      ],
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "claim_id"
+          ]
+        },
+        {
+          "required": [
+            "node_id"
+          ]
+        }
+      ]
+    },
+    "create_strategy_review": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "claim_id": {
+          "type": "string",
+          "pattern": "^claim_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "maxLength": 128
+        },
+        "decision": {
+          "enum": [
+            "continue",
+            "switch",
+            "stop",
+            "blocked"
+          ]
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12000
+        },
+        "selected_strategy_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "trigger_refs": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "attempt_refs": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "type": {
+          "const": "create_strategy_review"
+        },
+        "created_at": {
+          "$ref": "#/$defs/text"
+        },
+        "actor": {
+          "type": "object"
+        },
+        "metadata": {
+          "type": "object"
+        },
+        "previous_strategy_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "alternatives_considered": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "maxItems": 128
+        },
+        "node_id": {
+          "$ref": "#/$defs/node_ref"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "decision",
+        "rationale"
+      ],
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "claim_id"
+          ]
+        },
+        {
+          "required": [
+            "node_id"
+          ]
+        }
+      ]
+    },
+    "create_interpretation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "claim_id": {
+          "type": "string",
+          "pattern": "^claim_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "maxLength": 128
+        },
+        "node_id": {
+          "type": "string",
+          "pattern": "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "maxLength": 128
+        },
+        "attempt_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12000
+        },
+        "outcome": {
+          "enum": [
+            "supports",
+            "contradicts",
+            "inconclusive",
+            "invalid"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "result",
+            "observation",
+            "execution_issue"
+          ]
+        },
+        "direct_evidence_refs": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "description": "Registered Artifact IDs produced by this Attempt, returned by job_collect or research_read mode=evidence. Attempt IDs and Job IDs are not Artifact IDs."
+        },
+        "comparison_evidence_refs": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "background_evidence_refs": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "result_receipt_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "execution_observation_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "supersedes_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "finding_ids": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "gate_ids": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "type": {
+          "const": "create_interpretation"
+        },
+        "created_at": {
+          "$ref": "#/$defs/text"
+        },
+        "actor": {
+          "type": "object"
+        },
+        "metadata": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "attempt_ref",
+        "summary",
+        "outcome",
+        "kind"
       ],
       "additionalProperties": false
     }

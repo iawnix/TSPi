@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -18,7 +19,6 @@ from research_state.agent_workspace import (
     checkpoint,
     read_context,
     read_liveness,
-    turn,
 )
 from tspi_runtime.api import execute
 from research_state.workspace import initialize_workspace
@@ -29,20 +29,7 @@ def _workspace(root: Path) -> None:
     initialize_workspace(root, "workspace_python_unit", "research")
 
 
-def test_user_wait_closes_turn_but_rejects_automatic_wake(tmp_path: Path) -> None:
-    _workspace(tmp_path)
-    admit_workspace(tmp_path, {"authority": "host"})
-    checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write",
-        "id": "checkpoint_user", "disposition": "user_input_required", "reason": "Need a user decision"})
-    request = {"protocol": "research_turn_request", "version": 1, "request_id": "end_wait", "operation": "end", "input": {}}
-    assert turn(tmp_path, request)["status"] == "completed"
-    wake = turn(tmp_path, {**request, "request_id": "wake_wait", "operation": "wake"})
-    assert wake["output"]["admitted"] is False
-    assert wake["output"]["reason"] == "research_user_input_required"
-    assert wake["output"]["state_token"]
-
-
-def test_new_workspace_change_checkpoint_and_turn_are_durable(tmp_path: Path) -> None:
+def test_new_workspace_change_and_checkpoint_are_durable(tmp_path: Path) -> None:
     _workspace(tmp_path)
     admitted = admit_workspace(tmp_path, {"workspace_id": "workspace_python_unit", "authority": "host"})
     assert admitted["state"] == ADMITTED
@@ -66,29 +53,7 @@ def test_new_workspace_change_checkpoint_and_turn_are_durable(tmp_path: Path) ->
     )
     assert result["revision"] == 1
     assert read_context(tmp_path)["focus"] == {"claim_ids": ["claim_1"], "node_ids": ["node_1"]}
-    assert checkpoint(tmp_path, {
-        "principal": "root_agent",
-        "authority": "kernel_write",
-        "checkpoint_id": "checkpoint_1",
-        "disposition": "deferred",
-    })["revision"] == 1
-    orient = turn(tmp_path, {
-        "protocol": "research_turn_request", "version": 1, "request_id": "turn_orient",
-        "workspace_id": "workspace_python_unit", "operation": "orient", "input": {},
-    })
-    assert orient["protocol"] == "research_turn_result"
-    assert orient["version"] == 1
-    assert orient["status"] == "completed"
-    with pytest.raises(AgentWorkspaceError, match="unsupported research turn version"):
-        turn(tmp_path, {
-            "protocol": "research_turn_request", "request_id": "turn_missing_version",
-            "workspace_id": "workspace_python_unit", "operation": "orient", "input": {},
-        })
-    with pytest.raises(AgentWorkspaceError, match="payload is not supported"):
-        turn(tmp_path, {
-            "protocol": "research_turn_request", "version": 1, "request_id": "turn_old_payload",
-            "workspace_id": "workspace_python_unit", "operation": "orient", "input": {}, "payload": {},
-        })
+    assert checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "checkpoint": {"id": "checkpoint_1", "disposition": "deferred", "reason": 'Defer this research scope'}})["revision"] == 1
 
 
 def test_semantic_refs_and_checkpoint_liveness_are_protocol_stable(tmp_path: Path) -> None:
@@ -103,13 +68,7 @@ def test_semantic_refs_and_checkpoint_liveness_are_protocol_stable(tmp_path: Pat
     pending = read_context(tmp_path)
     assert pending["nodes"][0]["id"] == "node_transition.state.revision2"
     assert read_liveness(tmp_path)["lifecycle"] == "decision_needed"
-    checkpoint(tmp_path, {
-        "principal": "root_agent",
-        "authority": "kernel_write",
-        "checkpoint_id": "checkpoint_semantic.1",
-        "disposition": "continue_required",
-        "unresolved_refs": ["node_transition.state.revision2"],
-    })
+    checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "checkpoint": {"id": "checkpoint_semantic.1", "disposition": "continue_required", "unresolved_refs": ["node_transition.state.revision2"], "reason": 'Continue the pending research work'}})
     liveness = read_liveness(tmp_path)
     assert liveness["lifecycle"] == "continue_required"
     assert liveness["continue_required"][0]["id"] == "node_transition.state.revision2"
@@ -167,7 +126,7 @@ def test_started_attempt_projects_waiting_external_liveness(tmp_path: Path) -> N
     assert read_liveness(tmp_path)["lifecycle"] == "decision_needed"
 
 
-def test_active_strategy_marks_focused_scope_executable_before_checkpoint(tmp_path: Path) -> None:
+def test_simple_node_is_executable_without_a_formal_strategy(tmp_path: Path) -> None:
     _workspace(tmp_path)
     admit_workspace(tmp_path, {"authority": "host"})
     apply_change(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "expected_revision": 0, "operations": [
@@ -175,7 +134,7 @@ def test_active_strategy_marks_focused_scope_executable_before_checkpoint(tmp_pa
         {"type": "create_node", "id": "node_1", "title": "Resolve inputs", "objective": "Resolve names", "claim_ids": ["claim_1"]},
         {"type": "set_focus", "claim_ids": ["claim_1"], "node_ids": ["node_1"]},
     ]})
-    assert read_liveness(tmp_path)["execution_ready"] is False
+    assert read_liveness(tmp_path)["execution_ready"] is True
     apply_change(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "expected_revision": 1, "operations": [
         {"type": "create_strategy_plan", "id": "strategy_1", "claim_id": "claim_1", "node_id": "node_1",
          "objective": "Resolve names", "rationale": "Identity must be deterministic", "status": "active"},
@@ -249,10 +208,13 @@ def test_command_boundary_does_not_fallback_partial_new_workspace(tmp_path: Path
 def test_scientific_records_and_traceability_are_indexed_atomically(tmp_path: Path) -> None:
     _workspace(tmp_path)
     admit_workspace(tmp_path, {"authority": "host"})
+    material = tmp_path / "runs/input.xyz"
+    material.write_text("data")
+    digest = "sha256:" + hashlib.sha256(material.read_bytes()).hexdigest()
     apply_change(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "expected_revision": 0, "operations": [
         {"type": "create_claim", "id": "claim_1", "statement": "Hypothesis"},
         {"type": "create_node", "id": "node_1", "title": "Execution", "objective": "Run", "claim_ids": ["claim_1"]},
-        {"type": "register_artifact", "id": "artifact_1", "node_id": "node_1", "location": "runs/input.xyz", "sha256": "abc", "size_bytes": 4},
+        {"type": "register_artifact", "id": "artifact_1", "node_id": "node_1", "location": "runs/input.xyz", "sha256": digest, "size_bytes": 4},
         {"type": "register_attempt", "id": "attempt_1", "node_id": "node_1", "capability": "xtb", "capability_version": "1", "state": "succeeded", "output_artifact_ids": ["artifact_1"]},
         {"type": "create_finding", "id": "finding_1", "node_id": "node_1", "claim_ids": ["claim_1"], "statement": "Energy was finite", "kind": "fact", "value": True, "source_refs": ["artifact_1"], "provenance": {"interpretation_mode": "root_agent_reading", "validation": "unavailable"}},
         {"type": "create_gate", "id": "gate_1", "scope": "node", "target_id": "node_1", "criteria": [{"id": "criterion_1", "source_type": "agent_assessment", "description": "Evidence reviewed"}]},
@@ -324,3 +286,32 @@ def test_attempt_lifecycle_transitions_and_evidence_links_are_bounded(tmp_path: 
         apply_change(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "expected_revision": 3, "operations": [
             {"type": "transition_attempt", "attempt_id": "attempt_1", "state": "running"},
         ]})
+
+
+@pytest.mark.parametrize("payload", [
+    {"disposition": "continue_required"},
+    {"disposition": "continue_required", "reason": "Inspect", "checkpoint_id": "old_id"},
+    {"disposition": "continue_required", "reason": "Inspect", "session_id": "model_session"},
+    {"disposition": "continue_required", "reason": "Inspect", "metadata": {}},
+])
+def test_checkpoint_rejects_fields_outside_public_contract(tmp_path, payload):
+    _workspace(tmp_path)
+    admit_workspace(tmp_path, {"authority": "host"})
+    with pytest.raises(AgentWorkspaceError, match="checkpoint_contract_invalid"):
+        checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "checkpoint": payload})
+    assert read_context(tmp_path)["revision"] == 0
+
+
+def test_checkpoint_checks_revision_and_transport_session(tmp_path):
+    _workspace(tmp_path)
+    admit_workspace(tmp_path, {"authority": "host"})
+    value = {"disposition": "continue_required", "reason": "Inspect pending scope", "map_revision": 1}
+    request = {"principal": "root_agent", "authority": "kernel_write", "session_id": "session_1", "checkpoint": value}
+    with pytest.raises(AgentWorkspaceError, match="research_revision_mismatch"):
+        checkpoint(tmp_path, request)
+    value["map_revision"] = 0
+    checkpoint(tmp_path, request)
+    live = read_liveness(tmp_path)
+    assert live["continuation"]["session_id"] == "session_1"
+    stored = json.loads((tmp_path / "checkpoints" / "checkpoint_1.json").read_text())
+    assert "principal" not in stored and "authority" not in stored and "session_id" not in stored

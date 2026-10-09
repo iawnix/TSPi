@@ -5,7 +5,7 @@
       "name": "core-tools",
       "entry": "apps/app-server/server-tools/core-tools.mjs",
       "scope": "server",
-      "sha256": "sha256:afc57d3d28ca99967f9f25f0610dc66fa055dc4fd81c1d7c4b376eafe5f2089a",
+      "sha256": "sha256:b1dfd62b2e96a2095eeb74d823f826ccdaf0eaca28a5aa0e0d1888283f293c4a",
       "tools": [
         "research_read",
         "research_change",

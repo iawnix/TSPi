@@ -1,32 +1,24 @@
 # Runtime、Research State 与 Monitor 边界
 
-Research State 是 Claim、Node、依赖、策略、checkpoint 和研究 liveness 的唯一权威。
-通过公开研究工具读写，不另建工作流状态文件。会话 memory 保存对话；memory/index.json
-只是可重建的 State 投影。
+Research State 管理用户要求、研究决策及 liveness。根据当前投影判断哪些工作就绪或
+阻塞。通过公共工具修改；对话历史和 memory 投影不能替代 State。
 
-Host 绑定工作区与会话身份，管理输入队列和 Pi 回合。State 返回持久状态的工具准入结果，
-Harness 只串行化工具调用并记录阶段标记，不另设研究工作流准入图。根据 State 返回的 ready_node_ids、blocked_node_ids 决策，
-不从聊天记录或历史别名重新构造生命周期规则。
+Host 管理身份、客户端连接和路由。Pi Harness/Worker 管理输入准入、队列、中断及
+持久 submission。终端、手机和经过认证的内部事件使用同一准入路径。
+State 提供研究准入判断，Skill 解释在这些约束内如何作研究选择。
 
-Job Runtime 管理进程/调度器、日志、查询、取消与收集，State 桥接层关联 Attempt。
-Skill 脚本负责科学输入、解析与验证。artifact_derive 只保存派生描述；真实分析必须执行
-脚本并登记文件。
+Job Runtime 管理进程、调度器、日志、取消与文件收集，State 桥接层关联 Job 与 Attempt。
+领域扩展声明科学执行入口和验证器，其 Skill 说明方法选择与结果解释。
+artifact_derive 只描述分析，不运行分析；通过 Job 执行后才能将输出用作证据。
 
-Monitor 观察 Job 变化并向所属会话投递去重的 next_run 事件，不收集科学产物、不解释结果、
-不改研究节点、不选择计算、不发送邮件。State 决定是否准入；暂缓事件保留至 State 改变，
-不重复提示。唤醒后先读 State，再按需调用 job_status/job_collect/job_reconcile。
+Monitor 观察 Job 变化，将事件放入所属会话的 outbox。Worker 按当前 State 准入并记录
+Pi submission。事件待投递不代表模型已经消费。Monitor 不收集输出、不解释科学、不选
+方法、不发送邮件。唤醒后检查 State，按需使用 job_status、job_collect 或 job_reconcile。
 
-需要用户输入时，通过 research_change 将对应 Node 设为 blocked 并说明原因，独立节点继续。
-存在运行中的 Attempt 时用 waiting_external 引用真实 Attempt ID。只有作用范围内节点均已
-blocked/closed 且没有独立可执行或运行中的工作，才能用全局 user_input_required checkpoint。
-邮箱地址不是计算的依赖。用户实际回复后，通过恢复 checkpoint 和节点更新继续工作。
+State 管理显式 continuation 请求及预算，Worker 使用同一持久输入路径准入。
+Host 和 Skill 不重建另一套研究调度器。工具与 checkpoint disposition 见
+[生成的公共契约](public_contract.zh-CN.md)。
 
-公开工具 schema 是接口协议。[public_contract.md](public_contract.zh-CN.md) 从公共契约生成工具名和
-disposition；Skill 解释用法，不定义第二套调度器或 capability 注册表。
-
-
-只有带所属 session 的 continue_required checkpoint 才会由 State 在 liveness 中持久化
-continuation 请求。Host 使用已有输入回执消费它，不推导科学流程。相同 revision 不产生
-新唤醒，连续接续预算由 State 管理。Monitor 只负责 Job 变化和配置的排队阈值事件。
-eligible_node_ids 表示依赖与策略允许执行；ready_node_ids 排除已有运行 Attempt 的范围。
-同一合格范围下的新独立 work_id 可以提交，但不能据此猜测还有未规划的工作。
+将阻塞限定到受影响的工作。交付细节缺失不必阻止独立计算。继续就绪工作，等待真实
+运行中的 Attempt，确实需要用户决定才能推进时再请求输入。用户回复后先记录恢复，
+更新受影响的 Node，再重启相应工作。

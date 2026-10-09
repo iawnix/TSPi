@@ -23,10 +23,8 @@ Monitor maintains a durable wake outbox for the owning session. It does not send
 email. The email Skill runs check/prepare/send/status through native bash with
 installation credentials and stable delivery identities; unknown delivery outcomes require reconciliation rather than blind retry.
 
-Extension manifests discover Skills. providers remains readable for legacy/third-party
-metadata but is optional and absent from the chemical and email manifests. Executable
-Skill resource indexes are digest-pinned and verified when the extension is loaded.
-Old scientific Provider implementations must be split before retirement: migrate
-scientific algorithms and their tests into Skills, move process control into Runtime,
-and remove protocol/registry glue. Deleting a Provider directory is not evidence that
-its scientific functionality has been migrated.
+Extension manifests declare digest-verified Skills, executors, validators and optional
+acceptance profiles. JavaScript and Python consume the same validated catalog.
+Generic preparation resolves a declared executor into explicit argv, staged inputs,
+outputs, environment bindings and resource requests; Runtime owns process control.
+No provider metadata or legacy dispatch registry is part of this contract.

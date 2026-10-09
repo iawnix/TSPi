@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-const RESEARCH_KINDS = Object.freeze(["phase", "claim", "node", "finding", "gate", "attempt", "artifact", "lifecycle_action", "interpretation", "strategy"]);
+const RESEARCH_KINDS = Object.freeze(["phase", "claim", "node", "finding", "gate", "attempt", "artifact", "lifecycle_action", "interpretation", "strategy", "requirement"]);
 
 const catalog = JSON.parse(readFileSync(
   new URL("../../tspi-runtime/tspi_runtime/command_catalog.json", import.meta.url),
@@ -113,7 +113,8 @@ export function slashCompletions(name, prefix = "") {
 
 function parseResearchSlash(tokens, usage) {
   const action = tokens[0] || "summary";
-  if (["summary", "context", "liveness", "map", "decisions", "storage", "validate", "operations"].includes(action)
+  const definition = COMMAND_DEFINITIONS[`research.${action}`];
+  if (definition?.effect === "read" && definition.required.length === 0
       && (tokens.length === 1 || (action === "summary" && tokens.length === 0))) {
     return Object.freeze({ command: `research.${action}`, params: Object.freeze({}) });
   }

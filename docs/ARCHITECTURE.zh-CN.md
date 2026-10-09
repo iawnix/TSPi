@@ -12,14 +12,14 @@ TSPi 在 Pi 之上提供计算化学 skill 和运行时适配器。一个安装�
 
 ## 组件职责
 
-- `apps/app-server/` 提供 Agent Server：`tspi-host/1` API、Root Agent session 宿主、统一
+- `apps/app-server/` 提供 Agent Server：`tspi-host/2` API、Root Agent session 宿主、统一
   Host HTTP adapter、安装级 Pi App Server/Harness owner、native remote client
-  launcher、Monitor worker、browser adapter 和历史迁移工具。固定源码的 Pi worker 加载
+  launcher、Monitor worker、browser adapter。固定源码的 Pi worker 加载
   TSPi tools、skills、hooks、策略和 system prompt。
 - `services/tspi-link-relay/` 负责 TSPi Link 注册、配对、设备授权和不透明帧转发；它不拥有
   workspace/session/research，也不解析 Host RPC。
 - `packages/research-state/` 管理规范 `ResearchMap`、admission、引用完整性、验证、revision 和事务；`packages/research-memory/` 构建 bounded context 与 session projection；`packages/job-runtime/` 执行本地和远端 Job，`packages/tspi-runtime/` 将其回执、观察与收集产物接入 Research State。共享 Link 协议与 backpressure codec 位于 `packages/tspi-link/`，`services/tspi-link-relay/` 只负责服务组合。
-- `extensions/` 包含可安装的 Skill、科学脚本、注册验证器和验收 profile。科学计算和分析由 Skill 脚本通过通用 Job 执行，报告排版与邮件由 native bash 调用 Skill helper。扩展 manifest 仍支持 provider 元数据发现，这些库存描述不负责派发科学执行。包内核心 server tool 装配位于 `apps/app-server/server-tools/`。
+- `extensions/` 包含可安装的 Skill、科学脚本、注册验证器和验收 profile。科学计算和分析由 Skill 脚本通过通用 Job 执行，报告排版与邮件由 native bash 调用 Skill helper。核心和领域 Skill 共用摘要校验的扩展清单，科学执行入口声明脚本、输入输出及环境要求。包内核心 server tool 装配位于 `apps/app-server/server-tools/`。
 - `packages/agent-ui/` 仅包含 Native client facet 所需的少量 presentation helper。
   直接 ExtensionAPI 适配器及其公共入口已经移除；启动器和 Native Pi Worker 不会加载
   旧的 ExtensionAPI 路径。
@@ -32,14 +32,14 @@ TSPi 在 Pi 之上提供计算化学 skill 和运行时适配器。一个安装�
 - TS Phone 是独立 Flutter 客户端，通过 TSPi Link 连接 Host。
 
 Pi App Server/Harness 独占 session directory、对话历史、模型状态、prompt loop 和 worker
-lane；Host 是同一个 Agent Server 中对外的 API、路由、认证、幂等回执、scheduler lease、
+lane；Host 是同一个 Agent Server 中对外的 API、路由、认证、非输入 RPC 回执、
 事务和客户端订阅层。Pi 原生 TUI、Phone、Monitor 都连接同一个 lane，因此共享 `read`、
 `write`、`bash` 和包内工具；传输方式不是权限角色。
 
 Host RPC 与底层传输解耦。安装内客户端使用私有 Unix socket；远程终端客户端可以通过
 SSH 启动 `tspi-host-proxy`，由 proxy 将 stdin/stdout 字节转发到远端 Host 与 Pi App
 Server socket；Phone 继续通过 TSPi Link 的 WSS Relay。三种方式都使用同一份
-`tspi-host/1` NDJSON，不会创建第二个 Agent lane。
+`tspi-host/2` NDJSON，不会创建第二个 Agent lane。
 
 远程 Host 所在机器是 workspace、SQLite durable session、Research Memory 和 workspace
 lock 的唯一权威位置。TSPi 不使用实时双向 rsync 同步工作区；rsync 或其它批量复制工具只
@@ -247,7 +247,7 @@ TS Web 直接渲染规范的 `ResearchMap` 序列化。Claim、Node、Finding、
 
 `ts-app-server-tspi.service` 调用 TSPi Host 入口，在 `var/state/host/` 创建安装级
 状态，包括稳定 server ID、Host socket、SQLite durable session repository、请求回执、
-scheduler lease 和 Monitor 健康文件。`tspi.workspace-directory` 只暴露包含受支持
+Monitor 健康文件。输入状态与幂等由 Pi submission 负责，Host 直接查询。`tspi.workspace-directory` 只暴露包含受支持
 `workspace_manifest.json` 及规范研究状态三元组的 workspace。
 
 `ResearchAgent --workspace <name>` 先 bootstrap 工作区，再向 Host 请求 `session/list` 和
@@ -256,7 +256,7 @@ scheduler lease 和 Monitor 健康文件。`tspi.workspace-directory` 只暴露�
 command，其中 `/resume` 只在当前 workspace 内切换；独立 Pi 的会话命令不会由这个客户端
 暴露。Phone 通过 Host RPC，Monitor 通过 durable `next_run` entry 访问同一个
 lane。workspace `.pi/sessions` 不属于受支持的 Native 运行时边界，不会被导入或恢复。
-`TSPI_HOST_BACKEND` 必须为 `harness`；已退役的 ordinary-Pi 后端会直接拒绝。
+Native Pi Harness 是唯一运行时。
 
 第一次执行 `ResearchAgent --workspace <name>` 时，如果项目不存在，客户端会通过同一套经过校验
 的 bootstrap 初始化它；Host 不会创建未命名项目，必须由客户端明确指定合法名称。
@@ -277,7 +277,7 @@ TS Phone -- 出站 WSS --> TSPi Link Relay <-- 出站 WSS -- TSPi Host
 两条网络连接都使用 `/v1/link` 和 `tspi-link.v1` WebSocket 子协议，但使用不同角色的
 Bearer 凭据。短期 Host enrollment code 生成 Host 凭据；短期 Phone pairing code
 生成可撤销的设备凭据。Relay 只把已授权设备映射到 Host，并原样转发带帧的
-`tspi-host/1` NDJSON，不解析会话消息；这不是 Pi 实验性 remote 协议。
+`tspi-host/2` NDJSON，不解析会话消息；这不是 Pi 实验性 remote 协议。
 
 TSPi Link Relay 不拥有 workspace、session、transcript、工具或计算状态。Host 负责路由和
 访问控制；Pi Harness worker 拥有 session、transcript、模型和工具。WSS 分别保护
@@ -295,12 +295,13 @@ TS Web 默认只读，不拥有 Pi session。需要浏览器控制时，显式�
 node apps/app-server/tspi-browser-gateway.mjs \
   --connect unix:///run/user/$UID/tspi/<server-id>.sock \
   --workspace /absolute/workspaces/reaction-a \
-  --session-id <session-id> --port 8767
+  --session-id <session-id> --port 8767 --auth-token <token>
 ```
 
-Gateway 只附着已经存在的 Host session，通过版本化 session-control 合约提供
-snapshot、prompt、abort、queue 和 SSE 事件；request id 保证重试幂等，sequence
-cursor 用于断线重连。它不启动第二个 App Server 或 Worker。
+Gateway 只附着已经存在的 Host session，使用 `tspi-host/2` 提供查询、输入、中断和
+SSE 事件。所有 HTTP 请求需要 Bearer token，包括 loopback；Host 和 Origin 必须匹配
+监听地址。写入使用 `/rpc` 的 `{id, method, params}` 格式，并提供稳定请求 ID。
+它不启动第二个 App Server 或 Worker。
 
 ## 其他契约
 
@@ -376,7 +377,7 @@ Workspace records <-> App Server Monitor worker -> Session next_run -> Root Agen
 
 ## 有来源的交付要求与当前验收
 
-`research-requirements/1` 保存用户交付要求，不替代科学 Claim。Host 从真实 Pi 用户提交保存
+`research-requirements/1` 保存用户交付要求，不替代科学 Claim。Worker 准入从真实 Pi 用户提交保存
 来源，Monitor 和 State 接续属于内部输入。已安装的版本化 profile 定义有限验收检查；要求
 绑定原文、约束、输入和贡献 Node，通过实际 result receipt 派生是否满足。原文覆盖仍是
 Agent 判断，保存消息不等于形式化证明已抽取所有自然语言要求。
@@ -389,9 +390,9 @@ Gate 修改不能降低 requirement 的原始检查。阶段 Node 可以先完�
 交付声明消费的要求、Artifact 或前置 Node；邮件 prepare 绑定事件和当前状态，send 再次核对。
 sent/unknown 回执继续遵循既有幂等与不确定性规则。
 
-受管 Job 引用 pN 和 Artifact 引用 aN 是持久精确索引。事务日志 v2 首次迁移扫描历史，
-以后只恢复未完成提交。升级前停止全部旧写入进程，已升级工作区不可直接降级，详见
-[迁移说明](MANAGED_REFERENCES_AND_TRANSACTION_RECOVERY.zh-CN.md)。
+受管 Job 引用 pN 和 Artifact 引用 aN 是持久精确索引。当前事务日志通过版本化索引
+只恢复 pending 提交。安装器不扫描或转换旧工作区与会话，详见
+[恢复契约](MANAGED_REFERENCES_AND_TRANSACTION_RECOVERY.zh-CN.md)。
 
 State 桥接中断时，只允许本地 read/system_prompt 用于诊断，副作用仍需当前 State 准入。
 首次用户来源保存失败会阻止该输入开始；后续 yield 检查失败时保留诊断答复，不制造 checkpoint

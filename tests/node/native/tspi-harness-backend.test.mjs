@@ -30,7 +30,7 @@ test("maps server and upstream failures to stable summaries", () => {
 
 test("preserves provider failure fields when the result is already terminal", () => {
   const failure = normalizeOperationFailure({
-    operation_id: "run-2",
+    operationId: "run-2",
     status: "failed",
     retryable: true,
     error: {
@@ -50,10 +50,14 @@ test("preserves provider failure fields when the result is already terminal", ()
   });
 });
 
-test("only known pre-admission errors are classified as definitely not submitted", async () => {
-  const {isExplicitAdmissionFailure} = await import('../../../apps/app-server/tspi-harness-backend.mjs');
-  assert.equal(isExplicitAdmissionFailure({code:'service_member_not_found'}),true);
-  assert.equal(isExplicitAdmissionFailure({code:'unsupported_action'}),true);
-  assert.equal(isExplicitAdmissionFailure({code:'connection_closed'}),false);
-  assert.equal(isExplicitAdmissionFailure({code:'service_invalid_value'}),false);
+test("input status is a projection of Pi submission, including durable failure", async () => {
+  const { submissionReceipt } = await import("../../../apps/app-server/tspi-harness-backend.mjs");
+  const record = { id: 4, type: "input", status: "unanswered", reason: "faulted", detail: "worker failed" };
+  const receipt = submissionReceipt(record, "business-input");
+  assert.equal(receipt.accepted, true);
+  assert.equal(receipt.state, "failed");
+  assert.equal(receipt.operation_id, "4");
+  assert.equal(receipt.submission, record);
+  assert.deepEqual(receipt.error, { code: "faulted", message: "worker failed" });
+  assert.equal(submissionReceipt(null, "unknown").state, "not_found");
 });

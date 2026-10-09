@@ -13,6 +13,7 @@ import pytest
 
 from tspi_foundation.env import (
     PACKAGE_ROOT_OVERRIDE,
+    RUNTIME_PROBE_VERSION,
     RuntimeEnvironmentError,
     bind_runtime_process_environment,
     configured_python,
@@ -31,7 +32,6 @@ from tspi_foundation.env import (
     spec_sha256,
     write_manifest,
 )
-import tspi_bootstrap.probe as runtime_probe_module
 import tspi_bootstrap.cli as runtime_cli
 from tspi_bootstrap.probe import probe_runtime_capabilities
 from scripts import _runtime_install as runtime_install
@@ -42,8 +42,8 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def _write_runtime_specs(package: Path) -> None:
     (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
-    (package / "requirements-runtime.txt").write_text(
-        "xyzrender>=0.2.1\n",
+    (package / "environment.lock.txt").write_text(
+        "@EXPLICIT\nhttps://example.test/python-3.11-build.conda\n",
         encoding="utf-8",
     )
 
@@ -70,7 +70,7 @@ def test_package_root_detection_uses_package_markers_with_nested_skill(tmp_path:
     source_file.parent.mkdir(parents=True)
     source_file.write_text("export {};\n", encoding="utf-8")
     (package / "scripts").mkdir()
-    skill = package / "skills" / "research-state" / "SKILL.md"
+    skill = package / "extensions/core/skills" / "research-state" / "SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text("---\nname: research-state\ndescription: test\n---\n", encoding="utf-8")
     (package / "package.json").write_text("{}\n", encoding="utf-8")
@@ -89,38 +89,45 @@ def test_default_env_prefix_is_spec_hash_scoped(tmp_path: Path) -> None:
     assert prefix.name == spec_sha256(package)[:12]
 
 
-def test_scientific_base_hash_covers_conda_and_pip_specs(tmp_path: Path) -> None:
+def test_control_base_hash_covers_the_explicit_lock(tmp_path: Path) -> None:
     package = tmp_path / "skill"
     package.mkdir()
     _write_runtime_specs(package)
     initial = spec_sha256(package)
 
-    (package / "requirements-runtime.txt").write_text(
-        "xyzrender>=0.3\n",
+    (package / "environment.lock.txt").write_text(
+        "@EXPLICIT\nhttps://example.test/python-3.11-newbuild.conda\n",
         encoding="utf-8",
     )
 
     assert spec_sha256(package) != initial
 
 
-def test_repository_conda_spec_does_not_delegate_runtime_pip_installation() -> None:
-    conda_spec = (ROOT / "environment.yml").read_text(encoding="utf-8")
-    pip_requirements = (ROOT / "requirements-runtime.txt").read_text(encoding="utf-8")
+def test_control_installation_and_test_dependencies_have_separate_locks() -> None:
+    import tomllib
+    dependencies = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["dependencies"]
+    assert {item.split(">=")[0] for item in dependencies} == {"jsonschema", "packaging"}
+    lock = (ROOT / "environment.lock.txt").read_text()
+    assert "@EXPLICIT" in lock
+    assert "/rdkit-" not in lock and "/pytest-" not in lock
+    assert "/rdkit-" in (ROOT / "tools/test/environment.lock.txt").read_text()
 
-    assert "\n  - pip:" not in conda_spec
-    assert "xyzrender>=0.2.1" in pip_requirements.splitlines()
 
-
-def test_default_kernel_prefix_is_python_payload_scoped(tmp_path: Path) -> None:
+def test_kernel_prefix_binds_payload_and_control_environment(tmp_path: Path) -> None:
     package = tmp_path / "skill"
     package.mkdir()
     _write_runtime_specs(package)
-    payload_sha256 = _write_test_python_payload(package)
+    _write_test_python_payload(package)
 
     prefix = default_kernel_prefix(package, tmp_path / "envs")
 
     assert prefix.parent == tmp_path / "envs" / "kernels"
-    assert prefix.name == payload_sha256[:16]
+    assert default_kernel_prefix(package, tmp_path / "envs") == prefix
+    (package / "environment.lock.txt").write_text("@EXPLICIT\nhttps://example.test/new-build.conda\n")
+    updated = default_kernel_prefix(package, tmp_path / "envs")
+    assert updated != prefix
+    (package / "packages/tspi-runtime/tspi_runtime/__init__.py").write_text("# changed payload\n")
+    assert default_kernel_prefix(package, tmp_path / "envs") != updated
 
 
 def test_default_env_store_is_package_relative_without_override(tmp_path: Path, monkeypatch) -> None:
@@ -325,20 +332,15 @@ def test_configured_python_reads_runtime_manifest(tmp_path: Path) -> None:
     kernel_prefix = tmp_path / "managed-kernel"
     base_python = base_prefix / "bin" / "python"
     python = kernel_prefix / "bin" / "python"
-    numpy_origin = base_prefix / "lib" / "numpy.py"
-    rdkit_origin = base_prefix / "lib" / "rdkit.py"
-    matplotlib_origin = base_prefix / "lib" / "matplotlib.py"
-    xyzrender = base_prefix / "bin" / "xyzrender"
-    for path in (base_python, python, numpy_origin, rdkit_origin, matplotlib_origin, xyzrender):
+    jsonschema_origin = base_prefix / "lib" / "jsonschema.py"
+    packaging_origin = base_prefix / "lib" / "packaging.py"
+    for path in (base_python, python, jsonschema_origin, packaging_origin):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("# test runtime file\n", encoding="utf-8")
-    xyzrender.chmod(0o755)
     runtime_probe["python"]["executable"] = str(python)
     runtime_probe["distribution"]["root"] = str(kernel_prefix)
-    runtime_probe["modules"]["numpy"]["origin"] = str(numpy_origin)
-    runtime_probe["modules"]["rdkit"]["origin"] = str(rdkit_origin)
-    runtime_probe["modules"]["matplotlib"]["origin"] = str(matplotlib_origin)
-    runtime_probe["commands"]["xyzrender"]["path"] = str(xyzrender)
+    runtime_probe["modules"]["jsonschema"]["origin"] = str(jsonschema_origin)
+    runtime_probe["modules"]["packaging"]["origin"] = str(packaging_origin)
     manifest_path = write_manifest(
         package,
         {
@@ -416,14 +418,11 @@ def test_configured_python_rejects_unprobed_or_external_modules(tmp_path: Path) 
     kernel_prefix = tmp_path / "managed-kernel"
     base_python = env_prefix / "bin" / "python"
     python = kernel_prefix / "bin" / "python"
-    numpy_origin = env_prefix / "lib" / "numpy.py"
-    rdkit_origin = env_prefix / "lib" / "rdkit.py"
-    matplotlib_origin = env_prefix / "lib" / "matplotlib.py"
-    xyzrender = env_prefix / "bin" / "xyzrender"
-    for path in (base_python, python, numpy_origin, rdkit_origin, matplotlib_origin, xyzrender):
+    jsonschema_origin = env_prefix / "lib" / "jsonschema.py"
+    packaging_origin = env_prefix / "lib" / "packaging.py"
+    for path in (base_python, python, jsonschema_origin, packaging_origin):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("# test runtime file\n", encoding="utf-8")
-    xyzrender.chmod(0o755)
     base = {
         "schema_version": "agent-runtime/3",
         "python_executable": str(python),
@@ -438,10 +437,8 @@ def test_configured_python_rejects_unprobed_or_external_modules(tmp_path: Path) 
 
     probe = _runtime_probe(payload_sha256=payload_sha256)
     probe["python"]["executable"] = str(python)
-    probe["modules"]["numpy"]["origin"] = str(numpy_origin)
-    probe["modules"]["rdkit"]["origin"] = str(rdkit_origin)
-    probe["modules"]["matplotlib"]["origin"] = str(matplotlib_origin)
-    probe["commands"]["xyzrender"]["path"] = str(xyzrender)
+    probe["modules"]["jsonschema"]["origin"] = str(jsonschema_origin)
+    probe["modules"]["packaging"]["origin"] = str(packaging_origin)
     probe["distribution"]["root"] = str(kernel_prefix)
     write_manifest(package, {**base, "runtime_probe": probe})
     assert configured_python(package) == python
@@ -451,10 +448,10 @@ def test_configured_python_rejects_unprobed_or_external_modules(tmp_path: Path) 
     assert configured_python(package) is None
     probe["distribution"]["version"] = "0.12.0"
 
-    external_rdkit = tmp_path / "user-site" / "rdkit.py"
-    external_rdkit.parent.mkdir()
-    external_rdkit.write_text("# external test module\n", encoding="utf-8")
-    probe["modules"]["rdkit"]["origin"] = str(external_rdkit)
+    external_packaging = tmp_path / "user-site" / "packaging.py"
+    external_packaging.parent.mkdir()
+    external_packaging.write_text("# external test module\n", encoding="utf-8")
+    probe["modules"]["packaging"]["origin"] = str(external_packaging)
     write_manifest(package, {**base, "runtime_probe": probe})
     assert configured_python(package) is None
 
@@ -491,64 +488,22 @@ def test_runtime_process_binding_owns_python_commands(monkeypatch: pytest.Monkey
     assert "PYTHONHOME" not in os.environ
 
 
-def test_scientific_runtime_probe_exercises_required_capabilities(monkeypatch) -> None:
-    pytest.importorskip("rdkit")
-    monkeypatch.setattr(
-        runtime_probe_module,
-        "_probe_render_capabilities",
-        lambda: {
-            "matplotlib": {"version": "3.9.0", "origin": str(Path(__file__).resolve())},
-            "xyzrender": {"version": "0.2.1", "path": str(Path(sys.executable).resolve())},
-        },
-    )
+def test_control_runtime_probe_does_not_import_scientific_dependencies(monkeypatch) -> None:
+    import builtins
+    original_import = builtins.__import__
+    def reject_science(name, *args, **kwargs):
+        assert name.split(".")[0] not in {"numpy", "rdkit", "ase", "scipy", "matplotlib", "xyzrender"}
+        return original_import(name, *args, **kwargs)
+    monkeypatch.setattr(builtins, "__import__", reject_science)
     result = probe_runtime_capabilities(require_distribution=False)
-
-    assert result["schema_version"] == "ts-runtime-probe/3"
+    assert result["schema_version"] == RUNTIME_PROBE_VERSION
     assert result["ok"] is True
-    assert result["capabilities"] == {
-        "reaction_analysis": True,
-        "ase_thermochemistry": True,
-        "rdkit_smiles_parse": True,
-        "rdkit_etkdg_embed": True,
-        "rdkit_uff_optimize": True,
-        "matplotlib_render": True,
-        "xyzrender_cli": True,
-    }
-    assert Path(result["modules"]["numpy"]["origin"]).is_file()
-    assert Path(result["modules"]["rdkit"]["origin"]).is_file()
+    assert result["capabilities"] == {"json_schema_validation": True, "version_constraints": True}
+    for module in ("jsonschema", "packaging"):
+        assert Path(result["modules"][module]["origin"]).is_file()
 
 
-def test_render_probe_executes_the_managed_xyzrender(tmp_path: Path, monkeypatch) -> None:
-    base = tmp_path / "base"
-    renderer = base / "bin/xyzrender"
-    renderer.parent.mkdir(parents=True)
-    renderer.write_text("#!/bin/sh\n[ \"$1\" = \"--help\" ]\n", encoding="utf-8")
-    renderer.chmod(0o755)
-    monkeypatch.setattr(runtime_probe_module.sys, "base_prefix", str(base))
-    monkeypatch.setattr(runtime_probe_module.importlib.metadata, "version", lambda name: "0.3.8")
-
-    result = runtime_probe_module._probe_render_capabilities()
-
-    assert result["xyzrender"] == {"version": "0.3.8", "path": str(renderer)}
-    assert Path(result["matplotlib"]["origin"]).is_file()
-
-
-def test_render_probe_rejects_an_ambient_xyzrender(tmp_path: Path, monkeypatch) -> None:
-    base = tmp_path / "base"
-    ambient = tmp_path / "ambient"
-    ambient.mkdir()
-    renderer = ambient / "xyzrender"
-    renderer.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    renderer.chmod(0o755)
-    monkeypatch.setattr(runtime_probe_module.sys, "base_prefix", str(base))
-    monkeypatch.setattr(runtime_probe_module.sys, "prefix", str(base))
-    monkeypatch.setenv("PATH", str(ambient))
-
-    with pytest.raises(RuntimeError, match="managed scientific runtime is missing"):
-        runtime_probe_module._probe_render_capabilities()
-
-
-def test_reused_scientific_base_is_repaired_when_its_probe_fails(
+def test_reused_control_base_is_repaired_when_its_probe_fails(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -557,13 +512,11 @@ def test_reused_scientific_base_is_repaired_when_its_probe_fails(
     python.parent.mkdir(parents=True)
     python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     python.chmod(0o755)
-    spec = tmp_path / "environment.yml"
-    spec.write_text("name: test\n", encoding="utf-8")
-    requirements = tmp_path / "requirements-runtime.txt"
-    requirements.write_text("xyzrender>=0.2.1\n", encoding="utf-8")
+    spec = tmp_path / "environment.lock.txt"
+    spec.write_text("@EXPLICIT\nhttps://example.test/python-3.11-build.conda\n", encoding="utf-8")
     probes = iter(
         [
-            runtime_install.RuntimeInstallError("xyzrender is missing"),
+            runtime_install.RuntimeInstallError("jsonschema is missing"),
             {"ok": True},
         ]
     )
@@ -588,92 +541,30 @@ def test_reused_scientific_base_is_repaired_when_its_probe_fails(
         prefix,
         python,
         spec,
-        requirements,
         tmp_path,
         "reuse",
     )
 
     assert action == "update"
-    assert calls == [
-        [
-            "/opt/conda/bin/conda",
-            "env",
-            "update",
-            "--solver",
-            "libmamba",
-            "-p",
-            str(prefix),
-            "-f",
-            str(spec),
-            "--prune",
-        ],
-        [
-            str(python),
-            "-m",
-            "pip",
-            "install",
-            "--disable-pip-version-check",
-            "--no-cache-dir",
-            "--requirement",
-            str(requirements),
-        ],
-    ]
+    assert calls == [["/opt/conda/bin/conda", "install", "--yes", "--prefix", str(prefix), "--file", str(spec)]]
 
 
-def test_scientific_base_reports_pip_failure_after_conda_succeeds(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
+def test_control_base_reports_lock_install_failure_before_probing(tmp_path: Path, monkeypatch) -> None:
     prefix = tmp_path / "envs/base/spec"
-    python = prefix / "bin/python"
-    python.parent.mkdir(parents=True)
-    python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    python.chmod(0o755)
-    spec = tmp_path / "environment.yml"
-    spec.write_text("name: test\n", encoding="utf-8")
-    requirements = tmp_path / "requirements-runtime.txt"
-    requirements.write_text("xyzrender>=0.2.1\n", encoding="utf-8")
-    calls: list[list[str]] = []
-
+    lock = tmp_path / "environment.lock.txt"
+    lock.write_text("@EXPLICIT\n")
+    calls = []
     def run(command, **_kwargs):
         calls.append(command)
-        return subprocess.CompletedProcess(command, 7 if command[0] == str(python) else 0)
-
+        return subprocess.CompletedProcess(command, 7)
     monkeypatch.setattr(runtime_install.subprocess, "run", run)
-    monkeypatch.setattr(
-        runtime_install,
-        "_run_base_probe",
-        lambda *_args: pytest.fail("the capability probe must not run after pip fails"),
-    )
-
-    with pytest.raises(
-        runtime_install.RuntimeInstallError,
-        match="pip dependency installation failed with exit code 7",
-    ):
-        runtime_install._prepare_base(
-            "/opt/conda/bin/conda",
-            prefix,
-            python,
-            spec,
-            requirements,
-            tmp_path,
-            "create",
-        )
-
-    assert calls[0][:3] == ["/opt/conda/bin/conda", "env", "create"]
-    assert calls[1] == [
-        str(python),
-        "-m",
-        "pip",
-        "install",
-        "--disable-pip-version-check",
-        "--no-cache-dir",
-        "--requirement",
-        str(requirements),
-    ]
+    monkeypatch.setattr(runtime_install, "_run_base_probe", lambda *_args: pytest.fail("probe ran after failed install"))
+    with pytest.raises(runtime_install.RuntimeInstallError, match="Conda create failed with exit code 7"):
+        runtime_install._prepare_base("/opt/conda/bin/conda", prefix, prefix / "bin/python", lock, tmp_path, "create")
+    assert calls == [["/opt/conda/bin/conda", "create", "--yes", "--prefix", str(prefix), "--file", str(lock)]]
 
 
-def test_damaged_scientific_base_requires_conda_for_repair(
+def test_damaged_control_base_requires_conda_for_repair(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -682,15 +573,13 @@ def test_damaged_scientific_base_requires_conda_for_repair(
     python.parent.mkdir(parents=True)
     python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     python.chmod(0o755)
-    spec = tmp_path / "environment.yml"
-    spec.write_text("name: test\n", encoding="utf-8")
-    requirements = tmp_path / "requirements-runtime.txt"
-    requirements.write_text("xyzrender>=0.2.1\n", encoding="utf-8")
+    spec = tmp_path / "environment.lock.txt"
+    spec.write_text("@EXPLICIT\nhttps://example.test/python-3.11-build.conda\n", encoding="utf-8")
     monkeypatch.setattr(
         runtime_install,
         "_run_base_probe",
         lambda *_args: (_ for _ in ()).throw(
-            runtime_install.RuntimeInstallError("xyzrender is missing")
+            runtime_install.RuntimeInstallError("jsonschema is missing")
         ),
     )
 
@@ -700,7 +589,6 @@ def test_damaged_scientific_base_requires_conda_for_repair(
             prefix,
             python,
             spec,
-            requirements,
             tmp_path,
             "reuse",
         )
@@ -734,7 +622,7 @@ def test_install_env_dry_run_reports_hashed_prefix(tmp_path: Path, monkeypatch: 
     assert payload["env_prefix"].startswith(str(tmp_path / "envs" / "base"))
     assert payload["kernel_env_prefix"].startswith(str(tmp_path / "envs" / "kernels"))
     assert payload["manifest_path"].endswith("/var/state/installation/python/env.json")
-    assert payload["runtime_requirements"] == str(ROOT / "requirements-runtime.txt")
+    assert payload["environment_lock"] == str(ROOT / "environment.lock.txt")
     assert payload["python_executable"].endswith("/bin/python")
     assert payload["python_distribution"] == "tspi-runtime"
     assert payload["python_payload_sha256"] == python_payload_sha256(ROOT)
@@ -801,21 +689,40 @@ def test_install_env_accepts_user_conda_root(tmp_path: Path) -> None:
     assert payload["conda_executable"] == str(conda)
 
 
-def test_install_env_reuses_scientific_base_and_isolates_kernel_overlay(tmp_path: Path) -> None:
-    import numpy
-    pytest.importorskip("rdkit")
-    import rdkit
+def test_install_env_reuses_control_base_and_isolates_kernel_overlay(tmp_path: Path) -> None:
+    import importlib.metadata
+    import sysconfig
 
-    if shutil.which("xyzrender") is None:
-        pytest.skip("the current scientific base does not include the required xyzrender executable")
-
-    base_prefix = Path(sys.base_prefix).resolve()
-    assert Path(numpy.__file__).resolve().is_relative_to(base_prefix)
-    assert Path(rdkit.__file__).resolve().is_relative_to(base_prefix)
     env_root = tmp_path / "envs"
-    managed_base = env_root / "base" / spec_sha256(ROOT)[:12]
-    managed_base.parent.mkdir(parents=True)
-    managed_base.symlink_to(base_prefix, target_is_directory=True)
+    base_prefix = env_root / "base" / spec_sha256(ROOT)[:12]
+    (base_prefix / "bin").mkdir(parents=True)
+    shutil.copy2(sys._base_executable, base_prefix / "bin/python")
+    library = base_prefix / "lib"
+    stdlib = library / f"python{sys.version_info.major}.{sys.version_info.minor}"
+    stdlib.mkdir(parents=True)
+    # Model a base interpreter, not a nested venv (whose child would inherit
+    # the original system prefix and omit this fixture's control packages).
+    for source in (Path(sys.base_prefix) / "lib").iterdir():
+        if source.name != stdlib.name:
+            (library / source.name).symlink_to(source)
+    for source in Path(sysconfig.get_path("stdlib")).iterdir():
+        if source.name not in {"site-packages", "__pycache__"}:
+            (stdlib / source.name).symlink_to(source)
+    # Copy the test runner's installed control/build distributions so this
+    # integration test stays offline and works when pytest itself uses a venv.
+    # No science package is included in the base we give to the real installer.
+    site = base_prefix / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+    for name in ("pip", "jsonschema", "packaging", "attrs", "jsonschema-specifications", "referencing",
+                 "rpds-py", "typing_extensions", "setuptools", "wheel"):
+        distribution = importlib.metadata.distribution(name)
+        for relative in distribution.files:
+            if ".." in Path(relative).parts or "__pycache__" in Path(relative).parts:
+                continue
+            source = Path(distribution.locate_file(relative))
+            if source.is_file():
+                target = site / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
     runtime_home = tmp_path / "runtime"
     command = [
         sys.executable,
@@ -835,16 +742,18 @@ def test_install_env_reuses_scientific_base_and_isolates_kernel_overlay(tmp_path
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        check=True,
+        check=False,
     )
+    assert first.returncode == 0, first.stderr
     second = subprocess.run(
         command,
         cwd=ROOT,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        check=True,
+        check=False,
     )
+    assert second.returncode == 0, second.stderr
     created = json.loads(first.stdout)
     reused = json.loads(second.stdout)
     manifest = json.loads((runtime_home / "env.json").read_text(encoding="utf-8"))
@@ -858,7 +767,7 @@ def test_install_env_reuses_scientific_base_and_isolates_kernel_overlay(tmp_path
     assert Path(created["python_executable"]).is_relative_to(kernel_prefix)
     assert manifest["schema_version"] == "agent-runtime/3"
     assert Path(manifest["runtime_probe"]["distribution"]["root"]).is_relative_to(kernel_prefix)
-    for name in ("numpy", "rdkit", "matplotlib"):
+    for name in ("jsonschema", "packaging"):
         assert Path(manifest["runtime_probe"]["modules"][name]["origin"]).is_relative_to(base_prefix)
 
 
@@ -1010,41 +919,13 @@ def test_ts_runtime_resolve_reports_external_manifest_path(tmp_path: Path) -> No
 
 
 def _runtime_probe(*, payload_sha256: str | None = None) -> dict[str, object]:
-    import numpy
-    pytest.importorskip("rdkit")
-    import rdkit
-
-    executable = Path(sys.executable).resolve()
-    numpy_origin = Path(numpy.__file__).resolve()
-    rdkit_origin = Path(rdkit.__file__).resolve()
-    kernel_prefix = Path(sys.prefix).resolve()
-    return {
-        "schema_version": "ts-runtime-probe/3",
-        "ok": True,
-        "python": {"version": sys.version.split()[0], "executable": str(executable)},
-        "distribution": {
-            "name": "tspi-runtime",
-            "installed": True,
-            "version": "0.12.0",
-            "root": str(kernel_prefix),
-            "payload_sha256": payload_sha256 or python_payload_sha256(ROOT),
-        },
-        "modules": {
-            "numpy": {"version": numpy.__version__, "origin": str(numpy_origin)},
-            "rdkit": {"version": rdkit.__version__, "origin": str(rdkit_origin)},
-            "matplotlib": {"version": "3.9.0", "origin": str(numpy_origin)},
-        },
-        "commands": {
-            "xyzrender": {"version": "0.2.1", "path": str(executable)},
-        },
-        "capabilities": {
-            "rdkit_smiles_parse": True,
-            "rdkit_etkdg_embed": True,
-            "rdkit_uff_optimize": True,
-            "matplotlib_render": True,
-            "xyzrender_cli": True,
-        },
+    result = probe_runtime_capabilities(require_distribution=False)
+    result["distribution"] = {
+        "name": "tspi-runtime", "installed": True, "version": "0.12.0",
+        "root": str(Path(sys.prefix).resolve()),
+        "payload_sha256": payload_sha256 or python_payload_sha256(ROOT),
     }
+    return result
 
 
 def _write_test_python_payload(package: Path) -> str:

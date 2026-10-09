@@ -1,0 +1,10 @@
+{
+  "schema_version": "skill-resources/1",
+  "base": "extension",
+  "files": {
+    "skills/energetics/SKILL.md": "sha256:c38766a2aab0e37a63ebfedec51d5a796af1301dea7fe09ceaf8adf1801cdec8",
+    "skills/energetics/SKILL.zh-CN.md": "sha256:6bcb49470ceaa3520fb379cae537f56084b56030a8d0a6b9f9ec50a958f3b809",
+    "skills/energetics/references/energetics.md": "sha256:24153b4774bf98447a11500d33ca9472a81eabd37eec483fd9d221b80eaad20f",
+    "skills/energetics/references/energetics.zh-CN.md": "sha256:3fcc9db3ecd45880fea05a8ce2f1612cbaf74a24f803e1ff8ca576c0bbf7ee8c"
+  }
+}

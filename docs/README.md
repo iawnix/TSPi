@@ -12,7 +12,7 @@ the normative runtime and research contracts.
 | Understand Agent, Research State, Host, Monitor, Memory, and Compute boundaries | [Architecture](ARCHITECTURE.md) |
 | Inspect the t003 reliability changes and acceptance limits | [Plan (Chinese)](T003_RELIABILITY_REPAIR_PLAN.zh-CN.md) · [Implementation and validation (Chinese)](T003_RELIABILITY_VALIDATION.zh-CN.md) |
 | Understand ResearchMap objects and turn checkpoints | [ResearchMap Design](RESEARCH_MAP_DESIGN.md) and [ADR 0006](adr/0006-unified-research-harness-lifecycle.md) |
-| Select and run a registered scientific capability | [Capability and Compute Model](CAPABILITY_COMPUTE_MODEL.md) and [Scientific Capabilities Operations](SCIENTIFIC_CAPABILITIES_OPERATIONS.md) |
+| Select and run scientific methods | [Scientific execution and operations](SCIENTIFIC_CAPABILITIES_OPERATIONS.md) |
 | Use the terminal, Phone, browser, or Monitor | [Terminal](TERMINAL.md), [TSPi Link](TSPi_LINK.md) |
 | Maintain, test, package, and release | [Maintainer Guide](MAINTAINER_GUIDE.md) and [Contributing](../CONTRIBUTING.md) |
 | Understand model/provider support | [Model Compatibility](MODEL_COMPATIBILITY.md) |

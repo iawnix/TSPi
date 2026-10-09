@@ -7,74 +7,79 @@
       "name": "candidate-generation",
       "path": "skills/candidate-generation",
       "sha256": "sha256:ffacfefec47d70b166c95df3d8f8ce5f0f469c53db5a3dcd510fb4d1cc63862b",
-      "resources_sha256": "sha256:2b495ac6d1a720d424bbb701cb24bfdb99e393bb1acc6717e9840e482eaeb55e"
+      "resources_sha256": "sha256:83774dd58cf4fdad75f6b0bad7d051baf486a41fbcf0e459aef937b787bf81e3"
     },
     {
       "name": "validation",
       "path": "skills/validation",
       "sha256": "sha256:bc25b455f91e7466cd255de8121152a8fb054320d0884b8f76817700f1063779",
-      "resources_sha256": "sha256:c5c2e1b5f6e2c110676e64a6a6c69f6f353b77a5e64433a7b3c8b3520c5fe702"
+      "resources_sha256": "sha256:cc3bb1e8f904c51253bdd8e6fc11291b3e7ac42ca2c75b3dd453adb8fe971e08"
     },
     {
       "name": "irc",
       "path": "skills/irc",
-      "sha256": "sha256:bdc668b085b9afd010f8942ec283bd37fd1d092dfbce6afc826cd755c192a33b"
+      "sha256": "sha256:97172ae4bd080ef5d90f32f702e424ce0d32431cea1cebbbce4b7440acc7feb3",
+      "resources_sha256": "sha256:4b8b4c5eea293a88ce08df147a880546f04670eae8b0bf52ac597565f0734ddf"
     },
     {
       "name": "energetics",
       "path": "skills/energetics",
-      "sha256": "sha256:c38766a2aab0e37a63ebfedec51d5a796af1301dea7fe09ceaf8adf1801cdec8"
+      "sha256": "sha256:c38766a2aab0e37a63ebfedec51d5a796af1301dea7fe09ceaf8adf1801cdec8",
+      "resources_sha256": "sha256:4f72c42ebc39f849b5da7ee5fc7494c48dc3fe6a760c1d002fee510f7fb2fce5"
     },
     {
       "name": "method-selection",
       "path": "skills/method-selection",
-      "sha256": "sha256:40ddb8e54dbfbf6e50f969a6e82ecae8ee370083b67d5c0c72eb6f557b007d5b",
-      "resources_sha256": "sha256:ddb6c4922d2ac9ab983bb53042b053833c40ac33f52d10772281530595d96c87"
+      "sha256": "sha256:a916bda212009e29866f9e6f82b4fc38cd3561e1984c18fd19c68af4d6f16899",
+      "resources_sha256": "sha256:c45df3826479701a5d23bd53bd649fc457563de8644dba227323d7f83c1e6b39"
     },
     {
       "name": "cf22d",
       "path": "skills/cf22d",
-      "sha256": "sha256:6b38265b07b96691755ab82a815838ae445e23f6e19f739ce51d1adcea259b3b",
-      "resources_sha256": "sha256:57a22469915575ed5588633281c597d9d429fd020b28002b63fc453181adaede"
+      "sha256": "sha256:f1bd8f26bd018d9f1902a494f4b929baf82d45bfab7c0b2aa3867a2bfa2becd4",
+      "resources_sha256": "sha256:63907952579295ea653dab511f8f247001624c67c0aaf40a68303c566438e1d3"
     },
     {
       "name": "xtb",
       "path": "skills/xtb",
-      "sha256": "sha256:edc54af8a731c5e20e1418e67e8b0e6cac229535f38671486ca67b6af291a760",
-      "resources_sha256": "sha256:d528a1c74953d07f840349631b6ad09bd2e6b4d00e46195abcd4feaa3f0d4b96"
+      "sha256": "sha256:144b4c02854f955915f76184951c4a7560d001152c2d91f697c537e5313c02b8",
+      "resources_sha256": "sha256:90152f7ecac1b15500e52a9987fdb4af17e9af02590b8b038c4a671eb2a59753"
     },
     {
       "name": "crest",
       "path": "skills/crest",
-      "sha256": "sha256:0477f365d91d50ca6397771d2676fd84d45699330ef9d3fce8b8b0d2272391f7"
+      "sha256": "sha256:d90fa793c0455e8648dcc1cbeebef2e85559c29772af876ee3dbc4027ae9bd82",
+      "resources_sha256": "sha256:0cf2293663ed535b483bb21e308eae3339a2cd9ecee2762e31fd7d379a03778c"
     },
     {
       "name": "qbics",
       "path": "skills/qbics",
-      "sha256": "sha256:a75d6e755fcc3b9a22f6d9bd48e6b672a8541ce4c062fe0aded1a8679112e098"
+      "sha256": "sha256:93770dddf0cb45af8a186623f5a3d49e2ac810279a16172d16b82f016df935d8",
+      "resources_sha256": "sha256:0d16895a195e5656b5216d76a388fb217c156f7d8cbde90ce92f24620b602b86"
     },
     {
       "name": "gaussian",
       "path": "skills/gaussian",
-      "sha256": "sha256:9892aeecf844405d8b219adda83046e4724bba6cfd198588abf2aeadbe9d41f4",
-      "resources_sha256": "sha256:7e2caa5cb46e817c1679b68e2bea3c7a7570907e075173c4425e250a4d60f060"
+      "sha256": "sha256:b22d1c9cf87331a9fd1310d75cbf93c89b78295c960c37fd8d1b4cbd61cd68c0",
+      "resources_sha256": "sha256:9b2f426a784fe5cd8b31c01df871cdecb5f7ae759e766a2b404edb685f59ce1a"
     },
     {
       "name": "chemical-input",
       "path": "skills/chemical-input",
-      "sha256": "sha256:f1b976f240c6215777c159859860bb160a2880786fdffff853fff7acefcbd81e",
-      "resources_sha256": "sha256:c20e81864b555bebaac094e64878e70c80b587b332a555dd2cc18e0c6491bd14"
+      "sha256": "sha256:89ce09e72d9772a38fc74a2baa3608f3dee2ae3fef85eb4c1fbb6fee2612267f",
+      "resources_sha256": "sha256:9578fb7ef5ac3070b3f3b4f87f966d4dbbc2aef5e2b6b8a3d1d6545b35713303"
     },
     {
       "name": "mechanism-reasoning",
       "path": "skills/mechanism-reasoning",
-      "sha256": "sha256:002a83b213eaae168e7aab61001c881099544a2f78a9e75c8132f11171df0130"
+      "sha256": "sha256:002a83b213eaae168e7aab61001c881099544a2f78a9e75c8132f11171df0130",
+      "resources_sha256": "sha256:223a73ccc4542d82fe5bbb02d7883edfa7fb162fe17a1b197242ce825124a776"
     },
     {
       "name": "report",
       "path": "skills/report",
-      "sha256": "sha256:230e2bce6d425bd8d108afbe1359609d947d8d12650e3410f618fe469803ef28",
-      "resources_sha256": "sha256:a2258a721f7744960f2b12f684d4a300134b4999e51393789f1077a1862f3627"
+      "sha256": "sha256:aa9061fd9a64d23afb7b666c6d0944dc76934610a3da922aeb659dc2c35faeda",
+      "resources_sha256": "sha256:d17e7c42bd1b4dd59323255d3efb46217f284c839b4c75d4b61cbcd49dae5bd5"
     }
   ],
   "validators": [
@@ -82,7 +87,11 @@
       "id": "chemical.gaussian_frequency",
       "version": "1",
       "entry": "skills/validation/scripts/gaussian_frequency.py",
-      "sha256": "sha256:d1fea479cb61a1a57b4f70c9642bdb398d2ca5a435344e28c8f0d11483259202"
+      "sha256": "sha256:d1fea479cb61a1a57b4f70c9642bdb398d2ca5a435344e28c8f0d11483259202",
+      "backend": "validation",
+      "requirements": {
+        "python": ">=3.11"
+      }
     },
     {
       "id": "chemical.reaction_mapping",
@@ -111,8 +120,24 @@
         },
         "gaussian_io.py": {
           "path": "skills/gaussian/scripts/gaussian_io.py",
-          "sha256": "sha256:fe19dbc23a782fd12425171df933b37f35060fb7fd587740ce3a66b03a5a2b2a"
+          "sha256": "sha256:b7f6d18391e7e481dee206c9696ae664946fb53710a56a9d05d620ec204abb13"
+        },
+        "xyz.py": {
+          "path": "skills/_shared/xyz.py",
+          "sha256": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9"
         }
+      },
+      "backend": "validation",
+      "requirements": {
+        "python": ">=3.11",
+        "packages": {
+          "rdkit": ">=2025.9,<2027",
+          "numpy": ">=2,<3"
+        },
+        "imports": [
+          "rdkit.Chem.AllChem",
+          "numpy"
+        ]
       }
     },
     {
@@ -147,8 +172,24 @@
         },
         "gaussian_io.py": {
           "path": "skills/gaussian/scripts/gaussian_io.py",
-          "sha256": "sha256:fe19dbc23a782fd12425171df933b37f35060fb7fd587740ce3a66b03a5a2b2a"
+          "sha256": "sha256:b7f6d18391e7e481dee206c9696ae664946fb53710a56a9d05d620ec204abb13"
+        },
+        "xyz.py": {
+          "path": "skills/_shared/xyz.py",
+          "sha256": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9"
         }
+      },
+      "backend": "validation",
+      "requirements": {
+        "python": ">=3.11",
+        "packages": {
+          "rdkit": ">=2025.9,<2027",
+          "numpy": ">=2,<3"
+        },
+        "imports": [
+          "rdkit.Chem.AllChem",
+          "numpy"
+        ]
       }
     },
     {
@@ -193,8 +234,24 @@
         },
         "gaussian_io.py": {
           "path": "skills/gaussian/scripts/gaussian_io.py",
-          "sha256": "sha256:fe19dbc23a782fd12425171df933b37f35060fb7fd587740ce3a66b03a5a2b2a"
+          "sha256": "sha256:b7f6d18391e7e481dee206c9696ae664946fb53710a56a9d05d620ec204abb13"
+        },
+        "xyz.py": {
+          "path": "skills/_shared/xyz.py",
+          "sha256": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9"
         }
+      },
+      "backend": "validation",
+      "requirements": {
+        "python": ">=3.11",
+        "packages": {
+          "rdkit": ">=2025.9,<2027",
+          "numpy": ">=2,<3"
+        },
+        "imports": [
+          "rdkit.Chem.AllChem",
+          "numpy"
+        ]
       }
     }
   ],
@@ -274,6 +331,533 @@
         "threads",
         "memory_mb"
       ]
+    }
+  ],
+  "executors": [
+    {
+      "id": "chemical.cf22d",
+      "version": "1",
+      "skill": "cf22d",
+      "backend": "pyscf",
+      "runtime": "python",
+      "entry": "skills/cf22d/scripts/run.py",
+      "cli": "skills/cf22d/scripts/cli.py",
+      "argv": [
+        "{entry}",
+        "--xyz",
+        "{input:geometry}",
+        "--output-dir",
+        "results",
+        "{args}"
+      ],
+      "inputs": {
+        "geometry": "input.xyz"
+      },
+      "outputs": [
+        {
+          "path": "results",
+          "recursive": true,
+          "required": false,
+          "min_bytes": 0
+        },
+        {
+          "path": "results/result.json",
+          "required": true,
+          "min_bytes": 2,
+          "media_type": "application/json"
+        },
+        {
+          "path": "results/geometry.xyz",
+          "required": true,
+          "min_bytes": 1,
+          "media_type": "chemical/x-xyz"
+        }
+      ],
+      "requirements": {
+        "python": ">=3.11",
+        "packages": {
+          "pyscf": ">=2.7,<3",
+          "geometric": ">=1,<2",
+          "numpy": ">=1.26,<3"
+        },
+        "imports": [
+          "pyscf",
+          "pyscf.dispersion",
+          "pyscf.geomopt.geometric_solver",
+          "geometric"
+        ]
+      }
+    },
+    {
+      "id": "chemical.xtb",
+      "version": "1",
+      "skill": "xtb",
+      "backend": "xtb",
+      "runtime": "python",
+      "entry": "skills/xtb/scripts/run.py",
+      "cli": "skills/xtb/scripts/cli.py",
+      "argv": [
+        "{entry}",
+        "--xyz",
+        "{input:geometry}",
+        "--output-dir",
+        "results",
+        "{args}",
+        "--executable",
+        "{executable}"
+      ],
+      "inputs": {
+        "geometry": "input.xyz"
+      },
+      "outputs": [
+        {
+          "path": "results",
+          "recursive": true,
+          "required": false,
+          "min_bytes": 0
+        },
+        {
+          "path": "results/result.json",
+          "required": true,
+          "min_bytes": 2,
+          "media_type": "application/json"
+        },
+        {
+          "path": "results/geometry.xyz",
+          "required": true,
+          "min_bytes": 1,
+          "media_type": "chemical/x-xyz"
+        }
+      ],
+      "requirements": {
+        "python": ">=3.11"
+      }
+    },
+    {
+      "id": "chemical.gaussian",
+      "version": "1",
+      "skill": "gaussian",
+      "backend": "gaussian",
+      "runtime": "python",
+      "entry": "skills/gaussian/scripts/run.py",
+      "cli": "skills/gaussian/scripts/cli.py",
+      "argv": [
+        "{entry}",
+        "--xyz",
+        "{input:geometry}",
+        "--output-dir",
+        "results",
+        "{args}",
+        "--executable",
+        "{executable}"
+      ],
+      "inputs": {
+        "geometry": "input.xyz"
+      },
+      "outputs": [
+        {
+          "path": "results",
+          "recursive": true,
+          "required": false,
+          "min_bytes": 0
+        },
+        {
+          "path": "results/result.json",
+          "required": true,
+          "min_bytes": 2,
+          "media_type": "application/json"
+        },
+        {
+          "path": "results/geometry.xyz",
+          "required": true,
+          "min_bytes": 1,
+          "media_type": "chemical/x-xyz"
+        }
+      ],
+      "requirements": {
+        "python": ">=3.11"
+      }
+    },
+    {
+      "id": "chemical.gaussian-input",
+      "version": "1",
+      "skill": "gaussian",
+      "backend": "gaussian",
+      "runtime": "python",
+      "entry": "skills/gaussian/scripts/run.py",
+      "cli": "skills/gaussian/scripts/cli.py",
+      "argv": [
+        "{entry}",
+        "--input-gjf",
+        "{input:input}",
+        "--output-dir",
+        "results",
+        "{args}",
+        "--executable",
+        "{executable}"
+      ],
+      "inputs": {
+        "input": "input.gjf"
+      },
+      "outputs": [
+        {
+          "path": "results",
+          "recursive": true,
+          "required": false,
+          "min_bytes": 0
+        },
+        {
+          "path": "results/result.json",
+          "required": true,
+          "min_bytes": 2,
+          "media_type": "application/json"
+        },
+        {
+          "path": "results/geometry.xyz",
+          "required": false,
+          "min_bytes": 1,
+          "media_type": "chemical/x-xyz"
+        },
+        {
+          "path": "results/gaussian.out",
+          "required": true,
+          "min_bytes": 1,
+          "media_type": "text/plain"
+        },
+        {
+          "path": "results/parsed.json",
+          "required": true,
+          "min_bytes": 2,
+          "media_type": "application/json"
+        }
+      ],
+      "requirements": {
+        "python": ">=3.11"
+      }
+    },
+    {
+      "version": "1",
+      "backend": "structure",
+      "runtime": "python",
+      "id": "chemical.resolve",
+      "skill": "chemical-input",
+      "entry": "skills/chemical-input/scripts/prepare.py",
+      "cli": "skills/chemical-input/scripts/cli.py",
+      "argv": [
+        "{entry}",
+        "--output",
+        "results/resolve.json",
+        "resolve",
+        "{args}"
+      ],
+      "inputs": {},
+      "outputs": [
+        {
+          "path": "results/resolve.json",
+          "required": true,
+          "min_bytes": 1
+        }
+      ],
+      "requirements": {
+        "python": ">=3.11",
+        "packages": {
+          "rdkit": ">=2025.9,<2027",
+          "numpy": ">=2,<3"
+        },
+        "imports": [
+          "rdkit.Chem.AllChem",
+          "numpy"
+        ]
+      }
+    },
+    {
+      "version": "1",
+      "backend": "structure",
+      "runtime": "python",
+      "id": "chemical.inspect",
+      "skill": "chemical-input",
+      "entry": "skills/chemical-input/scripts/prepare.py",
+      "cli": "skills/chemical-input/scripts/cli.py",
+      "argv": [
+        "{entry}",
+        "--output",
+        "results/inspect.json",
+        "inspect",
+        "{args}"
+      ],
+      "inputs": {},
+      "outputs": [
+        {
+          "path": "results/inspect.json",
+          "required": true,
+          "min_bytes": 1
+        }
+      ],
+      "requirements": {
+        "python": ">=3.11",
+        "packages": {
+          "rdkit": ">=2025.9,<2027",
+          "numpy": ">=2,<3"
+        },
+        "imports": [
+          "rdkit.Chem.AllChem",
+          "numpy"
+        ]
+      }
+    },
+    {
+      "version": "1",
+      "backend": "structure",
+      "runtime": "python",
+      "id": "chemical.seed",
+      "skill": "chemical-input",
+      "entry": "skills/chemical-input/scripts/prepare.py",
+      "cli": "skills/chemical-input/scripts/cli.py",
+      "argv": [
+        "{entry}",
+        "--output",
+        "results/seed.json",
+        "seed",
+        "--output-dir",
+        "results/seeds",
+        "{args}"
+      ],
+      "inputs": {},
+      "outputs": [
+        {
+          "path": "results/seed.json",
+          "required": true,
+          "min_bytes": 1
+        },
+        {
+          "path": "results/seeds",
+          "required": true,
+          "min_bytes": 1,
+          "recursive": true
+        }
+      ],
+      "requirements": {
+        "python": ">=3.11",
+        "packages": {
+          "rdkit": ">=2025.9,<2027",
+          "numpy": ">=2,<3"
+        },
+        "imports": [
+          "rdkit.Chem.AllChem",
+          "numpy"
+        ]
+      }
+    },
+    {
+      "version": "1",
+      "backend": "structure",
+      "runtime": "python",
+      "id": "chemical.reaction",
+      "skill": "chemical-input",
+      "entry": "skills/chemical-input/scripts/prepare.py",
+      "cli": "skills/chemical-input/scripts/cli.py",
+      "argv": [
+        "{entry}",
+        "--output",
+        "results/reaction.json",
+        "reaction",
+        "{args}"
+      ],
+      "inputs": {},
+      "outputs": [
+        {
+          "path": "results/reaction.json",
+          "required": true,
+          "min_bytes": 1
+        }
+      ],
+      "requirements": {
+        "python": ">=3.11",
+        "packages": {
+          "rdkit": ">=2025.9,<2027",
+          "numpy": ">=2,<3"
+        },
+        "imports": [
+          "rdkit.Chem.AllChem",
+          "numpy"
+        ]
+      }
+    },
+    {
+      "version": "1",
+      "backend": "structure",
+      "runtime": "python",
+      "id": "chemical.path-candidates",
+      "skill": "candidate-generation",
+      "entry": "skills/candidate-generation/scripts/prepare_path.py",
+      "cli": "skills/candidate-generation/scripts/cli.py",
+      "argv": [
+        "{entry}",
+        "candidates",
+        "--spec",
+        "{input:spec}",
+        "--output-dir",
+        "results",
+        "{args}"
+      ],
+      "inputs": {
+        "spec": "input-spec.json"
+      },
+      "outputs": [
+        {
+          "path": "results/candidates.json",
+          "required": true,
+          "min_bytes": 1
+        },
+        {
+          "path": "results",
+          "required": true,
+          "min_bytes": 1,
+          "recursive": true
+        }
+      ],
+      "requirements": {
+        "python": ">=3.11",
+        "packages": {
+          "rdkit": ">=2025.9,<2027",
+          "numpy": ">=2,<3"
+        },
+        "imports": [
+          "rdkit.Chem.AllChem",
+          "numpy"
+        ]
+      }
+    },
+    {
+      "version": "1",
+      "backend": "structure",
+      "runtime": "python",
+      "id": "chemical.path-irc",
+      "skill": "candidate-generation",
+      "entry": "skills/candidate-generation/scripts/prepare_path.py",
+      "cli": "skills/candidate-generation/scripts/cli.py",
+      "argv": [
+        "{entry}",
+        "irc",
+        "--spec",
+        "{input:spec}",
+        "--output-dir",
+        "results",
+        "--checkpoint",
+        "{input:checkpoint}",
+        "{args}"
+      ],
+      "inputs": {
+        "spec": "input-spec.json",
+        "checkpoint": "ts.chk"
+      },
+      "outputs": [
+        {
+          "path": "results/irc_inputs.json",
+          "required": true,
+          "min_bytes": 1
+        },
+        {
+          "path": "results",
+          "required": true,
+          "min_bytes": 1,
+          "recursive": true
+        }
+      ],
+      "requirements": {
+        "python": ">=3.11",
+        "packages": {
+          "rdkit": ">=2025.9,<2027",
+          "numpy": ">=2,<3"
+        },
+        "imports": [
+          "rdkit.Chem.AllChem",
+          "numpy"
+        ]
+      }
+    },
+    {
+      "id": "chemical.cf22d-doctor",
+      "version": "1",
+      "skill": "cf22d",
+      "backend": "pyscf",
+      "runtime": "python",
+      "entry": "skills/cf22d/scripts/doctor.py",
+      "argv": [
+        "{entry}"
+      ],
+      "inputs": {},
+      "outputs": [],
+      "requirements": {
+        "python": ">=3.11",
+        "packages": {
+          "pyscf": ">=2.7,<3",
+          "geometric": ">=1,<2",
+          "numpy": ">=1.26,<3"
+        },
+        "imports": [
+          "pyscf",
+          "pyscf.dispersion",
+          "pyscf.geomopt.geometric_solver",
+          "geometric"
+        ]
+      }
+    },
+    {
+      "id": "chemical.render",
+      "version": "1",
+      "skill": "report",
+      "backend": "render",
+      "runtime": "python",
+      "entry": "skills/report/scripts/render.py",
+      "cli": "skills/report/scripts/render_cli.py",
+      "argv": [
+        "{entry}",
+        "--xyz",
+        "{input:geometry}",
+        "--output-dir",
+        "results/render",
+        "{args}"
+      ],
+      "inputs": {
+        "geometry": "input.xyz"
+      },
+      "outputs": [
+        {
+          "path": "results/render/geometry.svg",
+          "required": true,
+          "min_bytes": 1,
+          "media_type": "image/svg+xml"
+        },
+        {
+          "path": "results/render/geometry.png",
+          "required": true,
+          "min_bytes": 1,
+          "media_type": "image/png"
+        },
+        {
+          "path": "results/render/render.json",
+          "required": true,
+          "min_bytes": 2,
+          "media_type": "application/json"
+        }
+      ],
+      "requirements": {
+        "python": ">=3.11",
+        "packages": {
+          "xyzrender": "==0.3.8",
+          "rdkit": ">=2025.9,<2027",
+          "numpy": ">=2,<3"
+        },
+        "imports": [
+          "xyzrender",
+          "xyzgraph",
+          "graphrc",
+          "resvg_py",
+          "cairosvg",
+          "PIL.Image"
+        ]
+      }
     }
   ]
 }

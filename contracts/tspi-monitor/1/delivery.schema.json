@@ -30,6 +30,14 @@
     "delivered": {
       "type": "boolean"
     },
+    "superseded_input": {
+      "type": "boolean"
+    },
+    "superseded_requests": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
     "batch_event_ids": {
       "type": "array",
       "items": {

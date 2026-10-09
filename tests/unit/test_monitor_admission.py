@@ -1,19 +1,39 @@
 import json
 import pytest
+from research_memory import install_state_projection_writer
+from research_state.agent_workspace import admit_workspace, read_context
 from research_state.monitor_wake import assess
 from research_state.admission import tool_admission
+from research_state.workspace import initialize_workspace
+from tspi_runtime.api import execute
 
 
-def event_fixture(root, state='succeeded'):
+def event_fixture(root, state='succeeded', workspace_id='ws_test'):
     event = {'schema_version':'ts-job-monitor-event/1','monitor_id':'monitor_test',
-             'event_id':'event_fixture','workspace_id':'ws_test','session_id':'session_test',
+             'event_id':'event_fixture','workspace_id':workspace_id,'session_id':'session_test',
              'node_id':'node_test','attempt_id':'attempt_test','job_id':'job_test','state':state,'exit_status':0 if state=='succeeded' else 1}
     path=root/'operations/monitors/monitor_test/events/event_fixture.json'
     path.parent.mkdir(parents=True);path.write_text(json.dumps(event))
-    context={'workspace_id':'ws_test','revision':7,'nodes':[{'id':'node_test','state':'closed'}],
+    context={'workspace_id':workspace_id,'revision':7,'nodes':[{'id':'node_test','state':'closed'}],
              'attempts':[{'id':'attempt_test','state':state,'exit_code':event['exit_status'],
                           'metadata':{'job_id':'job_test','output_validation':{'complete':state=='succeeded'}}}]}
     return context
+
+
+def test_monitor_assessment_command_binds_event_to_current_workspace_and_session(tmp_path):
+    install_state_projection_writer()
+    initialize_workspace(tmp_path, 'workspace_monitor', 'research')
+    admit_workspace(tmp_path, {'workspace_id': 'workspace_monitor', 'authority': 'host'})
+    context = read_context(tmp_path)
+    event_fixture(tmp_path, state='failed', workspace_id=context['workspace_id'])
+
+    result = execute('research.monitor_assess', tmp_path, {
+        'event_id': 'event_fixture', 'session_id': 'session_test',
+    })
+
+    assert result['admitted'] is True
+    assert result['event']['workspace_id'] == context['workspace_id']
+    assert result['state_token'].startswith(f"{context['revision']}:")
 
 
 @pytest.mark.parametrize('state', ['succeeded','failed'])

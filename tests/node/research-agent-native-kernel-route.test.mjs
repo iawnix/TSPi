@@ -31,7 +31,7 @@ test("native research commands expose the Research State runtime operation and l
       assert.deepEqual(schemasByName[operation.type], operation.schema);
       assert.deepEqual([...operation.schema.required].sort(), operation.required_fields);
     }
-    const selected = await createStateTool().execute("read_operations", { mode: "operations", query: "assess_claim" }, undefined, { cwd: root });
+    const selected = await createStateTool().execute({ mode: "operations", query: "assess_claim" }, { callId: "read_operations", tspi: { cwd: root } });
     assert.equal(selected.details.result.selected_operation, "assess_claim");
     assert.deepEqual(selected.details.result.operations.map(operation => operation.type), ["assess_claim"]);
     await assert.rejects(
@@ -50,18 +50,16 @@ test("native research commands expose the Research State runtime operation and l
         ],
       },
     });
-    const result = await executeFilesystemResearchCommand("research.turn", root, {
+    const result = await executeFilesystemResearchCommand("research.checkpoint", root, {
       request: {
-        protocol: "research_turn_request",
-        version: 1,
         request_id: "route_checkpoint",
         workspace_id: "workspace_native_route",
         principal: "root_agent",
         authority: "kernel_write",
-        operation: "checkpoint",
-        input: {
-          checkpoint_id: "checkpoint_route.1",
+        checkpoint: {
+          id: "checkpoint_route.1",
           disposition: "continue_required",
+          reason: "Continue the pending route work",
           unresolved_refs: ["node_route.v1"],
         },
       },

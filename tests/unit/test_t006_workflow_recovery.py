@@ -48,16 +48,11 @@ def setup(root, *, conditions=True):
 
 def prepare(root, params):
     with TransactionCoordinator(root).locked():
-        return execution._prepare_start(root, SimpleNamespace(default='local'), params)
+        return execution._prepare_start(root, SimpleNamespace(default='local'), params, prepared_params=params)
 
 
-def test_missing_gate_does_not_stage_and_same_request_can_be_prepared(tmp_path):
+def test_simple_node_can_prepare_without_a_gate_or_exemption(tmp_path):
     params = setup(tmp_path, conditions=False)
-    with pytest.raises(ValueError, match='completion_conditions_required'):
-        prepare(tmp_path, params)
-    assert not (tmp_path / 'runs/jobs/job_review').exists()
-    assert not (tmp_path / 'operations/staging/job_review.json').exists()
-    change(tmp_path, [gate()])
     assert prepare(tmp_path, params)[0].attempt_id
     assert len(state.read_context(tmp_path)['attempts']) == 1
 
@@ -145,19 +140,18 @@ def test_concurrent_dispatch_starts_once_and_reuses_receipt(tmp_path):
 def test_atomic_closure_points_to_delivery_and_valid_prefix_succeeds(tmp_path):
     setup(tmp_path)
     change(tmp_path, [{'type': 'create_node', 'id': 'node_email', 'title': 'Delivery', 'objective': 'Deliver report',
-                       'claim_ids': ['claim_review'], 'dependency_ids': ['node_calc']}])
+                       'claim_ids': ['claim_review'], "dependencies": [{"node_id": 'node_calc', "condition": "completed"}]}, gate('node_email')])
     before = (tmp_path / 'research_map/context.json').read_bytes()
     with pytest.raises(state.AgentWorkspaceError) as error:
         change(tmp_path, [evaluate(), close(), close('node_email')])
-    assert error.value.code == 'completion_conditions_required'
+    assert 'NodeGate' in str(error.value)
     assert error.value.details['operation_index'] == 2
     assert error.value.details['target_id'] == 'node_email'
     assert error.value.details['atomic_batch_committed'] is False
     assert (tmp_path / 'research_map/context.json').read_bytes() == before
     change(tmp_path, [evaluate(), close()])
-    change(tmp_path, [gate('node_email'), evaluate('node_email'), close('node_email')])
-    checkpoint = state.checkpoint(tmp_path, {'principal': 'root_agent', 'authority': 'kernel_write',
-        'id': 'checkpoint_review', 'disposition': 'terminal', 'node_ids': ['node_calc', 'node_email'], 'claim_ids': ['claim_review']})
+    change(tmp_path, [evaluate('node_email'), close('node_email')])
+    checkpoint = state.checkpoint(tmp_path, {'principal': 'root_agent', 'authority': 'kernel_write', "checkpoint": {'id': 'checkpoint_review', 'disposition': 'terminal', 'node_ids': ['node_calc', 'node_email'], 'claim_ids': ['claim_review'], "reason": 'All scoped work is settled'}})
     assert checkpoint['accepted']
 
 
@@ -187,7 +181,7 @@ def test_contract_queries_and_precise_assessment_errors(tmp_path):
     catalog = execute('research.operations', tmp_path, {'query': 'evaluate_gate'})
     assert [x['type'] for x in catalog['operations']] == ['evaluate_gate']
     assert 'criterion_id' in catalog['operations'][0]['nested_schema']['assessments']['required']
-    assert [x['type'] for x in execute('research.operations', tmp_path, {'query': 'completion_exemption'})['operations']] == ['create_node']
+    assert [x['type'] for x in execute('research.operations', tmp_path, {'query': 'completion_exemption'})['operations']] == []
     wrong = evaluate(); wrong['assessments'][0]['status'] = wrong['assessments'][0].pop('verdict')
     with pytest.raises(state.AgentWorkspaceError, match=r'operation_contract_invalid: evaluate_gate.assessments.0:.*status'):
         change(tmp_path, [wrong])

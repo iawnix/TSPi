@@ -13,11 +13,11 @@ def main():
         for entry in data.get('skills',[]):
             skill=manifest.parent/entry['path']
             entry['sha256']=digest(skill/'SKILL.md')
-            scripts=skill/'scripts'
-            if not scripts.is_dir():continue
-            resources=sorted(scripts.rglob('*.py'))
+            resources=sorted(p for p in skill.rglob('*') if p.is_file()
+                             and p.name not in {'resources.json', 'manifest.json'}
+                             and '__pycache__' not in p.parts and p.suffix != '.pyc')
             shared=manifest.parent/'skills/_shared'
-            if shared.is_dir():resources+=sorted(shared.rglob('*.py'))
+            if (skill/'scripts').is_dir() and shared.is_dir():resources+=sorted(shared.rglob('*.py'))
             index={'schema_version':'skill-resources/1','base':'extension',
                    'files':{str(p.relative_to(manifest.parent)):digest(p) for p in resources}}
             path=skill/'resources.json';path.write_text(json.dumps(index,indent=2)+'\n')

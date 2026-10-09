@@ -29,3 +29,5 @@ Record ensemble size, relative-energy table, selected geometry, and selection
 rationale as distinct facts. A scheduler success with missing primary outputs
 is an operational failure, not an empty ensemble. Read
 [crest_ensemble.md](references/crest_ensemble.md).
+
+For a task-specific wrapper, use the generic preparer with `--script` and an explicit `--backend`, as described in [method selection](../method-selection/SKILL.md). That path records scripts, environment, inputs and outputs. This Skill supplies scientific guidance; a bundled executable for this method is not currently provided.

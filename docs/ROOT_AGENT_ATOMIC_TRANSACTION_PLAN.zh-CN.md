@@ -401,7 +401,7 @@ gateway 都不能再启动自己的 session store、model loop 或事务写入�
 2. manifest、context、liveness、memory projection 的 revision 必须相等；修正当前
    `memory_scope=session` 与 `memory/index.json scope=workspace` 的命名冲突。
 3. 所有 public API、`.d.mts`、contract schema、安装器 inventory、文档和测试改为
-   `tspi-host/1` + `tspi-transaction/1`。
+   `tspi-host/2` + `tspi-transaction/1`。
 
 ## API 错误和恢复
 

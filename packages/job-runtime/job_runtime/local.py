@@ -9,8 +9,9 @@ import time
 import uuid
 import sys
 import threading
-from .worker import identity
+from .worker import identity, supervisor_environment
 from .outputs import collect_outputs
+from .config_contract import SUBMISSION_FIELDS, validate_submission
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -23,15 +24,23 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def manager_environment():
+    runtime = f"/run/user/{os.getuid()}"
+    return {**os.environ, "XDG_RUNTIME_DIR": runtime, "DBUS_SESSION_BUS_ADDRESS": "unix:path=" + runtime + "/bus"}
+
+
 class LocalProcessPlatform(ExecutionPlatform):
     """Run arbitrary argv locally, with stdout/stderr and receipt files."""
 
     name = "local"
 
-    def __init__(self) -> None:
+    def __init__(self, *, supervisor: str = "process", platform_name: str = "local") -> None:
+        if supervisor not in {"process", "systemd"}:
+            raise ValueError("unknown local Job supervisor")
+        self.supervisor = supervisor
+        self.name = platform_name
         self._processes: dict[str, subprocess.Popen[bytes]] = {}
         self._deadlines: dict[str, float] = {}
-        self._terminal: dict[str, JobStatus] = {}
         self._process_lock = threading.Lock()
         self._reaper: threading.Thread | None = None
 
@@ -70,6 +79,7 @@ class LocalProcessPlatform(ExecutionPlatform):
         }
 
     def start(self, spec: JobSpec) -> JobReceipt:
+        validate_submission({key: value for key, value in spec.metadata.items() if key in SUBMISSION_FIELDS}, kind='local')
         probe = self.probe(spec)
         if not probe["cwd_exists"]:
             raise FileNotFoundError(f"job cwd does not exist: {spec.cwd}")
@@ -81,6 +91,7 @@ class LocalProcessPlatform(ExecutionPlatform):
         if (spec.cwd / "receipt.json").exists() or (spec.cwd / "spec.json").exists():
             raise ValueError("job directory already contains an execution; reconcile instead of resubmitting")
         receipt = JobReceipt(job_id, self.name, _now(), spec.command, str(spec.cwd), None, dict(spec.metadata), spec.workspace_id, spec.node_id, spec.attempt_id)
+        resources = spec.metadata.get("resources", {})
         self._write(spec.cwd / "spec.json", {
             "command": list(spec.command), "cwd": str(spec.cwd), "outputs": [o.__dict__ for o in spec.outputs],
             "timeout_seconds": spec.timeout_seconds, "metadata": dict(spec.metadata),
@@ -88,24 +99,42 @@ class LocalProcessPlatform(ExecutionPlatform):
         })
         payload = {"cwd":str(spec.cwd), "receipt":receipt.__dict__, "command":list(spec.command),
                    "env":dict(spec.env), "timeout":spec.timeout_seconds, "stdin":str(spec.stdin) if spec.stdin else None}
-        proc = subprocess.Popen([sys.executable, str(Path(__file__).with_name("worker.py"))],
-            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-        self._track_process(job_id, proc)
-        try:
-            proc.stdin.write(json.dumps(payload).encode())
-        finally:
-            proc.stdin.close()
+        supervisor_command = [sys.executable, str(Path(__file__).with_name("worker.py"))]
+        proc = None
+        if self.supervisor == "systemd":
+            unit = "tspi-job-" + hashlib.sha256(str(spec.cwd.resolve()).encode()).hexdigest()[:32] + ".service"
+            payload["receipt"]["metadata"] = {**payload["receipt"]["metadata"], "systemd_unit": unit}
+            self._write(spec.cwd / "supervisor.json", payload)
+            (spec.cwd / "supervisor.json").chmod(0o600)
+            launch = ["systemd-run", "--user", "--collect", "--quiet", "--unit=" + unit,
+                      "--property=Type=exec", "--property=WorkingDirectory=" + str(spec.cwd),
+                      "--property=TimeoutStopSec=5s"]
+            if resources.get("cpus"):
+                launch.append("--property=CPUQuota=" + str(resources["cpus"] * 100) + "%")
+            if resources.get("memory_mb"):
+                launch.append("--property=MemoryMax=" + str(resources["memory_mb"] * 1024 * 1024))
+            # The user manager may itself contain login/provider variables.
+            # env -i scrubs those before even the stdlib supervisor starts.
+            launch += ["--", "/usr/bin/env", "-i", *[f"{key}={value}" for key, value in supervisor_environment().items()],
+                       *supervisor_command, str(spec.cwd / "supervisor.json")]
+            subprocess.run(launch, check=True, capture_output=True, text=True, timeout=15, env=manager_environment())
+        else:
+            proc = subprocess.Popen(supervisor_command, env=supervisor_environment(),
+                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            self._track_process(job_id, proc)
+            try:
+                proc.stdin.write(json.dumps(payload).encode())
+            finally:
+                proc.stdin.close()
         deadline = time.monotonic() + 10
         while not (spec.cwd / "receipt.json").exists():
-            if proc.poll() is not None or time.monotonic() >= deadline:
+            if (proc is not None and proc.poll() is not None) or time.monotonic() >= deadline:
                 raise RuntimeError("supervisor receipt unavailable; reconcile before retrying")
             time.sleep(.01)
         return self.receipt_from_disk(spec.cwd / "receipt.json")
 
     def status(self, receipt: JobReceipt) -> JobStatus:
         self._reap_finished()
-        if receipt.job_id in self._terminal:
-            return self._terminal[receipt.job_id]
         restored = self._read_terminal_status(receipt)
         if restored is not None:
             return restored
@@ -148,7 +177,6 @@ class LocalProcessPlatform(ExecutionPlatform):
                 os.killpg(proc.pid, signal.SIGKILL)
                 proc.wait()
             terminal = JobStatus(receipt.job_id, JobState.TIMED_OUT, self.name, exit_code=proc.returncode, finished_at=_now(), error="job timeout exceeded")
-            self._terminal[receipt.job_id] = terminal
             return self._persist(receipt, terminal)
         code = proc.poll()
         if code is None:
@@ -170,7 +198,6 @@ class LocalProcessPlatform(ExecutionPlatform):
                         finished_at=value.get("finished_at"), error=value.get("error"),
                     )
                     if restored.state in {JobState.SUCCEEDED, JobState.FAILED, JobState.TIMED_OUT, JobState.CANCELLED, JobState.COLLECTED}:
-                        self._terminal[receipt.job_id] = restored
                         return restored
             except (OSError, ValueError, TypeError, json.JSONDecodeError):
                 pass
@@ -214,8 +241,6 @@ class LocalProcessPlatform(ExecutionPlatform):
         except OSError:
             # Status observation must remain useful on read-only remote mounts.
             pass
-        if status.state in {JobState.SUCCEEDED, JobState.FAILED, JobState.TIMED_OUT, JobState.CANCELLED, JobState.COLLECTED}:
-            self._terminal[receipt.job_id] = status
         return status
 
     @staticmethod

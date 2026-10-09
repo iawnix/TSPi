@@ -7,6 +7,8 @@ small and matches the transport-neutral Research Agent workspace contract.
 
 from __future__ import annotations
 
+from tspi_foundation.protocol import WORKSPACE_ID_PATTERN, RETIRED_WORKSPACE_FILES
+
 import json
 import os
 import re
@@ -21,16 +23,8 @@ from tspi_foundation.path_safety import lexical_path, path_has_symlink
 MANIFEST_SCHEMA = "research_state_workspace_2"
 WORKSPACE_MODE = "research"
 WORKSPACE_STATES = frozenset({"initializing", "ready", "admission_pending", "failed"})
-_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 
 _COMMON_DIRECTORIES = ("inputs", "artifacts", "runs", "logs")
-RETIRED_WORKSPACE_FILES = (
-    "workspace.json", "research_map.json", "research.db", "transactions.jsonl",
-    "research_state.json", "phases.json", "claims.json", "claim_relations.json",
-    "research_nodes.json", "observations.json", "proof_specs.json",
-    "validation_results.json", "findings.json", "gate_specs.json", "gate_results.json",
-    "decision_log.jsonl", "transaction_log.jsonl",
-)
 _RESEARCH_DIRECTORIES = (
         "research_map",
         "memory",
@@ -58,7 +52,7 @@ def _now() -> str:
 
 
 def _identifier(value: Any, field: str) -> str:
-    if not isinstance(value, str) or not _IDENTIFIER.fullmatch(value):
+    if not isinstance(value, str) or not WORKSPACE_ID_PATTERN.fullmatch(value):
         raise WorkspaceModeError(f"{field} must be a non-empty identifier")
     return value
 
@@ -205,6 +199,9 @@ def _validate_layout(
     invalid = [name for name in RESEARCH_CONTEXT_COLLECTIONS if not isinstance(context.get(name), list)]
     if invalid:
         raise WorkspaceModeError("research_context_collections_must_be_arrays: " + ", ".join(invalid))
+    if any(isinstance(node, dict) and ({"dependency_ids", "completion_exemption"} & node.keys())
+           for node in context["nodes"]):
+        raise WorkspaceModeError("unsupported_workspace_state: retired Node fields; create a new workspace")
     if (not isinstance(context.get("focus"), dict)
             or not isinstance(context["focus"].get("claim_ids"), list)
             or not isinstance(context["focus"].get("node_ids"), list)):

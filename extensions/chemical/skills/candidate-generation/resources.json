@@ -2,10 +2,19 @@
   "schema_version": "skill-resources/1",
   "base": "extension",
   "files": {
-    "skills/candidate-generation/scripts/prepare_path.py": "sha256:ed1c869c0060c42d89cc701133180eb3ed1c33add2437cc08393e860912b8261",
-    "skills/_shared/execution_bindings.py": "sha256:4e77463dd31654b872bf5167050ac9844977d7a744c863cf303dc343204b04d1",
+    "skills/candidate-generation/SKILL.md": "sha256:ffacfefec47d70b166c95df3d8f8ce5f0f469c53db5a3dcd510fb4d1cc63862b",
+    "skills/candidate-generation/SKILL.zh-CN.md": "sha256:8ae2358a15e61cdf4b544556d940a97fecbc732425e60afbea0badd8fc85d2e9",
+    "skills/candidate-generation/references/ase_neb_executor.md": "sha256:35169391bda139edf1baf56584249dbc0272ea3a923a4f7cd51c09fe0c82d7a8",
+    "skills/candidate-generation/references/ase_neb_executor.zh-CN.md": "sha256:b838fa1cf1aa89daa66214ce1ae77a20588510d5a07ce133567497ca0830fee0",
+    "skills/candidate-generation/references/candidate_generation.md": "sha256:adbfb19eabeab678d212adeaa21090a3ac25c19c871a628676c9902675dc58f6",
+    "skills/candidate-generation/references/candidate_generation.zh-CN.md": "sha256:596aa6d076ff55fe0d905878217653b32734e8f2a757ae29b67bb98785d57c3b",
+    "skills/candidate-generation/references/gaussian_path.md": "sha256:48640aba1b1870a127345b2aacbbe3fc075b5122e3c8900812bdb18f74303527",
+    "skills/candidate-generation/references/gaussian_path.zh-CN.md": "sha256:ee2602d9ae50031d1ee5376067655e5ef05c9e425c778d696f71b3813d27fac8",
+    "skills/candidate-generation/scripts/cli.py": "sha256:4df989e443d35dd2bab4a67bf090091d55946474742370639f9ba4cf87aca3b5",
+    "skills/candidate-generation/scripts/prepare_path.py": "sha256:b3701b21549dc7787442d575eea780ec3efbc01d4f0eb9e50720746b66d4220e",
     "skills/_shared/path_validation.py": "sha256:8efad83c1e4d98a128551f6519ba09cb8e35bf9efb7f05b223e0e9f68a384987",
     "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
-    "skills/_shared/science.py": "sha256:dfd52085de07e1a7a75315cb50225021fd397f438c1544c67266c79809affc5b"
+    "skills/_shared/science.py": "sha256:8db57aa3b1a9961b5f82d0952ff2ea4c56ed9abf5447a6be91ab86c2035c3f34",
+    "skills/_shared/xyz.py": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9"
   }
 }

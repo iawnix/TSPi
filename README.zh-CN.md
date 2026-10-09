@@ -36,7 +36,8 @@ name resolver、workspace、服务、Web、Phone 和通知配置统一传给同�
 code，并自动完成 Host 注册。Relay 必须部署在另一台机器时，设置
 `TSPI_WITH_LINK_RELAY=false` 并提供已有 code，或单独使用 `install-link-relay.sh`。
 
-核心安装始终包含 Agent、科学运行时和分子渲染；TS Web 是可选组件。安装器配置
+核心安装包含 Agent 和最小控制运行时；科学计算、验证和渲染使用单独配置的 Job 环境。
+TS Web 是可选组件。安装器配置
 整个安装目录共用的 TSPi Host；不再安装 TS Phone 守护进程。
 
 安装器还会询问是否安装可选的 TSPi 模型图标字体。交互安装默认安装；非交互安装

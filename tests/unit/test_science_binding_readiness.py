@@ -1,63 +1,67 @@
-import hashlib
-import json
-from pathlib import Path
-import runpy
+"""Readiness is derived from descriptors, including third-party extensions."""
+import os
 
 import pytest
-from job_runtime import config_contract as contract
-from tests.unit.test_job_python_config import binding
 
-ROOT = Path(__file__).resolve().parents[2]
-module = runpy.run_path(str(ROOT / "extensions/chemical/skills/_shared/execution_bindings.py"))
-check = module["check_environments"]
+from job_runtime.config_contract import load_job_config
+from tspi_runtime.environment_check import check_environments
 
 
 def config():
-    return {"default_environment": "local", "environments": {"local": {"kind": "local", "backends": {
-        "pyscf": {"command": "/old/python"}, "xtb": {"command": "/opt/xtb"}}}}}
+    settings = load_job_config(os.environ['TS_JOB_CONFIG'])
+    settings['environments']['local']['backends'] = {
+        'analysis': settings['environments']['local']['backends']['validation']}
+    return settings
 
 
-def test_old_install_source_rejected_before_any_probe():
-    old = config()
-    assert contract.validate_job_config(old)
-    with pytest.raises(ValueError, match="science_binding_not_ready.*python_binding_missing"):
-        check(old, contract=contract)
-    old["environments"]["local"]["python"] = binding("/opt/runner")
-    with pytest.raises(ValueError, match="sole Python binding"):
-        check(old, contract=contract)
+def extension():
+    return [{'executors': [{'id': 'external.biology', 'version': '7', 'backend': 'analysis',
+        'runtime': 'python', 'argv': ['{entry}', '{args}'],
+        'requirements': {'python': '>=3.11', 'packages': {'numpy': '>=2,<3'}, 'imports': ['numpy']}}]}]
 
 
-def test_inherited_python_matches_helper_and_remote_gaps_are_visible():
-    c = config(); local = c["environments"]["local"]
-    local["python"] = binding("/opt/runner")
-    local["backends"]["pyscf"] = {}
-    c["environments"]["remote"] = {"kind": "remote", "backends": {"xtb": {"command": "xtb"}}}
-    report = check(c, contract=contract)
-    assert report["local"]["pyscf"]["status"] == "static_valid"
-    assert report["remote"]["xtb"]["status"] == "invalid"
-    c["default_environment"] = "remote"
-    with pytest.raises(ValueError, match="science_binding_not_ready"):
-        check(c, contract=contract)
+def test_new_domain_uses_declared_backend_and_actual_target_probe():
+    report = check_environments(config(), extensions=extension())
+    row = report['local']['executors:external.biology@7']
+    assert row['status'] == 'verified'
+    assert row['environment_evidence']['observation']['python']['packages']['numpy']
 
 
-def test_local_environment_receipt_and_lock_drift_are_detected(tmp_path, monkeypatch):
-    prefix = tmp_path / "env"; prefix.mkdir()
-    conda = tmp_path / "conda"; conda.touch()
-    lock = tmp_path / "runner.lock"; lock.write_text("@EXPLICIT\nhttps://example.test/python.conda\n")
-    b = {**binding(str(prefix)), "conda_executable": str(conda), "lock_ref": str(lock)}
-    c = {"default_environment": "local", "environments": {"local": {
-        "kind": "local", "python": b, "backends": {"xtb": {"command": "xtb"}}}}}
-    with pytest.raises(ValueError, match="no verified receipt"):
-        check(c, contract=contract, probe_local=True)
-    (prefix / "tspi-environment.json").write_text(json.dumps({
-        "lock_sha256": "sha256:" + hashlib.sha256(lock.read_bytes() + b"\0").hexdigest(),
-        "binding_sha256": contract.binding_digest(b)}))
-    probe = module["_probe_local"]
-    monkeypatch.setitem(probe.__globals__, "_run", lambda argv: lock.read_text() if "list" in argv else '{}')
-    assert check(c, contract=contract, probe_local=True)["local"]["xtb"]["status"] == "local_ready"
-    monkeypatch.setitem(probe.__globals__, "_run", lambda argv: '@EXPLICIT\nhttps://example.test/wrong.conda\n')
-    with pytest.raises(ValueError, match="does not match its explicit"):
-        check(c, contract=contract, probe_local=True)
-    lock.write_text('@EXPLICIT\nhttps://example.test/new.conda\n')
-    with pytest.raises(ValueError, match="receipt does not match"):
-        check(c, contract=contract, probe_local=True)
+def test_missing_configuration_is_reported_without_cancelling_capability():
+    settings = config()
+    settings['environments']['local']['backends'] = {}
+    row = check_environments(settings, extensions=extension())['local']['executors:external.biology@7']
+    assert row == {'status': 'not_configured', 'backend': 'analysis'}
+
+
+def test_python_wrapper_cannot_silently_use_a_native_or_duplicate_interpreter():
+    settings = config()
+    settings['environments']['local']['backends']['analysis'] = {'command': '/bin/true'}
+    with pytest.raises(ValueError, match='python_binding_missing'):
+        check_environments(settings, extensions=extension(), probe=False)
+    settings = config()
+    settings['environments']['local']['backends']['analysis']['command'] = '/old/python'
+    with pytest.raises(ValueError, match='execution_binding_command_mismatch'):
+        check_environments(settings, extensions=extension(), probe=False)
+
+
+def test_static_validation_does_not_claim_execution_readiness():
+    report = check_environments(config(), extensions=extension(), probe=False)
+    row = report['local']['executors:external.biology@7']
+    assert row['status'] == 'configuration_validated' and row['environment_evidence'] is None
+
+
+def test_bad_declared_dependency_prevents_readiness():
+    entries = extension()
+    entries[0]['executors'][0]['requirements']['packages']['numpy'] = '>=9999'
+    with pytest.raises(ValueError, match='environment_dependency_version_mismatch'):
+        check_environments(config(), extensions=entries)
+
+
+def test_unregistered_native_binding_can_be_verified_without_claiming_a_method():
+    settings = config()
+    settings['environments']['local']['backends'] = {'native': {'command': '/bin/true'}}
+    report = check_environments(settings, extensions=[])
+    row = report['local']['binding:native']
+    assert row['status'] == 'verified'
+    assert row['environment_evidence']['observation']['python'] is None

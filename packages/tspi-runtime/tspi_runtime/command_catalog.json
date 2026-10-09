@@ -36,15 +36,11 @@
       ]
     },
     {
-      "id": "research.turn",
+      "id": "research.monitor_assess",
       "domain": "research",
-      "effect": "write",
-      "required": [
-        "request"
-      ],
-      "allowed": [
-        "request"
-      ]
+      "effect": "read",
+      "required": ["event_id", "session_id"],
+      "allowed": ["event_id", "session_id"]
     },
     {
       "id": "research.detail",
@@ -191,7 +187,10 @@
         "validator_id",
         "input_artifact_ids",
         "repeat",
-        "prepared_ref"
+        "prepared_ref",
+        "validator_version",
+        "request_file",
+        "request_sha256"
       ]
     },
     {

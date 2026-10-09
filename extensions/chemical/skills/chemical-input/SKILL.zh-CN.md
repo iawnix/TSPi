@@ -7,8 +7,9 @@ description: 通过可执行 helper 解析化学名称、检查分子图、生�
 
 [English version](SKILL.md)
 
-名称、SMILES、结构描述或反应输入使用本 Skill。通过 bash 和 "$TSPI_PYTHON"
-执行 [scripts/prepare.py](scripts/prepare.py)，依赖安装环境中的 RDKit。
+名称、SMILES、结构描述或反应输入使用本 Skill。准备 `chemical.resolve`、
+`chemical.inspect`、`chemical.seed` 或 `chemical.reaction` 的版本 `1` 请求，再通过
+`job_start` 执行。目标环境的 `structure` Python 绑定提供 RDKit。
 保留原始名称、结构来源、电荷、多重度和 helper JSON 作为证据。
 
 单分子计算先确认身份、检查分子图，再准备 seed；优化和单点能不需要反应映射。
@@ -17,10 +18,13 @@ PubChem/OPSIN 查询；--lookup-name 可提供翻译或规范化名称，同时�
 用户提供的结构可以直接检查。模型给出的 SMILES 通过图校验，不等于名称身份已确认。
 
 ```text
-"$TSPI_PYTHON" <chemical-input>/scripts/prepare.py --output identity.json resolve --name water
-"$TSPI_PYTHON" <chemical-input>/scripts/prepare.py --output graph.json inspect --smiles O
-"$TSPI_PYTHON" <chemical-input>/scripts/prepare.py --output seed.json seed --smiles O --charge 0 --multiplicity 1 --output-dir seeds
+"$TSPI_PYTHON" -m tspi_runtime.executors --config "$TS_JOB_CONFIG" --environment local --executor chemical.resolve --version 1 --output prepared/identity.json -- --name water
+"$TSPI_PYTHON" -m tspi_runtime.executors --config "$TS_JOB_CONFIG" --environment local --executor chemical.inspect --version 1 --output prepared/graph.json -- --smiles O
+"$TSPI_PYTHON" -m tspi_runtime.executors --config "$TS_JOB_CONFIG" --environment local --executor chemical.seed --version 1 --output prepared/seed.json -- --smiles O --charge 0 --multiplicity 1
 ```
+
+每条命令只准备请求。将返回的文件和摘要连同 node_id 提交，再收集 Job；
+生成的结构和 JSON 保留 Attempt 与环境绑定，seed Job 会收集每个生成的 XYZ。
 
 反应研究逐一解析/检查物种，再用 reaction 子命令核验组成、电荷和显式映射，并列出键变化。
 输出为 `chemical-reaction/2` 的分范围 `checks`，不再使用全局 validated。未提供 `--transformation <JSON>` 时，
@@ -29,7 +33,7 @@ PubChem/OPSIN 查询；--lookup-name 可提供翻译或规范化名称，同时�
 研究质子转移时应显式映射氢原子。
 
 ```text
-"$TSPI_PYTHON" <chemical-input>/scripts/prepare.py --output reaction.json reaction --smiles '<mapped-reactants>><mapped-products>'
+"$TSPI_PYTHON" -m tspi_runtime.executors --config "$TS_JOB_CONFIG" --environment local --executor chemical.reaction --version 1 --output prepared/reaction.json -- --smiles '<mapped-reactants>><mapped-products>'
 ```
 
 名称无法解析或存在实质不同的身份时，进行有界查询或澄清。

@@ -1,5 +1,4 @@
 /** Pure presentation of durable usage, current context and operational observations. */
-import { monitorEventIds } from "./monitor-admission.mjs";
 export const formatTokens = value => Number.isFinite(value)
   ? value >= 1e6 ? `${(value / 1e6).toFixed(1)}m` : value >= 1e3 ? `${(value / 1e3).toFixed(1)}k` : `${Math.round(value)}` : 'Unknown';
 
@@ -19,9 +18,6 @@ export function contextMatches(view, telemetry) {
 }
 
 export function activityStatus({ view, monitor, monitorError, telemetry, sessionId, now = Date.now() }) {
-  const inbox = view?.docs?.['pi.inbox']?.items || [];
-  // Host's next_run is a submission mode; Pi stores accepted follow-ups as followUp.
-  const queued = inbox.filter(item => item.mode === 'followUp' && monitorEventIds(item.content).length > 0);
   const live = view?.docs?.['pi.live'] || {};
   const rows = (monitor?.monitors || []).filter(row => row.session_id === sessionId);
   const pending = (monitor?.pending_deliveries || []).filter(row => row.session_id === sessionId);
@@ -29,8 +25,7 @@ export function activityStatus({ view, monitor, monitorError, telemetry, session
   const waiting = rows.filter(row => ['queued', 'held', 'pending', 'submitted'].includes(row.last_state)).length;
   const relevant = running + waiting > 0 || pending.length > 0 || telemetry?.liveness?.disposition === 'waiting_external';
   const parts = []; let color = 'muted';
-  if (queued.length) { parts.push(`Wake queued (${queued.length}) · Waiting for agent`); color = 'warning'; }
-  else if (pending.length) {
+  if (pending.length) {
     parts.push(pending.some(row => row.deferred_state) ? 'Wake deferred · Awaiting research state change' : 'Wake pending delivery'); color = 'warning';
   }
   if (relevant && !live.run) {

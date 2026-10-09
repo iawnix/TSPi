@@ -24,7 +24,7 @@ def large_map(root, monkeypatch, *, count=200, explicit_focus=False):
         node_id, claim_id, attempt_id = f"node_{index}", f"claim_{index}", f"attempt_{index}"
         state["claims"].append({**claim, "id": claim_id, "statement": text, "node_ids": [node_id]})
         state["nodes"].append({**prototype, "id": node_id, "objective": text, "claim_ids": [claim_id],
-                               "dependency_ids": [], "gate_ids": [f"gate_{index}"]})
+                               "dependencies": [], "gate_ids": [f"gate_{index}"]})
         state["gates"].append({"id": f"gate_{index}", "scope": "node", "target_id": node_id, "version": 1,
                                "criteria": [{"id": "scientific_check", "source_type": "agent_assessment", "description": text}], "evaluations": []})
         state["strategy_plans"].append({"id": f"strategy_{index}", "node_id": node_id, "claim_id": claim_id,
@@ -113,7 +113,7 @@ def test_small_snapshot_keeps_complete_scientific_fields(tmp_path):
     view = decision_context.build_decision_context(tmp_path)
     assert view["bounds"]["degraded"] is False
     assert view["nodes"][0]["objective"]
-    assert view["nodes"][0]["completion_exemption"]
+    assert "dependencies" in view["nodes"][0]
     assert view["goals"][0]["assessment_state"] == "not_assessed"
     assert "steps" in view["strategies"][0]
     assert "details_omitted" not in view["nodes"][0]

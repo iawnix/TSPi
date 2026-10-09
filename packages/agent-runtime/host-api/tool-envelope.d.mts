@@ -19,6 +19,8 @@ export function toolErrorResult(
   toolCallId?: string,
 ): any;
 
-export function wrapToolWithEnvelope(tool: any): any;
-export function wrapToolForHarness(tool: any): any;
+export function wrapToolForHarness(tool: any, options?: {
+  toolContext?: import("./workspace-context.mjs").ToolExecutionContext;
+  invocation?: (api: any) => { workspaceRoot?: string; sessionId?: string; operationId?: string };
+}): any;
 export function markToolEnvelopeError(event: any): { details: any; isError: true } | { isError: true } | undefined;

@@ -92,6 +92,8 @@ class ProviderClient:
     def register(self, source_roots: Sequence[str | Path], labels: Sequence[str] | None = None) -> Any:
         labels = tuple(labels or ())
         command = [*self.command, "--state-dir", str(self.state_dir), "--register"]
+        for root in self.workspace_roots:
+            command.extend(("--workspace-root", str(root)))
         for root in source_roots:
             command.extend(("--source-root", str(root)))
         for label in labels:

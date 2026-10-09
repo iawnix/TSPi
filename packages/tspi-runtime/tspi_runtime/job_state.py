@@ -31,9 +31,6 @@ def register_attempt(root, spec, platform):
         if old['node_id'] != spec.node_id or old.get('metadata', {}).get('job_id') != spec.job_id:
             raise ValueError('attempt already belongs to another node or job')
         return attempt_id
-    node = next((n for n in ctx['nodes'] if n['id'] == spec.node_id), None)
-    if node and not node.get('gate_ids') and not node.get('completion_exemption'):
-        raise ValueError('completion_conditions_required: declare a Gate or completion_exemption before execution')
     change(root, 'job-attempt:' + spec.job_id, [{'type': 'register_attempt', 'id': attempt_id, 'node_id': spec.node_id,
         'execution_kind': 'command', 'state': 'started', 'started_at': None, 'environment': platform or 'local',
         'metadata': {'job_id': spec.job_id, 'command': list(spec.command), 'job_metadata': dict(spec.metadata)}}])

@@ -1,4 +1,4 @@
-"""Prepare, probe, and publish the managed scientific runtime used by TSPi."""
+"""Prepare, probe, and publish the managed control runtime used by TSPi."""
 
 from __future__ import annotations
 
@@ -137,8 +137,7 @@ def prepare_runtime(
         conda_executable,
         paths["base_prefix"],
         paths["base_python"],
-        paths["spec_path"],
-        paths["requirements_path"],
+        paths["lock_path"],
         paths["package_root"],
         base_action,
     )
@@ -227,11 +226,15 @@ def _runtime_paths(
     if not spec_path.is_file() or spec_path.is_symlink():
         raise RuntimeInstallError(f"missing or unsafe environment spec: {spec_path}")
     runtime = load_runtime_environment(root)
-    requirements_path = runtime.runtime_requirements_path(root)
-    if not requirements_path.is_file() or requirements_path.is_symlink():
+    lock_path = runtime.environment_lock_path(root)
+    if not lock_path.is_file() or lock_path.is_symlink():
         raise RuntimeInstallError(
-            f"missing or unsafe runtime pip requirements: {requirements_path}"
+            f"missing or unsafe control environment lock: {lock_path}"
         )
+    lock_lines = [line.strip() for line in lock_path.read_text().splitlines()
+                  if line.strip() and not line.lstrip().startswith("#")]
+    if not lock_lines or lock_lines[0] != "@EXPLICIT":
+        raise RuntimeInstallError("control environment requires an explicit Conda lock")
     payload_sha256 = runtime.python_payload_sha256(root)
     store = (
         Path(env_root).expanduser().resolve()
@@ -260,7 +263,7 @@ def _runtime_paths(
         "runtime_environment": runtime,
         "package_root": root,
         "spec_path": spec_path,
-        "requirements_path": requirements_path,
+        "lock_path": lock_path,
         "spec_sha256": runtime.spec_sha256(root),
         "payload_sha256": payload_sha256,
         "env_store": store,
@@ -297,8 +300,7 @@ def _prepare_base(
     conda: str | None,
     prefix: Path,
     python: Path,
-    spec_path: Path,
-    requirements_path: Path,
+    lock_path: Path,
     package_root: Path,
     action: str,
 ) -> str:
@@ -310,15 +312,15 @@ def _prepare_base(
         except RuntimeInstallError as error:
             if conda is None:
                 raise RuntimeInstallError(
-                    f"existing scientific base is stale or damaged: {prefix}; "
+                    f"existing control base is stale or damaged: {prefix}; "
                     f"conda or mamba is required to repair it: {error}"
                 ) from error
             effective_action = "update"
     if effective_action != "reuse":
         if conda is None:
-            raise RuntimeInstallError("Conda is required to create or update the scientific base")
+            raise RuntimeInstallError("Conda is required to create or update the control base")
         completed = subprocess.run(
-            _conda_env_command(conda, effective_action, prefix, spec_path),
+            _conda_env_command(conda, effective_action, prefix, lock_path),
             text=True,
             stdout=sys.stderr,
             stderr=sys.stderr,
@@ -329,19 +331,13 @@ def _prepare_base(
                 f"Conda {effective_action} failed with exit code {completed.returncode}"
             )
     if not python.is_file() or not os.access(python, os.X_OK):
-        raise RuntimeInstallError(f"scientific base Python is missing or not executable: {python}")
+        raise RuntimeInstallError(f"control base Python is missing or not executable: {python}")
     if effective_action != "reuse":
-        completed = _pip_install_requirements(python, requirements_path, package_root)
-        if completed.returncode != 0:
-            raise RuntimeInstallError(
-                "scientific base pip dependency installation failed "
-                f"with exit code {completed.returncode}"
-            )
         try:
             _run_base_probe(python, package_root)
         except RuntimeInstallError as error:
             raise RuntimeInstallError(
-                f"scientific base failed its required capability probe: {prefix}: {error}"
+                f"control base failed its required capability probe: {prefix}: {error}"
             ) from error
     return effective_action
 
@@ -429,31 +425,6 @@ def _pip_install_wheel(
     )
 
 
-def _pip_install_requirements(
-    python: Path,
-    requirements_path: Path,
-    package_root: Path,
-) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [
-            str(python),
-            "-m",
-            "pip",
-            "install",
-            "--disable-pip-version-check",
-            "--no-cache-dir",
-            "--requirement",
-            str(requirements_path),
-        ],
-        cwd=package_root,
-        env=_clean_python_environment(),
-        text=True,
-        stdout=sys.stderr,
-        stderr=sys.stderr,
-        check=False,
-    )
-
-
 def _run_runtime_probe(python: Path, package_root: Path) -> dict[str, Any]:
     completed = subprocess.run(
         [str(python), "-m", "tspi_bootstrap.probe", "--json"],
@@ -525,7 +496,7 @@ def _runtime_manifest(
         "schema_version": runtime.MANIFEST_VERSION,
         "package_root": str(paths["package_root"]),
         "environment_spec": str(paths["spec_path"]),
-        "runtime_requirements": str(paths["requirements_path"]),
+        "environment_lock": str(paths["lock_path"]),
         "spec_sha256": paths["spec_sha256"],
         "python_payload_sha256": paths["payload_sha256"],
         "python_wheel": distribution_install,
@@ -555,7 +526,7 @@ def _result_payload(
     result: dict[str, Any] = {
         "package_root": str(paths["package_root"]),
         "environment_spec": str(paths["spec_path"]),
-        "runtime_requirements": str(paths["requirements_path"]),
+        "environment_lock": str(paths["lock_path"]),
         "spec_sha256": paths["spec_sha256"],
         "python_distribution": paths["runtime_environment"].PYTHON_DISTRIBUTION,
         "python_payload_sha256": paths["payload_sha256"],
@@ -611,14 +582,9 @@ def _conda_root_candidates(conda_root: Path | None) -> list[str]:
     ]
 
 
-def _conda_env_command(conda: str, action: str, prefix: Path, spec_path: Path) -> list[str]:
-    command = [conda, "env", action]
-    if Path(conda).name == "conda":
-        # Keep libmamba as the normal path, but allow constrained installations
-        # (for example, CONDA_NO_PLUGINS=true) to select the classic solver.
-        solver = os.environ.get("TSPI_CONDA_SOLVER", "libmamba").strip() or "libmamba"
-        command.extend(["--solver", solver])
-    command.extend(["-p", str(prefix), "-f", str(spec_path)])
-    if action == "update":
-        command.append("--prune")
-    return command
+def _conda_env_command(conda: str, action: str, prefix: Path, lock_path: Path) -> list[str]:
+    if action not in {"create", "update"}:
+        raise RuntimeInstallError(f"unsupported Conda preparation action: {action}")
+    # An explicit lock installs exact builds without invoking a dependency solver.
+    return [conda, "install" if action == "update" else "create", "--yes",
+            "--prefix", str(prefix), "--file", str(lock_path)]

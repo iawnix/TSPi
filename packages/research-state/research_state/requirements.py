@@ -8,11 +8,11 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 
 from .assessments import assessment_current, bind_evidence
+from .evidence_checks import machine_check, read_result
 
 
 SCHEMA_VERSION = "research-requirements/1"
@@ -45,18 +45,16 @@ def _source(root, context, source_ref, quote=None):
             or source.get("sha256") != "sha256:" + hashlib.sha256(text.encode()).hexdigest()):
         raise ValueError("requirement_source_invalid: source identity or content digest differs")
     if quote is not None and (not isinstance(quote, str) or not quote.strip() or quote not in text):
-        raise ValueError("requirement_source_quote_mismatch: quote the actual user input")
+        raise ValueError("requirement_source_quote_mismatch: source_quote must be an exact substring, including punctuation; read research sources and copy the relevant span without paraphrasing")
     return source
 
 
 def acceptance_profiles():
     """Discover installed versioned profiles without importing domain code."""
-    package = Path(os.environ.get("TSPI_PACKAGE_ROOT") or os.environ.get("TS_PACKAGE_ROOT")
-                   or Path(__file__).resolve().parents[3]).resolve()
+    from tspi_foundation.extension_catalog import installed_extensions
     core = json.loads((Path(__file__).parent / "contracts/acceptance_profiles.json").read_text())
     found = {(row["id"], row["version"]): copy.deepcopy(row) for row in core["profiles"]}
-    for manifest in sorted((package / "extensions").glob("*/manifest.json")):
-        extension = json.loads(manifest.read_text())
+    for extension in installed_extensions():
         for profile in extension.get("acceptance_profiles", []):
             key = (profile.get("id"), profile.get("version"))
             if not all(isinstance(part, str) and part for part in key) or key in found:
@@ -75,16 +73,41 @@ def acceptance_profiles():
 
 
 def _profile(reference):
-    profile = acceptance_profiles().get((reference.get("id"), reference.get("version")))
-    if profile is None:
-        raise ValueError("acceptance_profile_not_registered: choose an installed, versioned extension profile")
-    return profile
+    if reference is None:
+        return None
+    return acceptance_profiles().get((reference.get("id"), reference.get("version")))
+
+
+def _criteria(requirement):
+    """Expand an optional template into the same criteria used by Gates."""
+    profile = requirement.get("profile") or {}
+    result = []
+    for check in profile.get("checks", []):
+        result.append(({"id": check["id"], "source_type": "runtime_fact", "fact": "artifacts_registered"}
+                       if check["kind"] == "registered_artifact" else
+                       {"id": check["id"], "source_type": "validator_result", "validator_id": check["validator_id"],
+                        "validator_version": check["validator_version"]}))
+    result.extend(copy.deepcopy((requirement.get("criteria") or [])))
+    ids = {row["id"] for row in result}
+    if len(ids) != len(result) or any(key.startswith("requirement.") for key in ids):
+        raise ValueError("requirement_criteria_conflict: criterion IDs must be unique and cannot use the requirement. prefix")
+    if requirement.get("execution_required"):
+        result.extend({"id": "requirement." + fact, "source_type": "runtime_fact", "fact": fact}
+                      for fact in ("execution_succeeded", "outputs_collected"))
+    # Template-owned constraints are machine checked. Extra task constraints
+    # remain explicit obligations even when an extension has no validator for
+    # them; the Agent must explain them against actual evidence.
+    manual = set(requirement.get("constraints", {})) - set(profile.get("constraint_keys", [])) - {"platform"}
+    if manual:
+        result.append({"id": "requirement.constraints", "source_type": "agent_assessment",
+                       "description": "Assess every preserved task constraint: " + ", ".join(sorted(manual))})
+    return result
 
 
 def _lookup(context, requirement_id):
     requirement = next((row for row in context.get("requirements", []) if row["id"] == requirement_id), None)
     if requirement is None:
-        raise ValueError("requirement_unknown: " + str(requirement_id))
+        raise ValueError("requirement_unknown: " + str(requirement_id) + "; operations execute in order. Create the requirement before binding, assessing or reviewing it; a rejected atomic batch created nothing")
     return requirement
 
 
@@ -95,20 +118,7 @@ def _refs(context, collection, refs, label):
 
 
 def _receipt(root, context, ref):
-    if not isinstance(ref, str) or not re.fullmatch(r"result_[0-9a-f]{64}", ref):
-        raise ValueError("requirement_result_reference_invalid")
-    try:
-        receipt = json.loads((root / "operations/results" / (ref + ".json")).read_text())
-    except (OSError, ValueError) as exc:
-        raise ValueError("requirement_result_missing: collect the actual Job") from exc
-    attempt = next((row for row in context["attempts"] if row["id"] == receipt.get("attempt_id")), None)
-    metadata = (attempt or {}).get("metadata", {})
-    if (receipt.get("schema_version") != "job-result/1" or receipt.get("receipt_id") != ref
-            or receipt.get("workspace_id") != context["workspace_id"] or not attempt
-            or receipt.get("job_id") != metadata.get("job_id")
-            or metadata.get("latest_result_receipt_ref") != ref or metadata.get("execution_conflict")):
-        raise ValueError("requirement_result_stale: collect or reconcile current evidence")
-    return receipt, attempt
+    return read_result(root, context, ref, label="requirement")
 
 
 def _source_review(context, source, requirement_id, reason):
@@ -126,15 +136,11 @@ def _source_review(context, source, requirement_id, reason):
                         "source_sha256": source["sha256"]}
 
 
-def _check_constraints(profile, constraints):
-    unknown = set(constraints) - set(profile.get("constraint_keys", [])) - {"platform"}
-    if unknown:
-        raise ValueError("requirement_constraint_not_supported: " + ", ".join(sorted(unknown)))
 
 
 def _bump(requirement, reason):
     requirement.setdefault("revisions", []).append({key: copy.deepcopy(requirement.get(key)) for key in
-        ("version", "statement", "constraints", "acceptance_profile", "profile_digest", "input_artifact_ids")}
+        ("version", "statement", "constraints", "acceptance_profile", "profile_digest", "input_artifact_ids", "criteria", "execution_required")}
         | {"reason": reason})
     requirement["version"] += 1
 
@@ -183,9 +189,8 @@ def apply_requirement_operation(root, context, operation, created_at):
         if any(row["id"] == operation["id"] for row in requirements):
             raise ValueError("requirement_already_exists")
         source = _source(root, context, operation["source_ref"], operation["source_quote"])
-        profile = _profile(operation["acceptance_profile"])
+        profile = _profile(operation.get("acceptance_profile"))
         constraints = operation.get("constraints", {})
-        _check_constraints(profile, constraints)
         inputs = operation.get("input_artifact_ids", [])
         _refs(context, "artifacts", inputs, "requirement_input_unknown")
         nodes = operation.get("node_ids", [])
@@ -193,9 +198,11 @@ def apply_requirement_operation(root, context, operation, created_at):
         requirement = {"id": operation["id"], "version": 1, "created_at": created_at,
             "source_ref": source["source_ref"], "source_sha256": source["sha256"],
             "source_quote": operation["source_quote"], "statement": operation["statement"],
-            "constraints": copy.deepcopy(constraints), "acceptance_profile": copy.deepcopy(operation["acceptance_profile"]),
+            "constraints": copy.deepcopy(constraints), "acceptance_profile": copy.deepcopy(operation.get("acceptance_profile")),
             "profile": profile, "profile_digest": _digest(profile), "node_ids": list(nodes),
+            "criteria": copy.deepcopy(operation.get("criteria", [])), "execution_required": operation.get("execution_required", False),
             "input_artifact_ids": list(inputs), "assessments": [], "stops": [], "revisions": []}
+        _criteria(requirement)  # Reject collisions before preserving this contract.
         _source_review(context, source, requirement["id"], "Requirement extracted from the quoted user request.")
         requirements.append(requirement)
         return requirement["id"]
@@ -214,14 +221,38 @@ def apply_requirement_operation(root, context, operation, created_at):
         # Additive constraint refinement preserves the user's minimum. A changed
         # user request is recorded as an explicit stop and a new sourced requirement.
         additions = operation.get("constraints", {})
-        _check_constraints(requirement["profile"], additions)
         if any(key in requirement["constraints"] and requirement["constraints"][key] != value
                for key, value in additions.items()):
             raise ValueError("requirement_minimum_cannot_be_weakened: preserve the original requirement; record an explicitly sourced scope change")
-        if not any(key not in requirement["constraints"] for key in additions):
+        revised = copy.deepcopy(requirement)
+        revised.setdefault("criteria", [])
+        revised.setdefault("execution_required", False)
+        revised["constraints"].update(copy.deepcopy(additions))
+        if "acceptance_profile" in operation:
+            reference = operation["acceptance_profile"]
+            if requirement.get("acceptance_profile") not in (None, reference):
+                raise ValueError("requirement_minimum_cannot_be_weakened: the original template cannot be replaced")
+            profile = _profile(reference)
+            if requirement.get("profile") is not None and profile != requirement["profile"]:
+                raise ValueError("acceptance_profile_version_changed: installed standards must use a new version")
+            revised.update(acceptance_profile=copy.deepcopy(reference), profile=profile, profile_digest=_digest(profile))
+        if "execution_required" in operation:
+            if requirement.get("execution_required") and not operation["execution_required"]:
+                raise ValueError("requirement_minimum_cannot_be_weakened: actual execution is required")
+            revised["execution_required"] = operation["execution_required"]
+        current = {row["id"]: row for row in _criteria(requirement)}
+        for criterion in operation.get("criteria", []):
+            previous = current.get(criterion["id"])
+            if previous is not None and previous != criterion:
+                raise ValueError("requirement_minimum_cannot_be_weakened: existing criteria cannot be replaced")
+            if previous is None:
+                revised.setdefault("criteria", []).append(copy.deepcopy(criterion))
+        _criteria(revised)
+        if revised == requirement:
             raise ValueError("requirement_revision_no_change")
         _bump(requirement, operation["reason"])
-        requirement["constraints"].update(copy.deepcopy(additions))
+        for key in ("constraints", "acceptance_profile", "profile", "profile_digest", "criteria", "execution_required"):
+            requirement[key] = revised.get(key)
         return requirement["id"]
     if kind == "resume_requirement":
         requirement["stop_resumption"] = {"after_stop_count": len(requirement.get("stops", [])),
@@ -237,75 +268,120 @@ def apply_requirement_operation(root, context, operation, created_at):
 def _assess(root, context, requirement, operation, created_at):
     if any(row["id"] == operation["id"] for row in requirement["assessments"]):
         raise ValueError("requirement_assessment_already_exists")
-    profile = _profile(requirement["acceptance_profile"])
-    if _digest(profile) != requirement["profile_digest"]:
-        raise ValueError("acceptance_profile_version_changed: installed standards must use a new version")
-    receipts = [_receipt(root, context, ref)[0] for ref in operation.get("result_receipt_refs", [])]
-    evidence = list(dict.fromkeys([*operation.get("evidence_refs", []), *requirement["input_artifact_ids"],
-                                  *(ref for receipt in receipts for ref in receipt.get("artifact_refs", []))]))
-    basis = bind_evidence(root, context, evidence, "")
-    for receipt in receipts:
-        basis["result_versions"][receipt["attempt_id"]] = receipt["receipt_id"]
+    profile = requirement.get("profile") or {}
     checks = []
+    if requirement.get("acceptance_profile"):
+        installed = _profile(requirement["acceptance_profile"])
+        if installed is None or not profile:
+            checks.append({"id": "acceptance_profile", "satisfied": False,
+                           "reason": "Template unavailable; preserve this requirement and resolve its template explicitly"})
+        elif _digest(installed) != requirement["profile_digest"]:
+            raise ValueError("acceptance_profile_version_changed: installed standards must use a new version")
+    criteria = _criteria(requirement)
+    if not profile and not requirement.get("criteria"):
+        checks.append({"id": "acceptance_criteria", "satisfied": False,
+                       "reason": "Define the checks for this deliverable before accepting it"})
+    supplied = operation.get("assessments", [])
+    by_id = {row["criterion_id"]: row for row in supplied}
+    if len(by_id) != len(supplied) or set(by_id) - {row["id"] for row in criteria}:
+        raise ValueError("requirement_assessment_criterion_unknown_or_duplicate")
+    refs = list(dict.fromkeys([*operation.get("result_receipt_refs", []),
+                              *(row["result_receipt_ref"] for row in supplied if row.get("result_receipt_ref"))]))
+    receipts = {ref: _receipt(root, context, ref)[0] for ref in refs}
+    evidence = list(dict.fromkeys([*operation.get("evidence_refs", []), *requirement["input_artifact_ids"],
+                                  *(ref for receipt in receipts.values() for ref in receipt.get("artifact_refs", []))]))
+    basis = bind_evidence(root, context, evidence, "")
+    for ref, receipt in receipts.items():
+        basis["result_versions"][receipt["attempt_id"]] = ref
     execution_platforms = {}
     required_platform = requirement["constraints"].get("platform")
     subject_key = profile.get("subject_binding")
     subjects = requirement["input_artifact_ids"] if subject_key else [None]
     if subject_key and not subjects:
-        checks.append({"id": "input_binding", "satisfied": False, "reason": "Bind the actual research input Artifacts before acceptance"})
+        checks.append({"id": "input_binding", "satisfied": False, "reason": "Bind actual research input Artifacts before acceptance"})
     artifacts = {row["id"]: row for row in context["artifacts"]}
+    machine_cache = {}
+    successful_executions = set()
+    collected_executions = set()
     for subject in subjects:
         bound_values = {}
-        for check in profile["checks"]:
-            if check["kind"] == "registered_artifact":
-                candidates = operation.get("evidence_refs", [])
-                accepted = bool(candidates) and all(ref in artifacts for ref in candidates)
-                checks.append({"id": check["id"], "subject_ref": subject, "satisfied": accepted,
-                               "reason": "Registered material inspected" if accepted else "Registered material is required"})
+        for criterion in criteria:
+            selected = by_id.get(criterion["id"], {})
+            if criterion["source_type"] == "agent_assessment":
+                accepted = bool(selected.get("verdict") == "pass" and selected.get("reason", "").strip() and evidence)
+                checks.append({"id": criterion["id"], "subject_ref": subject, "source_type": "agent_assessment",
+                               "satisfied": accepted, "reason": selected.get("reason") or "Assess this criterion against registered evidence"})
                 continue
+            candidates = ([None] if criterion.get("fact") == "artifacts_registered" else
+                          [selected["result_receipt_ref"]] if selected.get("result_receipt_ref") else refs)
             matches = []
-            for receipt in receipts:
-                validation = receipt.get("validator_result") or {}
-                if (receipt.get("execution_state") != "succeeded" or receipt.get("collection_state") != "complete"
-                        or validation.get("id") != check["validator_id"]
-                        or validation.get("version") != check["validator_version"] or validation.get("verdict") != "pass"):
+            for ref in candidates:
+                key = (criterion["id"], ref)
+                if key not in machine_cache:
+                    try:
+                        machine_cache[key] = machine_check(root, context, criterion, ref, label="requirement",
+                                                          evidence_refs=operation.get("evidence_refs", []))
+                    except ValueError:
+                        if selected.get("result_receipt_ref") == ref:
+                            raise
+                        machine_cache[key] = None
+                result = machine_cache[key]
+                if result is None:
                     continue
-                bindings = validation.get("bindings", {})
-                if any(key not in bindings for key in profile.get("binding_keys", [])):
+                if selected.get("verdict") is not None and selected["verdict"] != result["verdict"]:
+                    raise ValueError("requirement_machine_verdict_mismatch")
+                if result["verdict"] != "pass":
                     continue
-                if subject is not None and (bindings.get(subject_key) != subject
-                        or validation.get("input_versions", {}).get(subject) != artifacts[subject].get("sha256")):
+                if criterion["id"].startswith("requirement.") and (result["receipt"] or {}).get("validator_result"):
+                    continue  # A validator run does not replace the requested computation.
+                attempt = result["attempt"]
+                if attempt and attempt.get("node_id") not in requirement["node_ids"]:
                     continue
-                if any(bindings.get(key) != value for key, value in requirement["constraints"].items() if key != "platform"):
+                bindings = result["bindings"]
+                if criterion["source_type"] == "validator_result":
+                    validation = result["receipt"]["validator_result"]
+                    if any(key not in bindings for key in profile.get("binding_keys", [])):
+                        continue
+                    if subject is not None and (bindings.get(subject_key) != subject
+                            or validation.get("input_versions", {}).get(subject) != artifacts[subject].get("sha256")):
+                        continue
+                    if any(bindings.get(key) != requirement["constraints"][key]
+                           for key in profile.get("constraint_keys", []) if key in requirement["constraints"]):
+                        continue
+                    if any(key in bound_values and bound_values[key] != bindings[key] for key in profile.get("binding_keys", [])):
+                        continue
+                    bound_values.update({key: bindings[key] for key in profile.get("binding_keys", [])})
+                elif attempt:
+                    # An execution must actually use the selected inputs, not
+                    # merely run in the same Node.
+                    required_inputs = [subject] if subject is not None else requirement["input_artifact_ids"]
+                    if any(ref not in result["evidence_basis"]["artifact_versions"] for ref in required_inputs):
+                        continue
+                platforms = result["execution_platforms"]
+                if required_platform is not None and any(value != required_platform for value in platforms.values()):
                     continue
-                if any(key in bound_values and bound_values[key] != bindings[key] for key in profile.get("binding_keys", [])):
-                    continue
-                # Validator inputs have their own producer/Artifact version bindings.
-                if any(next((row for row in context["attempts"] if row["id"] == attempt), {}).get("metadata", {}).get("latest_result_receipt_ref") != version
-                       for attempt, version in validation.get("input_result_versions", {}).items()):
-                    continue
-                if any(artifacts.get(ref, {}).get("sha256") != digest for ref, digest in validation.get("input_versions", {}).items()):
-                    continue
-                producer_platforms = {attempt: next((row for row in context["attempts"] if row["id"] == attempt), {}).get("environment")
-                                      for attempt in validation.get("input_result_versions", {})}
-                if required_platform is not None and any(value != required_platform for value in producer_platforms.values()):
-                    continue
-                matches.append(receipt["receipt_id"])
-                basis["artifact_versions"].update(validation.get("input_versions", {}))
-                basis["result_versions"].update(validation.get("input_result_versions", {}))
-                if required_platform is not None:
-                    execution_platforms.update(producer_platforms)
-                bound_values.update({key: bindings[key] for key in profile.get("binding_keys", [])})
-            checks.append({"id": check["id"], "subject_ref": subject, "satisfied": bool(matches),
-                           "result_receipt_refs": matches,
-                           "reason": "Current matching validator evidence" if matches else "Missing a passing validator result bound to this input and its constraints"})
+                matches.append(ref)
+                for field, values in result["evidence_basis"].items():
+                    basis[field].update(values)
+                execution_platforms.update(platforms)
+                if attempt and criterion.get("fact") == "execution_succeeded":
+                    successful_executions.add(attempt["id"])
+                if attempt and criterion.get("fact") == "outputs_collected":
+                    collected_executions.add(attempt["id"])
+            checks.append({"id": criterion["id"], "subject_ref": subject, "source_type": criterion["source_type"],
+                           "satisfied": bool(matches), "result_receipt_refs": [ref for ref in matches if ref],
+                           "reason": "Current matching evidence" if matches else "Missing passing evidence bound to this task and its constraints"})
+    if requirement.get("execution_required"):
+        checks.append({"id": "requirement.execution", "satisfied": bool(successful_executions & collected_executions),
+                       "reason": "The same scoped execution must succeed and have complete collected outputs"})
     if required_platform is not None:
         checks.append({"id": "execution_platform", "satisfied": bool(execution_platforms),
                        "reason": "Actual scientific producer platforms match" if execution_platforms else "No matching scientific producer platform evidence"})
     requirement["assessments"].append({"id": operation["id"], "requirement_version": requirement["version"],
         "profile_digest": requirement["profile_digest"], "created_at": created_at, "reason": operation["reason"],
-        "evidence_refs": operation.get("evidence_refs", []), "result_receipt_refs": operation.get("result_receipt_refs", []),
-        "checks": checks, "evidence_basis": basis, "execution_platforms": execution_platforms})
+        "evidence_refs": operation.get("evidence_refs", []), "result_receipt_refs": refs,
+        "assessments": copy.deepcopy(supplied), "checks": checks, "evidence_basis": basis,
+        "execution_platforms": execution_platforms})
     return operation["id"]
 
 
@@ -374,7 +450,8 @@ def requirement_evaluation(context, requirement):
             "source_ref": requirement["source_ref"], "source_quote": requirement["source_quote"],
             "constraints": copy.deepcopy(requirement["constraints"]),
             "input_artifact_ids": list(requirement["input_artifact_ids"]),
-            "acceptance_profile": requirement["acceptance_profile"],
+            "acceptance_profile": requirement.get("acceptance_profile"),
+            "criteria": _criteria(requirement), "execution_required": bool(requirement.get("execution_required")),
             "state": state, "satisfied": satisfied, "settled": satisfied or stopped,
             "covered": bool(requirement.get("node_ids")), "node_ids": list(requirement.get("node_ids", [])),
             "checks": copy.deepcopy(latest["checks"]) if latest else [],
@@ -385,7 +462,7 @@ def requirements_evaluation(context):
     requirements = [requirement_evaluation(context, row) for row in context.get("requirements", [])]
     pending = [row["source_ref"] for row in context.get("requirement_sources", []) if not row.get("review")]
     return {"schema_version": SCHEMA_VERSION, "requirements": requirements, "unreviewed_source_refs": pending,
-            "satisfied": not pending and all(row["satisfied"] for row in requirements),
+            "satisfied": bool(requirements) and not pending and all(row["satisfied"] for row in requirements),
             "settled": not pending and all(row["settled"] for row in requirements),
             "tracked": bool(context.get("requirement_sources") or requirements)}
 

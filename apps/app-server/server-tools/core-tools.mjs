@@ -15,6 +15,7 @@ export function createServerExtension(factoryOptions = {}) {
   } };
   return { tools: createCoreTools({
     ...factoryOptions,
+    commandBridge: bridge,
     jobRuntime: factoryOptions.jobRuntime || createExecutionRuntime({ bridge }),
     artifactRuntime: factoryOptions.artifactRuntime || createEvidenceRuntime({ bridge }),
   }) };

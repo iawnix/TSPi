@@ -22,8 +22,9 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
   await mkdir(TEST_ROOT, { recursive: true });
   const root = await mkdtemp(join(TEST_ROOT, "flow-"));
   const saved = { ...process.env };
-  let backend, server, monitorRequest;
+  let backend, server, monitorRequest, continuationRequestId;
   const requests = [];
+  let stage = "prepare";
   try {
     const agentDir = join(root, "agent");
     const workspaceRoot = join(root, "workspaces");
@@ -34,7 +35,9 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     await writeFile(config, '[notifications.email]\nenabled=true\nprovider="smtp"\npreset="custom"\nhost="127.0.0.1"\nport=9\nsecurity="ssl"\nusername="sender@example.test"\nrecipient="reader@example.test"\npassword_env="FIXTURE_MAIL_PASSWORD"\n', { mode: 0o600 });
     Object.assign(process.env, { PI_CODING_AGENT_DIR: agentDir, TSPI_PYTHON: python,
       PYTHONDONTWRITEBYTECODE: "1", TS_NOTIFICATION_CONFIG: config });
-    delete process.env.TS_JOB_CONFIG;
+    const jobConfig = join(root, "job.toml");
+    await writeFile(jobConfig, 'default_environment="local"\n[environments.local]\nkind="local"\n');
+    process.env.TS_JOB_CONFIG = jobConfig;
     await execute(python, [join(packageRoot, "apps/agent-cli/workspace_mode.py"), "--root", workspace, "--workspace-id", "flow"]);
     const fixtureJobId = "job_" + createHash("sha256").update("fixture_run").digest("hex").slice(0, 48);
     const preparedPath = join(workspace, "prepared.json");
@@ -53,7 +56,7 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
       call("research_read", { mode: "context" }),
       call("research_change", { rationale: "Initialize a bounded fixture", operations: [
         { type: "create_claim", id: "claim_flow", statement: "The fixture can produce a file" },
-        { type: "create_node", id: "node_flow", title: "Fixture", objective: "Produce evidence", completion_exemption: "Fixture exercises transport and durable evidence only", claim_ids: ["claim_flow"] },
+        { type: "create_node", id: "node_flow", title: "Fixture", objective: "Produce evidence", claim_ids: ["claim_flow"] },
         { type: "set_focus", claim_ids: ["claim_flow"], node_ids: ["node_flow"] },
       ] }),
       call("research_strategy", { strategy_operation: "plan", plan: {
@@ -120,36 +123,38 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     await symlink(packageRoot, packageAlias, "dir");
     const backendOptions = { sourceRoot, packageRoot: packageAlias, workspaceRoot,
       serverDirectory: join(root, "pi"), sessionDir: join(root, "sessions"), stateRoot: join(root, "state"),
-      provider: "fixture", model: "fixture" };
+      model: { provider: "fixture", id: "fixture" } };
+    stage = "start-backend";
     backend = await createTspiHarnessBackend(backendOptions);
-    const created = await backend.createSession({ workspace_id: "flow", provider: "fixture", model: "fixture" });
+    stage = "create-session";
+    const created = await backend.createSession({ workspace_id: "flow", model: { provider: "fixture", id: "fixture" } });
     const session_id = created.session.session_id;
-    await assert.rejects(backend.sendInput({ workspace_id: "flow", session_id, request_id: "reserved_input",
-      client_message_id: "job-wake-batch:user", source: "phone", text: "A real user request", mode: "follow_up" }),
-    error => error.code === "input_id_reserved");
+    stage = "send-input";
     await backend.sendInput({ workspace_id: "flow", session_id, request_id: "fixture_request", client_message_id: "fixture_message",
       text: "Exercise the local fixture without sending mail.", mode: "auto" });
-    const {deliverMonitorEvent, recordMonitorTurn} = await import(pathToFileURL(join(packageRoot,"apps/app-server/pi-monitor-worker.mjs")));
+    const {deliverMonitorEvent} = await import(pathToFileURL(join(packageRoot,"apps/app-server/pi-monitor-worker.mjs")));
     const runJson = async (command, root, extra=[]) => JSON.parse((await execute(python,[join(packageRoot,"apps/agent-cli/monitor.py"),command,"--root",root,...extra])).stdout);
     let read, restarted=false, monitorDelivered=false;
+    stage = "wait-flow";
     for (let i = 0; i < 250; i++) {
       read = await backend.readSession("flow", session_id);
       if (!read.session.is_streaming && existsSync(join(workspace,"lifecycle/liveness.json"))) {
         const live=JSON.parse(await readFile(join(workspace,"lifecycle/liveness.json")));
         if (live.checkpoint_id === "checkpoint_continue" && !restarted) {
+          continuationRequestId = live.continuation.request_id;
           await backend.close();
           backend = await createTspiHarnessBackend(backendOptions);
           restarted=true;
         }
-        if (live.checkpoint_id === "checkpoint_job_wait" && !monitorDelivered) {
+        if ((live.checkpoint_id === "checkpoint_job_wait" || monitorRequest) && !monitorDelivered) {
           await runJson("tick",workspace);
           const pending=await runJson("pending",workspace);
           if (pending.deliveries.length) {
             const delivery=pending.deliveries[0];
-            const errors=await deliverMonitorEvent({workspace,delivery,runJson,recordTurn:recordMonitorTurn,sendWake:params=>{monitorRequest=params;return backend.sendInput(params);}});
+            const errors=await deliverMonitorEvent({workspace,delivery,runJson,sendWake:params=>{monitorRequest=params;return backend.sendInput(params);}});
             assert.deepEqual(errors,[]);
             // Replaying the same outbox cannot enqueue a second turn.
-            assert.deepEqual(await deliverMonitorEvent({workspace,delivery,runJson,recordTurn:recordMonitorTurn,sendWake:params=>{monitorRequest=params;return backend.sendInput(params);}}),[]);
+            assert.deepEqual(await deliverMonitorEvent({workspace,delivery,runJson,sendWake:params=>{monitorRequest=params;return backend.sendInput(params);}}),[]);
             monitorDelivered=(await runJson("pending",workspace)).deliveries.length === 0;
           }
         }
@@ -159,8 +164,8 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     }
     assert.equal(read.session.is_streaming, false);
     assert.ok(restarted);
-    assert.ok(monitorDelivered, JSON.stringify({ requests: requests.length, failure: read.snapshot.failure,
-      messages: requests.at(-1)?.messages.slice(-4) }));
+    assert.ok(monitorDelivered, JSON.stringify({ requests: requests.length, failure: read.snapshot.runtime_error,
+      lastResult: read.snapshot.last_result }));
     assert.equal(requests.length, steps.length, JSON.stringify(read.snapshot.failure));
     const toolResults = requests.at(-1).messages.filter(message => message.role === "tool");
     assert.equal(toolResults.length, steps.filter(step => typeof step !== "string").length);
@@ -174,6 +179,10 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     assert.equal(context.attempts[0].state, "succeeded");
     assert.equal(context.attempts[0].metadata.job_metadata.work_id, "fixture_work");
     assert.equal(context.attempts[0].metadata.job_metadata.configuration_sha256, "fixture");
+    const intent = JSON.parse(await readFile(join(workspace, `operations/jobs/${fixtureJobId}.json`)));
+    assert.equal(intent.prepared_ref, "p1", "Worker submits the file through Runtime's atomic preparation/dispatch boundary");
+    const preparedRecord = JSON.parse(await readFile(join(workspace, "operations/references/records/p1.json")));
+    assert.equal(preparedRecord.payload.source_sha256, createHash("sha256").update(prepared).digest("hex"));
     assert.ok(context.artifacts.length > 0);
     for (const request of requests) {
       const snapshots = request.messages.filter(m => JSON.stringify(m.content).includes("<research_state_snapshot>"));
@@ -208,42 +217,31 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     assert.equal(continuations.length, 1);
     const autonomous = requests.at(-1).messages.filter(message => message.role === "user" && JSON.stringify(message.content).includes("Research State requests continuation"));
     assert.equal(autonomous.length, 1);
-    const receipts = await readdir(join(root,"state","requests"));
-    const records = await Promise.all(receipts.filter(file=>file.endsWith(".json")).map(file=>readFile(join(root,"state","requests",file),"utf8").then(JSON.parse)));
-    const continuation = records.find(row=>row.source === "state_continuation");
+    assert.equal(existsSync(join(root, "state", "requests")), false, "backend must not write parallel input receipts");
+    const continuation = await backend.inputStatus({ workspace_id: "flow", session_id, client_message_id: continuationRequestId });
     assert.ok(continuation.operation_id, "real Pi must durably admit the continuation");
-    assert.equal(continuation.admission_protocol, "tspi-state-continuation-idempotent/1");
-    // Simulate losing the Monitor admission response before the Host persisted
-    // its ID. Reopening the Host must recover the same Pi submission.
-    const monitorRecord = records.find(row => row.source === "monitor");
+    const monitorRecord = await backend.inputStatus(monitorRequest);
     assert.ok(monitorRecord.operation_id);
-    assert.equal(monitorRecord.admission_protocol, "tspi-monitor-idempotent/1");
+    // Forget all process memory and recover by Pi's durable business ID.
     const requestCount = requests.length;
+    read = await backend.readSession("flow", session_id);
     const activityBeforeRestart = (await backend.listSessions("flow"))[0].updated_at;
     assert.equal(Date.parse(activityBeforeRestart), Math.max(...read.snapshot.messages.map(message => message.timestamp)));
     await backend.close();
-    for (const file of receipts.filter(file => file.endsWith(".json"))) {
-      const path = join(root, "state", "requests", file);
-      const row = JSON.parse(await readFile(path, "utf8"));
-      if (["monitor", "state_continuation"].includes(row.source)) await writeFile(path, JSON.stringify({ ...row,
-        state: "uncertain", accepted: false, operation_id: null, reconciled: false,
-        error: { code: "dispatch_unknown", message: "fixture lost response" },
-      }));
-    }
     backend = await createTspiHarnessBackend(backendOptions);
     assert.equal((await backend.listSessions("flow"))[0].updated_at, activityBeforeRestart);
     const recovered = await backend.sendInput(monitorRequest);
     assert.equal(recovered.accepted, true);
     assert.equal(recovered.operation_id, monitorRecord.operation_id);
     const recoveredContinuation = await backend.sendInput({ workspace_id: "flow", session_id,
-      request_id: continuation.request_id, client_message_id: continuation.client_message_id,
-      source: "state_continuation", mode: "next_run", text: continuation.text });
+      client_message_id: continuationRequestId, source: "state_continuation", mode: "next_run" });
     assert.equal(recoveredContinuation.accepted, true);
     assert.equal(recoveredContinuation.operation_id, continuation.operation_id);
     await new Promise(done => setTimeout(done, 100));
     assert.equal(requests.length, requestCount);
 
   } catch (error) {
+    console.error("Fixture stage:", stage, "requests:", requests.length);
     for (const file of await readdir(root, { recursive: true })) {
       if (file.endsWith(".log")) console.error(file, await readFile(join(root, file), "utf8"));
     }

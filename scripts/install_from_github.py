@@ -201,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
                     f"locked TSPi commit mismatch: expected {args.resolved_commit}, checked out {commit}"
                 )
             digest = tree_digest(checkout)
-            output = checkout / "dist" / "package"
+            output = Path(temp) / "package"
             build = [sys.executable, "scripts/build_package.py", "--output-dir", str(output), "--json"]
             if args.without_web:
                 build.append("--without-web")
@@ -210,6 +210,8 @@ def main(argv: list[str] | None = None) -> int:
             emit_progress(args.progress, "Building the validated TSPi package")
             built = json.loads(run(build, cwd=checkout))
             install = [sys.executable, "scripts/install_package.py", "--manifest", built["manifest"], "--archive", built["archive"], "--install-root", args.install_root, "--json"]
+            if args.allow_dirty:
+                install.append("--allow-dirty")
             if args.conda:
                 install.extend(["--conda", args.conda])
             if args.conda_root:

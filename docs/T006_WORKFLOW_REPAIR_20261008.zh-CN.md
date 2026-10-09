@@ -11,7 +11,7 @@
 | 启动后回执保存失败被当成未执行 | 返回 `submission_ambiguous`，携带 Job/Attempt 和 `job_reconcile` 恢复提示；工具错误明确 action_outcome=unknown，禁止自动重提。 |
 | 邮件节点关闭失败，误诊为计算 Gate 失败 | 原子批次错误返回 operation_index、operation_type、target_id、atomic_batch_committed=false；整批仍保持原子回滚。 |
 | 某些操作顺序能制造无效完成状态 | 关闭 completed 节点检查已完成依赖；整批完成后检查新增的不变量违规。运行时收集发现旧证据失效仍可如实登记，并允许后续修复。 |
-| Agent 猜测 Gate 字段、错误信息混淆 | JS 工具、Python 校验、operations 查询共用 gates.json 中的嵌套合同；支持 query=evaluate_gate 或 query=completion_exemption；区分 verdict 与 reason 错误。 |
+| Agent 猜测 Gate 字段、错误信息混淆 | JS 工具、Python 校验、operations 查询共用 gates.json 中的嵌套合同；支持 query=evaluate_gate；区分 verdict 与 reason 错误。 |
 | artifact_link 接受任意字符串、运行时才拒绝 | 工具与 State 共用证据关系枚举。Gate 评估保存引用 Artifact 的摘要版本。 |
 | 邮件依赖未完成也能通过 Skill CLI 发出 | 研究工作区发送请求需 node_id；首次发送在 State 锁内检查生命周期、节点依赖、策略和完成条件，再保存 sending 记录。check/prepare 可提前执行。 |
 | 部分邮件异常错误地允许自动重发 | 进入传输后未分类异常按 unknown 处理；遗留 sending、历史 delivery_failed 要求核查；ClawEmail 已执行后的清理错误也标为不确定。 |
@@ -21,7 +21,7 @@
 
 ## 编排与职责
 
-独立方法/环境建立独立计算 Node，报告与邮件通过 dependency_ids 连接。各节点在首次效果前声明 Gate 或有理由的 completion_exemption。
+独立方法/环境建立独立计算 Node，报告与邮件通过 dependencies 的条件连接。普通节点无需 Gate；需要正式评估边界时才声明 Gate。
 
 科学结果由方法 Skill 验证；Agent 登记、解释证据并评估 Gate。邮件仍通过 email Skill CLI 运行，不引入邮件 Provider 工具或计算 Attempt。发送后由 Agent 将实际持久 receipt_ref 注册为 Artifact，核验回执、评估交付 Gate、关闭 Node，最后提交 terminal。
 

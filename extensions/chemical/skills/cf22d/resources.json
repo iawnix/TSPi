@@ -2,15 +2,20 @@
   "schema_version": "skill-resources/1",
   "base": "extension",
   "files": {
-    "skills/cf22d/scripts/cli.py": "sha256:328de692561c290a31291e7aa4959c3b95b19adfb970e69a6c03730145156c3d",
+    "skills/cf22d/SKILL.md": "sha256:f1bd8f26bd018d9f1902a494f4b929baf82d45bfab7c0b2aa3867a2bfa2becd4",
+    "skills/cf22d/SKILL.zh-CN.md": "sha256:29b5c40bdbb1d0a333ed968207437231e453c213c9a8b723c8190f38e3f3c81a",
+    "skills/cf22d/references/cf22d_workflow.md": "sha256:58bf062b947ffadde164b655ed94f5b035b5bab2fbd8ef604a2017b57f5a7271",
+    "skills/cf22d/references/cf22d_workflow.zh-CN.md": "sha256:64d6ee332c5ab61349cb9af61657ef8b3ed24759cf5ad87569e3151acd244e7b",
+    "skills/cf22d/references/environment_doctor.md": "sha256:d5223d2bad57450ec1dcae6cb6df9f419855f131156ed7644d28556725bcbb46",
+    "skills/cf22d/references/environment_doctor.zh-CN.md": "sha256:26600b79de967d886c9658ee27d09147b70928b7679634d645d2dba1e1f11141",
+    "skills/cf22d/scripts/cli.py": "sha256:5210f0585f5358bdd91997b0a4e80256faaeadf7d12d4353b9fa7697b19392eb",
     "skills/cf22d/scripts/doctor.py": "sha256:e5bb3bbc3f24544f9e322bd8a682ecd06b7bc14fb564f987c38c7bc11e9fcf7f",
-    "skills/cf22d/scripts/run.py": "sha256:397930a3836230098c26db2ec1aeba32701a00478ba3f97ead9de7b6ff4d0bb7",
-    "skills/cf22d/scripts/runner.py": "sha256:8db9e50f6ea702bfde9cfdb5c9d5a9981ce6570199eb971b32e9b90ef16c334f",
-    "skills/cf22d/scripts/settings.py": "sha256:af32ea856c532449d9d3e6b916b85ef9b3fc502665717c8bae3459d48e95a09d",
-    "skills/cf22d/scripts/xyz.py": "sha256:19377522138a2501fcb2441f55ec4f80a0a36cfe4f5d3c9a259eca9bc8830ab9",
-    "skills/_shared/execution_bindings.py": "sha256:4e77463dd31654b872bf5167050ac9844977d7a744c863cf303dc343204b04d1",
+    "skills/cf22d/scripts/run.py": "sha256:1126b01c6f10bd5ef0cd008a7cc689a14ec9d6c69001b31fe31c4ec65992937c",
+    "skills/cf22d/scripts/runner.py": "sha256:a014db6543865e23e734b873aef2ec46d8c0c466dd6e25889427046d057b6f45",
+    "skills/cf22d/scripts/settings.py": "sha256:7007f4e90d828962ef144aaeb4d9d01d9676b8f3664120bfb8b4719308f0aa6d",
     "skills/_shared/path_validation.py": "sha256:8efad83c1e4d98a128551f6519ba09cb8e35bf9efb7f05b223e0e9f68a384987",
     "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
-    "skills/_shared/science.py": "sha256:dfd52085de07e1a7a75315cb50225021fd397f438c1544c67266c79809affc5b"
+    "skills/_shared/science.py": "sha256:8db57aa3b1a9961b5f82d0952ff2ea4c56ed9abf5447a6be91ab86c2035c3f34",
+    "skills/_shared/xyz.py": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9"
   }
 }

@@ -9,7 +9,7 @@
     "schema_version": { "const": "research-map-provider/1" },
     "request_id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,160}$" },
     "operation": { "enum": ["catalog", "route", "remove"] },
-    "workspace_id": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$" },
+    "workspace_id": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}(?![\\s\\S])" },
     "route": { "type": ["string", "null"], "maxLength": 256 },
     "query": {
       "type": "object",

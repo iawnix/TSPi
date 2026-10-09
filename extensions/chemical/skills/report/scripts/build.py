@@ -1,4 +1,4 @@
-"""Build a reproducible report from validated Skill results, preserving gaps."""
+"""Summarize supplied runner evidence without certifying scientific conclusions."""
 import argparse
 import hashlib
 import json
@@ -11,16 +11,20 @@ def build(entries):
         environment,filename=entry.split('=',1);path=Path(filename)
         result=json.loads(path.read_text())
         sources.append({'environment':environment,'path':str(path),'sha256':hashlib.sha256(path.read_bytes()).hexdigest()})
+        # The old validated flag had incompatible meanings across runners. Keep
+        # historical files intact; never translate it into scientific acceptance.
+        checks = result.get('checks_passed') if result.get('schema_version') == 'science-result/2' else None
         for step in result.get('steps',[]):
             rows.append({'environment':environment,'method':result['method'],'basis':result.get('basis'),
                          'task':step['task'],'energy_hartree':step.get('energy_hartree'),
-                         'validated':result.get('validated') is True,'input_sha256':step.get('input_sha256')})
-        if not result.get('validated'):
+                         'checks_passed':checks, 'scientific_validation':'not_assessed',
+                         'source_schema':result.get('schema_version'), 'input_sha256':step.get('input_sha256')})
+        if checks is not True:
             rows.append({'environment':environment,'method':result.get('method'),
                          'task':'failure' if result.get('error') else 'unverified',
-                         'scientific_validation':result.get('scientific_validation'),
-                         'checks_passed':result.get('checks_passed'), 'error':result.get('error'),'validated':False})
-    return {'schema_version':'science-report/1','results':rows,'sources':sources}
+                         'scientific_validation':'not_assessed',
+                         'checks_passed':checks, 'error':result.get('error')})
+    return {'schema_version':'science-report/2','results':rows,'sources':sources}
 
 
 def main():
@@ -46,9 +50,10 @@ def main():
     with (out/'report.json').open('x') as stream:
         stream.write(json.dumps(report,indent=2,ensure_ascii=False,allow_nan=False)+'\n')
     text=['# Calculation report','','This report lists supplied evidence. Missing matrix cells remain unverified.','',
-          '| Environment | Method | Basis | Step | Energy (hartree) | Validated |','| --- | --- | --- | --- | --- | --- |']
+          'Runner checks do not establish a minimum, transition state, or mechanism. Scientific assessments are recorded separately.', '',
+          '| Environment | Method | Basis | Step | Energy (hartree) | Runner checks |','| --- | --- | --- | --- | --- | --- |']
     for row in report['results']:
-        cells=[row.get(k,'') for k in ['environment','method','basis','task','energy_hartree','validated']]
+        cells=[row.get(k,'') for k in ['environment','method','basis','task','energy_hartree','checks_passed']]
         text.append('| '+' | '.join(str(v).replace('|','\\|').replace('\n',' ') for v in cells)+' |')
         if row.get('error'):text.extend(['',str(row['error']),''])
     text.extend(['','Absolute energies from different methods are not an accuracy ranking.','',

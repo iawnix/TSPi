@@ -77,16 +77,16 @@ export function createSystemPromptManifest({
 }
 
 export function createSystemPromptTool(manifestOrResolver, contract) {
-  if (!contract || contract.name !== "sys_prompt" || !contract.parameters) {
-    throw new TypeError("system prompt tool requires the canonical sys_prompt contract");
+  if (!contract || contract.name !== "system_prompt" || !contract.parameters) {
+    throw new TypeError("system prompt tool requires the canonical system_prompt contract");
   }
   const resolveManifest = typeof manifestOrResolver === "function"
     ? manifestOrResolver
     : () => manifestOrResolver;
   return {
     ...contract,
-    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
-      const manifest = await resolveManifest(ctx);
+    async execute(_params, api, context) {
+      const manifest = await resolveManifest(api.tspi, context);
       assertManifest(manifest);
       return {
         content: [{ type: "text", text: JSON.stringify(manifest, null, 2) }],
@@ -110,7 +110,7 @@ function assertManifest(manifest) {
     || typeof manifest.effective !== "string"
     || !Array.isArray(manifest.contributors)
   ) {
-    throw new TypeError("sys_prompt requires a TSPi system prompt manifest");
+    throw new TypeError("system_prompt requires a TSPi system prompt manifest");
   }
 }
 

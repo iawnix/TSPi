@@ -9,6 +9,7 @@ from __future__ import annotations
 from abc import abstractmethod
 import hashlib
 import math
+import os
 from .outputs import collect_outputs
 import json
 import re
@@ -23,6 +24,9 @@ from typing import Any
 
 from .models import JobReceipt, JobSpec, JobState, JobStatus
 from .platform import ExecutionPlatform
+from .config_contract import SUBMISSION_FIELDS, execution_timeout, validate_submission
+from .process_environment import job_process_environment
+from .environment import _capture
 
 
 class RemoteExecutionPlatform(ExecutionPlatform):
@@ -59,6 +63,7 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
         self.ssh_config = self.config.get("ssh_config")
         self.connect_timeout = int(self.config.get("connect_timeout_seconds", 15))
         self.command_timeout = int(self.config.get("command_timeout_seconds", 60))
+        self.transfer_timeout = int(self.config.get("transfer_timeout_seconds", 3600))
         commands = self.config.get("commands", {})
         self.commands = {
             "qsub": str(commands.get("qsub", "qsub")),
@@ -67,7 +72,6 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
         }
         self.diagnostic_command = commands.get("checkjob")
         self.allowed_queues = tuple(str(item) for item in self.config.get("allowed_queues", ()))
-        self._terminal: dict[str, JobStatus] = {}
 
     def _required_string(self, key: str) -> str:
         value = self.config.get(key)
@@ -83,31 +87,39 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
         return command
 
     def _run_ssh(self, script: str, *, check: bool = True) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [*self._ssh_base(), f"sh -lc {shlex.quote(script)}"],
-            text=True, capture_output=True, timeout=self.command_timeout, check=check,
-        )
+        result = _capture([*self._ssh_base(), f"sh -lc {shlex.quote(script)}"], timeout=self.command_timeout)
+        if check:
+            result.check_returncode()
+        return result
 
     def _rsync(self, source: Path, destination: str, *, pull: bool = False) -> None:
-        command = ["rsync", "-a"]
-        if self.ssh_config:
-            command.extend(["-e", f"ssh -F {shlex.quote(str(self.ssh_config))} -o BatchMode=yes -o ConnectTimeout={self.connect_timeout}"])
+        transport = self._ssh_base()[:-1]
+        command = ["rsync", "-a", "--protect-args", "-e", shlex.join(transport)]
         if pull:
+            # Compute output must not overwrite the controller's authoritative
+            # spec, receipts, status or dispatch inputs during collection.
+            for path in ('spec.json', 'receipt.json', 'status.json', 'input_manifest.json',
+                         'supervisor.json', 'remote.json', 'cancel.request', '.tspi', '.scratch'):
+                command.append('--exclude=/' + path)
             command.extend([f"{self.host}:{destination}/", str(source) + "/"])
         else:
             target = f"{self.host}:{destination}" + ("/" if source.is_dir() else "")
             command.extend([str(source) + ("/" if source.is_dir() else ""), target])
-        subprocess.run(command, text=True, capture_output=True, timeout=self.command_timeout, check=True)
+        _capture(command, timeout=self.transfer_timeout).check_returncode()
 
     def _remote_dir(self, spec: JobSpec) -> str:
         job_id = spec.job_id or f"job_{uuid.uuid4().hex}"
-        if not re.fullmatch(r"job_[A-Za-z0-9_.:-]{1,199}", job_id):
+        if not re.fullmatch(r"job_[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}", job_id):
             raise ValueError("remote job id has an invalid format")
-        return f"{self.remote_root}/{job_id}"
+        scope = hashlib.sha256(str(spec.cwd.resolve()).encode()).hexdigest()[:24]
+        return f"{self.remote_root}/{job_id}-{scope}"
 
     def probe(self, spec: JobSpec) -> dict[str, Any]:
         missing = [str(path) for path in spec.inputs if not path.exists()]
-        checks = " && ".join(f"command -v {shlex.quote(value)} >/dev/null" for value in self.commands.values())
+        commands = [*self.commands.values(), "rsync"]
+        if execution_timeout(spec.timeout_seconds, spec.metadata.get("resources", {})) is not None:
+            commands.append("timeout")
+        checks = " && ".join(f"command -v {shlex.quote(value)} >/dev/null" for value in commands)
         script = f"test -d {shlex.quote(self.remote_root)} && test -w {shlex.quote(self.remote_root)} && {checks}"
         try:
             result = self._run_ssh(script)
@@ -124,96 +136,117 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
 
     def stage_inputs(self, spec: JobSpec) -> dict[str, Any]:
         remote_dir = self._remote_dir(spec)
-        self._run_ssh(f"mkdir -p {shlex.quote(remote_dir)}/logs")
+        self._run_ssh(f"umask 077; mkdir -p {shlex.quote(remote_dir)}/logs {shlex.quote(remote_dir)}/.tspi")
         self._rsync(spec.cwd, remote_dir)
         for path in spec.inputs:
             if not path.resolve().is_relative_to(spec.cwd.resolve()):
                 self._rsync(path, f"{remote_dir}/{path.name}")
         return {"remote_dir": remote_dir}
 
+    def _wrapper(self, spec, remote_dir):
+        variables, scratch = job_process_environment(remote_dir, spec.metadata, spec.env)
+        timeout = execution_timeout(spec.timeout_seconds, spec.metadata.get('resources', {}))
+        argv = list(spec.command)
+        if timeout is not None:
+            record_exit = ('"$@"; code=$?; printf "%s\\n" "$code" > .tspi/command.exit; exit "$code"')
+            argv = ['timeout', '--signal=TERM', '--kill-after=5', str(timeout),
+                    '/bin/sh', '-c', record_exit, 'tspi-command', *argv]
+        stdin = '/dev/null'
+        if spec.stdin:
+            path = spec.stdin.resolve()
+            if path.is_relative_to(spec.cwd.resolve()):
+                stdin = remote_dir + '/' + str(path.relative_to(spec.cwd.resolve()))
+            elif path in [item.resolve() for item in spec.inputs]:
+                stdin = remote_dir + '/' + path.name
+            else:
+                raise ValueError('remote stdin must be a staged Job input')
+        script = ('set +e\numask 077\n'
+                  + 'mkdir -p -- ' + shlex.quote(scratch) + ' || exit 125\n'
+                  + 'cd ' + shlex.quote(remote_dir) + ' || exit 125\n'
+                  + 'rm -f .tspi/command.exit\n'
+                  + shlex.join(argv) + ' < ' + shlex.quote(stdin) + ' > logs/stdout.log 2> logs/stderr.log\n'
+                  + 'code=$?\n')
+        # A program may itself exit 124/137. Its own exit receipt distinguishes
+        # that failure from termination of the timeout process group.
+        if timeout is not None:
+            script += ('if { [ "$code" = 124 ] || [ "$code" = 137 ]; } && [ ! -f .tspi/command.exit ]; then '
+                       'printf "timed_out\\n" > status.state.tmp; mv status.state.tmp status.state; fi\n')
+        script += 'printf "%s\\n" "$code" > status.exit.tmp; mv status.exit.tmp status.exit\nexit "$code"\n'
+        # Scheduler/login variables are not inherited by the scientific process.
+        # HOME is supplied by the remote account, never by the submitting Host.
+        wrapper = '#!/bin/sh\nexec /usr/bin/env -i HOME="$HOME" '
+        wrapper += shlex.join([f'{key}={value}' for key, value in variables.items()])
+        wrapper += ' /bin/sh -c ' + shlex.quote(script) + '\n'
+        return wrapper, scratch, timeout
+
+    def _qsub_arguments(self, spec):
+        # Notifications and intentional repeats belong to the managed workflow.
+        args = [self.commands['qsub'], '-q', spec.metadata['queue'], '-m', 'n', '-r', 'n',
+                '-o', 'logs/scheduler.stdout', '-e', 'logs/scheduler.stderr']
+        resources = spec.metadata.get('resources', {})
+        if self.scheduler == 'pbs':
+            select = resources.get('select')
+            if not select and ('cpus' in resources or 'memory_mb' in resources):
+                select = '1'
+                if 'cpus' in resources: select += ':ncpus=' + str(resources['cpus'])
+                if 'memory_mb' in resources: select += ':mem=' + str(resources['memory_mb']) + 'mb'
+            if select: args += ['-l', 'select=' + select]
+        else:
+            if 'cpus' in resources: args += ['-l', 'nodes=1:ppn=' + str(resources['cpus'])]
+            if 'memory_mb' in resources: args += ['-l', 'mem=' + str(resources['memory_mb']) + 'mb']
+        timeout = execution_timeout(spec.timeout_seconds, resources)
+        if timeout is not None:
+            seconds = math.ceil(timeout)
+            args += ['-l', f'walltime={seconds//3600:02}:{seconds//60%60:02}:{seconds%60:02}']
+        return args
+
     def start(self, spec: JobSpec) -> JobReceipt:
-        defaults = self.config.get("submission", {})
-        metadata = {**defaults, **dict(spec.metadata), "resources": {**defaults.get("resources", {}), **spec.metadata.get("resources", {})}}
-        if metadata.get("queue") and self.allowed_queues and metadata["queue"] not in self.allowed_queues:
-            raise ValueError("remote queue is not allowed")
-        spec = replace(spec, metadata=metadata)
+        validate_submission({key: value for key, value in spec.metadata.items() if key in SUBMISSION_FIELDS},
+                            kind='remote', scheduler=self.scheduler, allowed_queues=(self.allowed_queues,))
+        spec = replace(spec, job_id=spec.job_id or f"job_{uuid.uuid4().hex}")
+        if (spec.cwd / 'receipt.json').exists() or (spec.cwd / 'spec.json').exists():
+            raise ValueError('job directory already contains an execution; reconcile instead of resubmitting')
+        remote_dir = self._remote_dir(spec)
+        wrapper, scratch, timeout = self._wrapper(spec, remote_dir)
         probe = self.probe(spec)
-        if not probe["available"]:
+        if not probe['available']:
             raise RuntimeError(f"remote platform unavailable: {probe.get('error') or 'probe failed'}")
-        if not probe["cwd_exists"]:
+        if not probe['cwd_exists']:
             raise FileNotFoundError(f"job cwd does not exist: {spec.cwd}")
-        if not probe["inputs_present"]:
+        if not probe['inputs_present']:
             raise FileNotFoundError(f"job inputs missing: {probe['missing_inputs']}")
-        self._write(Path(spec.cwd) / "spec.json", {
-            "command": list(spec.command), "cwd": str(spec.cwd),
-            "outputs": [output.__dict__ for output in spec.outputs],
-            "timeout_seconds": spec.timeout_seconds, "metadata": dict(spec.metadata),
-            "workspace_id": spec.workspace_id, "node_id": spec.node_id, "attempt_id": spec.attempt_id,
+        metadata = {**spec.metadata, 'remote_dir': remote_dir, 'scratch_path': scratch, 'execution_timeout_seconds': timeout}
+        self._write(spec.cwd / 'spec.json', {
+            'command': list(spec.command), 'cwd': str(spec.cwd), 'remote_dir': remote_dir,
+            'outputs': [output.__dict__ for output in spec.outputs],
+            'timeout_seconds': spec.timeout_seconds, 'metadata': metadata,
+            'workspace_id': spec.workspace_id, 'node_id': spec.node_id, 'attempt_id': spec.attempt_id,
         })
-        remote_dir = self.stage_inputs(spec)["remote_dir"]
-        exports = "\n".join(
-            f"export {key}={shlex.quote(str(value))}"
-            for key, value in spec.env.items()
-            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", str(key))
-        )
-        wrapper = (
-            "#!/bin/sh\nset +e\n"
-            f"{exports}\n"
-            f"cd {shlex.quote(remote_dir)} || exit 125\n"
-            f"{' '.join(shlex.quote(item) for item in spec.command)} > logs/stdout.log 2> logs/stderr.log\n"
-            "code=$?\nprintf '%s\\n' \"$code\" > status.exit\nexit \"$code\"\n"
-        )
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
+        self.stage_inputs(spec)
+        with tempfile.NamedTemporaryFile('w', encoding='utf-8', delete=False) as handle:
             handle.write(wrapper)
             local_wrapper = Path(handle.name)
         try:
-            self._rsync(local_wrapper, f"{remote_dir}/run.sh")
+            self._rsync(local_wrapper, remote_dir + '/.tspi/run.sh')
         finally:
             local_wrapper.unlink(missing_ok=True)
-        queue = spec.metadata.get("queue") if isinstance(spec.metadata, dict) else None
-        if queue is not None and self.allowed_queues and str(queue) not in self.allowed_queues:
-            raise ValueError(f"remote queue is not allowed: {queue}")
-        qsub_args = [self.commands["qsub"]]
-        if queue:
-            qsub_args.extend(["-q", str(queue)])
-        resources = spec.metadata.get("resources", {}) if isinstance(spec.metadata, dict) else {}
-        if isinstance(resources, dict):
-            if resources.get("cpus"):
-                cpus = int(resources["cpus"])
-                if cpus < 1: raise ValueError("cpus must be positive")
-                qsub_args.extend(["-l", f"nodes=1:ppn={cpus}"])
-            if resources.get("memory_mb"):
-                memory = int(resources["memory_mb"])
-                if memory < 1: raise ValueError("memory_mb must be positive")
-                qsub_args.extend(["-l", f"mem={memory}mb"])
-            select = resources.get("select")
-            walltime = resources.get("walltime")
-            if select:
-                qsub_args.extend(["-l", f"select={select}"])
-            if walltime:
-                qsub_args.extend(["-l", f"walltime={walltime}"])
-        if spec.timeout_seconds and not resources.get("walltime"):
-            seconds = math.ceil(spec.timeout_seconds)
-            qsub_args.extend(["-l", f"walltime={seconds//3600:02}:{seconds//60%60:02}:{seconds%60:02}"])
-        qsub = " ".join(shlex.quote(item) for item in qsub_args)
-        result = self._run_ssh(f"cd {shlex.quote(remote_dir)} && chmod 700 run.sh && {qsub} run.sh > scheduler.id && cat scheduler.id")
-        scheduler_id = result.stdout.strip().splitlines()[-1].strip()
-        if not scheduler_id:
-            raise RuntimeError("qsub returned no scheduler id")
-        job_id = spec.job_id or f"job_{uuid.uuid4().hex}"
-        receipt = JobReceipt(
-            job_id, self.name, _now(), spec.command, str(spec.cwd), None,
-            {**dict(spec.metadata), "scheduler_id": scheduler_id, "remote_dir": remote_dir},
-            spec.workspace_id, spec.node_id, spec.attempt_id,
-        )
-        self._write(Path(spec.cwd) / "receipt.json", receipt.__dict__)
-        self._write(Path(spec.cwd) / "remote.json", {"scheduler_id": scheduler_id, "remote_dir": remote_dir})
+        qsub = shlex.join(self._qsub_arguments(spec))
+        result = self._run_ssh(f"cd {shlex.quote(remote_dir)} && chmod 700 .tspi/run.sh && {qsub} .tspi/run.sh > scheduler.id && cat scheduler.id")
+        scheduler_id = result.stdout.strip().splitlines()[-1].strip() if result.stdout.strip() else ''
+        if not re.fullmatch(r'[A-Za-z0-9_.\[\]-]+', scheduler_id):
+            raise RuntimeError('qsub returned no valid scheduler id; reconcile before retrying')
+        receipt = JobReceipt(spec.job_id, self.name, _now(), spec.command, str(spec.cwd), None,
+                             {**metadata, 'scheduler_id': scheduler_id}, spec.workspace_id, spec.node_id, spec.attempt_id)
+        self._write(spec.cwd / 'receipt.json', receipt.__dict__)
+        self._write(spec.cwd / 'remote.json', {'scheduler_id': scheduler_id, 'remote_dir': remote_dir})
         return receipt
 
     def recover_receipt(self, job_id: str, cwd: Path) -> JobReceipt | None:
         """Recover a qsub response lost after remote acceptance, without resubmitting."""
         spec = json.loads((cwd / "spec.json").read_text())
-        remote_dir = f"{self.remote_root}/{job_id}"
+        # Old submitted specs predate scoped directories; recover only their
+        # original location, never resubmit or rewrite that historical identity.
+        remote_dir = spec.get("remote_dir", f"{self.remote_root}/{job_id}")
         result = self._run_ssh(f"cat {shlex.quote(remote_dir + '/scheduler.id')}", check=False)
         if result.returncode or not result.stdout.strip(): return None
         scheduler_id = result.stdout.strip().splitlines()[-1]
@@ -232,6 +265,8 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
         details = {"scheduler_id":scheduler_id, "observed_at":_now(), "source":"qstat -f"}
         if result.returncode:
             details["query_error"] = result.stderr.strip()[:2000] or "scheduler record unavailable"
+            details["record_missing"] = (result.returncode != 255 and
+                                         bool(re.search(r'\bUnknown Job Id\b', result.stderr, re.IGNORECASE)))
             return None, details
         fields = dict(re.findall(r"(?m)^\s*([A-Za-z_.]+)\s*=\s*(.*?)\s*$", result.stdout))
         state = fields.get("job_state")
@@ -252,8 +287,6 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
         return state, details
 
     def status(self, receipt: JobReceipt) -> JobStatus:
-        if receipt.job_id in self._terminal:
-            return self._terminal[receipt.job_id]
         local_status = Path(receipt.cwd) / "status.json"
         if local_status.is_file():
             try:
@@ -261,7 +294,6 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
                 if saved.get("job_id") == receipt.job_id and saved.get("state") in {item.value for item in JobState}:
                     restored = JobStatus(receipt.job_id, JobState(saved["state"]), self.name, exit_code=saved.get("exit_code"), finished_at=saved.get("finished_at"), error=saved.get("error"), diagnostics=saved.get("diagnostics", {}))
                     if restored.state in {JobState.SUCCEEDED, JobState.FAILED, JobState.TIMED_OUT, JobState.CANCELLED, JobState.COLLECTED}:
-                        self._terminal[receipt.job_id] = restored
                         return restored
             except (OSError, TypeError, ValueError, json.JSONDecodeError):
                 pass
@@ -271,17 +303,25 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
             return JobStatus(receipt.job_id, JobState.UNKNOWN, self.name, error="remote receipt is incomplete")
         try:
             result = self._run_ssh(
-                f"test -f {shlex.quote(remote_dir + '/status.exit')} && cat {shlex.quote(remote_dir + '/status.exit')}",
+                f"test -f {shlex.quote(remote_dir + '/status.exit')} && {{ "
+                f"cat {shlex.quote(remote_dir + '/status.state')} 2>/dev/null; cat {shlex.quote(remote_dir + '/status.exit')}; }}",
                 check=False,
             )
             if result.returncode != 0:
                 scheduler_state, diagnostics = self._scheduler_details(receipt)
+                if self._cancellation_acknowledged(receipt):
+                    diagnostics['cancellation_requested'] = True
+                    if scheduler_state in {'C', 'F'} or diagnostics.get('record_missing'):
+                        terminal = JobStatus(receipt.job_id, JobState.CANCELLED, self.name,
+                                             exit_code=diagnostics.get('exit_status'), finished_at=_now(),
+                                             diagnostics=diagnostics)
+                        self._persist(receipt, terminal)
+                        return terminal
                 if scheduler_state in {"C", "F"} and diagnostics.get("exit_status") is not None:
                     code = diagnostics["exit_status"]
                     terminal = JobStatus(receipt.job_id, JobState.SUCCEEDED if code == 0 else JobState.FAILED,
                         self.name, exit_code=code, finished_at=_now(), diagnostics=diagnostics,
                         error="Job exit receipt absent; exit status recovered from scheduler (check working directory and scheduler logs)")
-                    self._terminal[receipt.job_id] = terminal
                     self._persist(receipt, terminal)
                     return terminal
                 mapped = {"Q":JobState.QUEUED, "W":JobState.QUEUED, "H":JobState.HELD,
@@ -289,9 +329,9 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
                 return JobStatus(receipt.job_id, mapped, self.name, diagnostics=diagnostics,
                     error=(diagnostics.get("query_error") or "scheduler outcome unknown; exit receipt absent") if mapped == JobState.UNKNOWN else None)
             code = int(result.stdout.strip().splitlines()[-1])
-            state = JobState.SUCCEEDED if code == 0 else JobState.FAILED
+            state = (JobState.TIMED_OUT if result.stdout.strip().splitlines()[0] == "timed_out"
+                     else JobState.SUCCEEDED if code == 0 else JobState.FAILED)
             terminal = JobStatus(receipt.job_id, state, self.name, exit_code=code, finished_at=_now())
-            self._terminal[receipt.job_id] = terminal
             self._persist(receipt, terminal)
             return terminal
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
@@ -318,31 +358,52 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
     def cancel(self, receipt: JobReceipt) -> JobStatus:
         current = self.status(receipt)
         if current.state in {JobState.SUCCEEDED,JobState.FAILED,JobState.CANCELLED,JobState.TIMED_OUT}: return current
+        if self._cancellation_acknowledged(receipt):
+            return current
         scheduler_id = str(receipt.metadata.get("scheduler_id", ""))
         if scheduler_id:
             result = self._run_ssh(f"{shlex.quote(self.commands['qdel'])} {shlex.quote(scheduler_id)}", check=False)
             if result.returncode: return JobStatus(receipt.job_id, JobState.UNKNOWN, self.name, error="scheduler did not confirm cancellation")
         else:
             return JobStatus(receipt.job_id, JobState.UNKNOWN, self.name, error="scheduler identity missing")
-        terminal = JobStatus(receipt.job_id, JobState.CANCELLED, self.name, finished_at=_now())
-        self._terminal[receipt.job_id] = terminal
-        self._persist(receipt, terminal)
-        return terminal
+        # qdel acknowledges a request, not process termination. Preserve that
+        # fact across restarts and wait for a terminal/missing scheduler record.
+        self._write(Path(receipt.cwd) / 'cancel.request', {
+            'schema_version': 'remote-cancellation/1', 'scheduler_id': scheduler_id,
+            'acknowledged_at': _now(),
+        })
+        return self.status(receipt)
+
+    @staticmethod
+    def _cancellation_acknowledged(receipt):
+        try:
+            value = json.loads((Path(receipt.cwd) / 'cancel.request').read_text())
+            return (value.get('schema_version') == 'remote-cancellation/1' and
+                    value.get('scheduler_id') == receipt.metadata.get('scheduler_id'))
+        except (OSError, ValueError, AttributeError):
+            return False
 
     @staticmethod
     def _persist(receipt: JobReceipt, status: JobStatus) -> None:
-        path = Path(receipt.cwd) / "status.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({
-            "job_id": status.job_id, "state": status.state.value,
-            "platform": status.platform, "exit_code": status.exit_code,
-            "finished_at": status.finished_at, "error": status.error,
-        }, indent=2), encoding="utf-8")
+        TorqueSSHPlatform._write(Path(receipt.cwd) / 'status.json', {
+            'job_id': status.job_id, 'state': status.state.value,
+            'platform': status.platform, 'exit_code': status.exit_code,
+            'started_at': status.started_at, 'finished_at': status.finished_at,
+            'error': status.error, 'diagnostics': dict(status.diagnostics),
+        })
 
     @staticmethod
     def _write(path: Path, value: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(value, indent=2, default=str), encoding="utf-8")
+        with tempfile.NamedTemporaryFile('w', dir=path.parent, prefix='.' + path.name, delete=False) as stream:
+            temporary = Path(stream.name)
+            try:
+                json.dump(value, stream, indent=2, default=str)
+                stream.flush()
+                os.fsync(stream.fileno())
+                os.replace(temporary, path)
+            finally:
+                temporary.unlink(missing_ok=True)
 
     @staticmethod
     def receipt_from_disk(path: str | Path) -> JobReceipt:

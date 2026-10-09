@@ -17,6 +17,7 @@ def main():
     p.add_argument('--root',required=True)
     for name in ['monitor-id','event-id','channel','claim-token','error','deferred-state']:p.add_argument('--'+name)
     p.add_argument('--delivered',action='store_true')
+    p.add_argument('--superseded-input',action='store_true')
     a=p.parse_args()
     try:print(json.dumps(command(a.root,a.command,vars(a))));return 0
     except Exception as exc:print(json.dumps({'error':str(exc)}),file=sys.stderr);return 2

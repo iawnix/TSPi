@@ -2,8 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-TSPi provides a domain-neutral Research Harness with 17 focused Skills in the
-current computational-chemistry bundle. `orchestration` and `research-state` are the two Core System Skills: their summaries are always included in the system prompt and their full references are available to the Agent. Provider-bound Skills live beside their Provider under `extensions/`. The Research State Skill owns the
+TSPi provides a domain-neutral Research Harness with focused Skills in the current computational-chemistry bundle. `orchestration` and `research-state` are the two Core System Skills: their summaries are always included in the system prompt and their full references are available to the Agent. Domain and delivery Skills live in their own extension directories. The Research State Skill owns the
 canonical ResearchMap contract; orchestration chooses the next bounded task;
 scientific and delivery Skills handle one method or output concern without
 redefining state.
@@ -37,3 +36,5 @@ Each Skill has matching English and Chinese entrypoints. Every detailed
 reference also has an English and Simplified Chinese version; each entrypoint
 links only to references in the same language. Shared terminology is in the
 [glossary](skills/research-state/references/glossary.md).
+
+Core and domain Skills use the same manifest validation. Entrypoints, translated references and executable resources are digest-pinned; selecting external domain extensions retains core validation.

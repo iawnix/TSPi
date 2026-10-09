@@ -14,10 +14,7 @@ def node_admission(context, liveness, node_id):
         return {"accepted": False, "code": "research_node_not_ready",
                 "dependencies": dependencies,
                 "reason": f"Node {node_id} is not eligible: state={node.get('state')}; unmet_dependencies={unmet}. "
-                          "Satisfy dependencies and record research_strategy before execution."}
-    if not node.get("gate_ids") and not node.get("completion_exemption"):
-        return {"accepted": False, "code": "completion_conditions_required",
-                "reason": f"Node {node_id} requires a Gate or a completion_exemption before execution"}
+                          "Satisfy the Node dependencies before execution."}
     return {"accepted": True}
 
 
@@ -34,6 +31,10 @@ def tool_admission(context, liveness, tool):
         return deny("research_user_input_required" if lifecycle == "user_input_required" else "research_lifecycle_blocked",
                     "Research State requires an explicit recovery checkpoint")
     if name == "job_start":
+        if args.get("prepared_ref") or args.get("request_file"):
+            # Runtime resolves the immutable request exactly once and applies
+            # this policy to its concrete identities before staging/dispatch.
+            return {"accepted": True}
         node_id = args.get("node_id")
         work_id = args.get("work_id") or (args.get("metadata") or {}).get("work_id")
         request_id = args.get("request_id") or args.get("job_id")
@@ -53,6 +54,6 @@ def tool_admission(context, liveness, tool):
     preparation = name in {"bash", "write", "edit"} and tool.get("phase") == "prepare"
     decision_write = effect in {"research_write", "lifecycle_write", "advisory"}
     if lifecycle == "decision_needed" and not liveness.get("execution_ready") and not read and not decision_write and not preparation:
-        return deny("research_decision_required", "Create the Claim/Node and record its research_strategy before execution")
+        return deny("research_decision_required", "Create an executable Node with satisfied dependencies before execution")
     # Waiting on one Job does not freeze other scoped work or its evidence.
     return {"accepted": True}

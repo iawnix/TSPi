@@ -9,8 +9,11 @@ implementation.
 
 ## Development Setup
 
-Install the pinned Pi source and the scientific environment described by
-`environment.yml`. Run the fast test suite before changing package layout:
+Install the pinned Pi source and the separate test environment with
+`python3 tools/bootstrap_dev.py --install`. It uses `tools/test/environment.lock.txt`
+under `/home/iaw/debug/tspi-test-env` (override with `TSPI_TEST_ENV_ROOT`).
+The root `environment.lock.txt` belongs to the minimal Host and does not include
+scientific or pytest dependencies. Run the fast test suite before changing package layout:
 
 ```bash
 python3 tools/test/runner.py fast -- -q
@@ -30,7 +33,7 @@ npm run test:native-pi
 ```
 
 The Native Pi Harness path does not require tmux and is the only supported
-runtime. `TSPI_HOST_BACKEND=ordinary` and `TSPI_TMUX` are rejected. Do not
+runtime. Backend selection is not configurable. Do not
 substitute an unpinned or modified Pi checkout to make the lane pass. Remote smoke and live
 model evaluation are opt-in lanes; they require explicit external configuration
 and are never part of the default suite.
@@ -79,8 +82,8 @@ Independent analyses run Skill scripts through generic Jobs. Registered
 validators and acceptance profiles are declared in the extension manifest;
 `packages/tspi-runtime/tspi_runtime/validators.py` verifies and stages the
 declared validator and inputs. The extension manifest contract lives in
-`contracts/tspi-extension/1/`. Provider metadata discovery remains supported,
-but does not dispatch scientific execution. New scientific algorithms require
+`contracts/tspi-extension/1/`. Core and domain Skills use the same manifest loader; entrypoints, references,
+and scripts are pinned by `scripts/update_skill_resources.py`. New scientific algorithms require
 bounded inputs, explicit applicability, counterexamples, replayable candidates
 and a version change when deterministic output semantics change. Keep domain
 schemas out of the always-loaded tools. Do not add scientific successor routing.
