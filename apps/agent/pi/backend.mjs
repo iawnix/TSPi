@@ -441,7 +441,7 @@ function hostSnapshot(value) {
   };
 }
 
-/** Project the pinned Pi 1.0.4 ConversationView for Host presentation. */
+/** Project the pinned Pi ConversationView for Host presentation. */
 function normalizeLane(value) {
   const source = value || { entries: [], docs: {} };
   if (source.__researchAgentLane === true) return source;

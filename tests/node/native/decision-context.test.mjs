@@ -32,7 +32,7 @@ test('actual generation requests rebuild facts after compaction and never persis
     settings: {compaction: {enabled: false, keepRecentTokens: 0}}}, context);
   t.after(() => harness.close(context));
   const conversation = await harness.root(context, {agent:{model:{provider:'faux',modelId:'faux-1'}}});
-  faux.setResponses([1,2].map(() => input => { requests.push(input); return fauxAssistantMessage('Research decision recorded.'); }));
+  faux.setResponses([1,2,3].map(() => input => { requests.push(input); return fauxAssistantMessage('Research decision recorded.'); }));
   await conversation.submit({type:'input',content:'Initial research task. '.repeat(100)},context);
   await conversation.waitForIdle(context);
   const task = await conversation.compact(undefined, context);
@@ -52,6 +52,16 @@ test('actual generation requests rebuild facts after compaction and never persis
   assert.match(snapshot.sections.research_agent_research_context, /not a user message or a new turn/);
   assert.equal(requests[1].messages.filter(m => m.role === 'user').at(-1).content, 'Inspect the latest result.');
   assert.equal(telemetry.at(-1).payload.sequence, 2);
+  // A subsequent request reuses Pi's cached context but must reread research facts.
+  revision = 3;
+  await conversation.submit({type:'input',content:'Check the state again.'},context);
+  await conversation.waitForIdle(context);
+  assert.equal(requests.length, 3);
+  const snapshots = requests[2].messages.filter(m => JSON.stringify(m).includes('<research_memory_snapshot>'));
+  assert.equal(snapshots.length, 1);
+  assert.match(JSON.stringify(snapshots[0]), /ctx_3/);
+  assert.doesNotMatch(JSON.stringify(requests[2].messages), /ctx_1|ctx_2/);
+  assert.equal(telemetry.at(-1).payload.sequence, 3);
   const entries = await conversation.entries({}, 100, undefined, context);
   assert.ok(entries.items.some(e => e.kind === 'pi.compaction'));
   assert.equal(JSON.stringify(entries).includes('<research_memory_snapshot>'), false);

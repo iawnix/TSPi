@@ -5,6 +5,10 @@ in `docs/archive/adr/`.
 
 ## Unreleased
 
+- Updated the pinned Pi runtime and SDK packages to 1.1.0, retaining protocol 8
+  and request admission with the new context API and token estimator.
+- Research tool cards display recorded execution time, including after reconnect;
+  Job submission time remains distinct from the background computation duration.
 - Added Gaussian relaxed-scan capability documentation and Gaussian-backed ASE
   NEB support.
 - Removed the retired ordinary-Pi runtime from the supported package surface;

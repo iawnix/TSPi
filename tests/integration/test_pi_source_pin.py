@@ -13,8 +13,8 @@ def test_pi_source_pin_is_explicit_and_uses_latest_durable_runtime() -> None:
     assert pin == {
         "component": "pi-sdk-runtime",
         "repository": "https://github.com/earendil-works/pi.git",
-        "tag": "v1.0.4",
-        "commit": "7c10bd4337495ee613f2224843ecdf349b80d1df",
+        "tag": "v1.1.0",
+        "commit": "abe508e1b89912adde45528136c3221eb69acdd7",
         "protocolVersion": 8,
     }
     patch = "\n".join(path.read_text(encoding="utf-8") for path in sorted((ROOT / "config/pi-patches").glob("*.patch")))

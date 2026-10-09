@@ -1,7 +1,7 @@
 # Managed Pi runtime patches
 
-ResearchAgent pins Pi v1.0.4 at `7c10bd4337495ee613f2224843ecdf349b80d1df`
-in `config/pi-source.json`. The experimental transport protocol remains version 9.
+ResearchAgent pins Pi v1.1.0 at `abe508e1b89912adde45528136c3221eb69acdd7`
+in `config/pi-source.json`. The experimental transport protocol remains version 8.
 Terminal presentation uses Pi's experimental client, separately from ordinary
 `InteractiveMode`.
 
@@ -43,6 +43,17 @@ patch groups, real worker queries, presentation, session recovery, Host/Phone/
 Monitor contracts, and packaging before updating the source pin and npm lock.
 Source pin and Pi package versions must move together. Use a new managed runtime
 directory for a new commit; existing session directories retain their layout.
+
+Pi 1.1.0 takes the historical cutoff as `runtime.context(id, context, { at })`;
+patch 008 preserves request admission on this API. The upstream context cache
+uses its default idle retention (ten minutes); research snapshots are still
+rebuilt for each request and are not persisted in the transcript. The estimator
+now uses 3.5 characters per token, so budget admission may compact earlier.
+
+Research tool cards show Pi's recorded `durationMs` for final results, including
+after reconnect, and omit it for older or untimed results. For `job_start` this
+is the tool's submission time; scientific Job duration remains owned by Job
+Runtime. Expanded cards preserve the full result and label the tool duration.
 
 Pi 1.0.3 renamed the Azure provider from `azure-openai-responses` to `azure`.
 Installations using Azure must update that provider key in authentication, model,

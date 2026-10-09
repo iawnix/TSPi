@@ -20,7 +20,12 @@ export function createResearchAgentToolRenderers({ Text, wrapTextWithAnsi }, nam
     },
     renderResult(result, options, theme, context) {
       const raw = textOf(result);
-      if (options.expanded) return new Text(raw, 0, 0);
+      // Pi records execution time per attempt; older and interrupted results
+      // may have none. For job_start this measures submission, not the Job.
+      const duration = !options.isPartial && Number.isFinite(context.durationMs) && context.durationMs >= 0
+        ? `${(context.durationMs / 1000).toFixed(1)}s` : null;
+      if (options.expanded) return new Text(duration === null ? raw
+        : `${raw}\n\n${theme.fg("muted", `Tool execution: ${duration}`)}`, 0, 0);
       let data = result.details?.result;
       if (!data) { try { data = JSON.parse(raw); } catch {} }
       data = data?.result || data;
@@ -33,7 +38,7 @@ export function createResearchAgentToolRenderers({ Text, wrapTextWithAnsi }, nam
         ? [data.job_id, data.artifact_id, data.ref, data.summary, data.reason,
           data.revision !== undefined ? `revision ${data.revision}` : undefined].filter(value => typeof value === "string").join(" · ")
         : raw;
-      return bounded(`${theme.fg(color, label)}${details ? ` · ${shorten(details)}` : ""}\n${theme.fg("muted", "Ctrl+O: arguments and full result")}`, theme, false);
+      return bounded(`${theme.fg(color, label)}${duration === null ? "" : ` · ${theme.fg("muted", duration)}`}${details ? ` · ${shorten(details)}` : ""}\n${theme.fg("muted", "Ctrl+O: arguments and full result")}`, theme, false);
     },
   }]));
 }

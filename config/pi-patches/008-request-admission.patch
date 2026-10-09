@@ -54,7 +54,7 @@
  				}
  			}
 @@ -195,8 +197,52 @@
- 			const view = await runtime.context(conversationId, context, cutoff);
+ 			const view = await runtime.context(conversationId, context, { at: cutoff });
  			let messages = view.messages;
 +			let blocked: { block: string; compact?: boolean } | undefined;
  			await runtime.hooks.each("beforeRequest", async (hook) => {
