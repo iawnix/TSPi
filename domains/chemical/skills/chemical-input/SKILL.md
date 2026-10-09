@@ -56,3 +56,9 @@ Use separate calculations to explore conformers and intermolecular approaches.
 - [structure_input.md](references/structure_input.md): graph, seed and reaction checks.
 
 - [reaction_mapping.md](references/reaction_mapping.md): Atom mapping and reaction graph checks.
+
+## Compare target and calculated identity
+
+`chemical.inspect` and `chemical.seed` include a versioned `chemical-identity/1` object: canonical isomeric SMILES, charge, RDKit version and content identity. Preserve the inspected target as an Artifact and refer to it through the Node's `subjects.target`. A filename such as product.xyz does not establish target identity.
+
+Use `chemical.compare@1` with `--input target=<inspect.json>` and `--input actual=<structure.json-or-geometry.xyz>`. The prepared Job's input roles pin both source digests. For XYZ pass `-- --actual-format xyz --charge <actual-charge>`; structure JSON is the default. Collect `results/comparison.json`. It reports match, mismatch or indeterminate, the target and actual identities and its scope. Geometry bond orders are explicitly inferred; unresolved stereochemistry remains indeterminate. Cite the collected comparison as `check_refs` and distinguish target/calculated subjects in the Result. Checks support interpretation; they do not gate publication or further experiments.

@@ -15,6 +15,14 @@ def run_layout(tmp_path):
     return tmp_path
 
 
+def test_process_exiting_during_proc_read_is_absent(monkeypatch):
+    def vanished(path, *args, **kwargs):
+        raise ProcessLookupError('process exited during procfs read')
+    monkeypatch.setattr(Path, 'read_text', vanished)
+    assert identity(12345) is None
+    assert not alive({'pid': 12345, 'start': '1'})
+
+
 def test_timeout_stops_detached_descendants_and_preserves_first_log(tmp_path):
     run=run_layout(tmp_path)
     supervisor=Supervisor(run)

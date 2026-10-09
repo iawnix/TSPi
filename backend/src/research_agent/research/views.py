@@ -72,14 +72,20 @@ def build_snapshot(root, *, max_bytes=16000, session_id=None, focus_node_ids=(),
         add('tasks', {'ref': latest['ref'], 'content': latest['content'][:500], 'content_omitted': len(latest['content']) > 500, 'read': {'ref': latest['ref']}})
     full_nodes = []
     def add_node(node):
+        from .context import result_notices
+        from .results import get_result
+        assessment = node.get('assessment_ref')
+        notices = result_notices(root, get_result(root, assessment), graph) if assessment and assessment.startswith('result_') else []
         if _size(node) < 2400:
             outputs = [r for r in graph['results'].values() if r['node_id'] == node['id']]
             card = {**node, 'recent_results': [{'id': r['id'], 'summary': r['summary'][:240], 'content_omitted': len(r['summary']) > 240, 'read': {'ref': r['id']}} for r in outputs[-2:]], 'ranking_reason': priority.get(node['id'], (6, 'recent_research'))[1], 'read': {'ref': node['id']}}
+            card.update(review_notices=notices[:3], review_notice_count=len(notices))
             if add('nodes', card):
                 full_nodes.append(node)
         else:
             card = {k: node[k] for k in ('id', 'revision', 'status', 'assessment_ref')}
             card.update(title=node['title'][:100], goal=node['goal'][:300], progress=(node.get('progress') or '')[:300], content_omitted=True, read={'ref': node['id']})
+            card.update(review_notices=notices[:1], review_notice_count=len(notices))
             add('nodes', card)
     # Reserve room for actual execution facts before expanding more research.
     leading = min(3, len(ordered))
@@ -116,10 +122,16 @@ def documents(root):
         lines = ['# ' + node['title'], '', 'Generated view; use research tools to change canonical memory.']
         for key in ('goal', 'proposal', 'plan', 'progress', 'assessment_ref'):
             lines.extend(['', '## ' + key, '', node.get(key) or '(not recorded)'])
+        lines.extend(['', '## Subjects', '', json.dumps(node.get('subjects', {}), ensure_ascii=False)])
         lines.extend(['', '## Relations', ''])
         lines.extend(f"- {e['source']} {e['kind']} {e['target']} ({e['id']})" for e in graph['relations'].values() if e['active'] and node['id'] in (e['source'], e['target']))
         lines.extend(['', '## Results', ''])
-        lines.extend(f"- [{r['summary']}](results/{r['id']}.json)" for r in graph['results'].values() if r['node_id'] == node['id'])
+        from .context import result_notices
+        from .results import get_result
+        for r in graph['results'].values():
+            if r['node_id'] == node['id']:
+                notices = result_notices(root, get_result(root, r['id']), graph)
+                lines.append(f"- [{r['summary']}](results/{r['id']}.json)" + (' — needs review: ' + ', '.join(sorted({n['code'] for n in notices})) if notices else ''))
         lines.extend(['', '## History', ''])
         for row in history:
             if row.get('node_id') == node['id']:

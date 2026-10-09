@@ -69,6 +69,10 @@ def validate_prepared_entry(params, descriptor):
             raise ValueError('executor_resource_input_missing')
     if any(path not in inputs for path in descriptor['inputs'].values()):
         raise ValueError('executor_role_input_missing')
+    expected_roles = {role: {'destination': path, 'sha256': 'sha256:' + inputs[path]['sha256']}
+                      for role, path in descriptor['inputs'].items()}
+    if metadata.get('input_roles', expected_roles) != expected_roles:
+        raise ValueError('executor_input_roles_mismatch')
     if any(output not in params.get('outputs', []) for output in descriptor['outputs']):
         raise ValueError('executor_output_contract_changed')
 
@@ -170,7 +174,8 @@ def _prepare(config, environment, base, descriptor, resources, inputs, arguments
             raise ValueError("runner_arguments_invalid: " + diagnostic.getvalue().strip()) from exc
     execution_argv = list(argv)
     environment_evidence = probe_binding(settings, selected, descriptor.get("requirements", {}))
-    argv, guard_inputs = guarded_command(selected, execution_argv, environment_evidence)
+    module_paths = descriptor.get('module_paths')
+    argv, guard_inputs = guarded_command(selected, execution_argv, environment_evidence, module_paths=module_paths)
     staged.extend(guard_inputs)
     configuration = binding_digest(selected)
     identity = binding_digest({"executor": descriptor, "configuration": configuration, "environment": environment_evidence,
@@ -188,6 +193,10 @@ def _prepare(config, environment, base, descriptor, resources, inputs, arguments
                             if descriptor.get("id") else {"script": {"entry": descriptor["entry"], "sha256": resources[descriptor["entry"]]}}),
                          "resources_sha256": resources, "configuration_sha256": configuration,
                          "execution_binding": selected, "execution_environment": environment_evidence, "execution_argv": execution_argv,
+                         **({'module_paths': module_paths} if module_paths is not None else {}),
+                         'input_roles': {role: {'destination': destination,
+                             'sha256': 'sha256:' + next(row['sha256'] for row in staged if row['destination'] == destination)}
+                             for role, destination in descriptor['inputs'].items()},
                          **({"python_binding": python} if python else {})}}
 
 

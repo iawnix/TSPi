@@ -40,6 +40,7 @@ def check_binding(params, *, probe):
     if not isinstance(argv, list) or not argv or any(not isinstance(arg, str) or not arg for arg in argv):
         raise ValueError("execution_argv_invalid")
     requirements = {}
+    module_paths = None
     if metadata.get("executor"):
         from .executors import registered_executor, validate_prepared_entry
         identity = metadata["executor"]
@@ -47,6 +48,7 @@ def check_binding(params, *, probe):
         if descriptor["backend"] != selected["backend"] or descriptor["runtime"] != selected["runtime"]:
             raise ValueError("executor_binding_mismatch")
         requirements = descriptor.get("requirements", {})
+        module_paths = descriptor.get('module_paths')
         validate_prepared_entry(params, descriptor)
     elif metadata.get("validator"):
         from research_agent.application.execution_catalog import registered_entry
@@ -55,6 +57,7 @@ def check_binding(params, *, probe):
         if descriptor["backend"] != selected["backend"] or selected["runtime"] != "python":
             raise ValueError("validator_binding_mismatch")
         requirements = descriptor.get("requirements", {})
+        module_paths = descriptor.get('module_paths')
     elif metadata.get('script'):
         script = metadata['script']
         if argv[0] != script.get('entry') or not any(row.get('destination') == script.get('entry') and
@@ -65,7 +68,9 @@ def check_binding(params, *, probe):
             or snapshot.get("requirements") != requirements
             or snapshot.get("sha256") != binding_digest(snapshot.get("observation"))):
         raise ValueError("execution_environment_evidence_invalid")
-    command, guard_inputs = guarded_command(selected, argv, snapshot)
+    if metadata.get('module_paths') != module_paths:
+        raise ValueError('execution_module_paths_mismatch')
+    command, guard_inputs = guarded_command(selected, argv, snapshot, module_paths=module_paths)
     if params.get("command") != command:
         raise ValueError("execution_guard_required: use the prepared command without edits")
     for required in guard_inputs:
@@ -76,5 +81,13 @@ def check_binding(params, *, probe):
         if not any(isinstance(row, dict) and row.get("destination") == required["destination"]
                    and row.get("sha256") == required["sha256"] for row in params.get("inputs", [])):
             raise ValueError("execution_guard_input_missing")
-    if probe and probe_binding(settings, selected, requirements) != snapshot:
-        raise ValueError("execution_environment_changed: prepare again after verifying the target installation")
+    if probe:
+        observed = probe_binding(settings, selected, requirements)
+        if observed != snapshot:
+            def differences(left, right, prefix=''):
+                if isinstance(left, dict) and isinstance(right, dict):
+                    return [path for key in sorted(left.keys() | right.keys())
+                            for path in differences(left.get(key), right.get(key), prefix + '.' + key)]
+                return [prefix.lstrip('.')] if left != right else []
+            # Field names identify drift without exposing environment values.
+            raise ValueError('execution_environment_changed: ' + ','.join(differences(snapshot, observed)))

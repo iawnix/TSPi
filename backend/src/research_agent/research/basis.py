@@ -3,7 +3,7 @@ from pathlib import Path
 from research_agent.foundation.transactions import read_json, write_json, workspace_transaction
 from .records import digest, now
 
-EDIT_FIELDS = frozenset({'goal', 'title', 'proposal', 'plan', 'progress', 'status', 'assessment_ref', 'relations'})
+EDIT_FIELDS = frozenset({'goal', 'title', 'proposal', 'plan', 'progress', 'status', 'assessment_ref', 'relations', 'subjects'})
 
 
 def issue(root, nodes, session_id=None, fields=None, segments=None):

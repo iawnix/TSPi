@@ -41,6 +41,7 @@ def reference_details(root, request):
     from research_agent.artifacts.registry import read_manifest
     details = {}
     refs = request.get('input_refs', []) + request.get('inputs', []) + request.get('evidence_refs', [])
+    refs += list(request.get('subjects', {}).values()) + request.get('check_refs', [])
     refs += [item.get('artifact_ref') for item in request.get('files', []) if isinstance(item, dict)]
     for ref in refs:
         if not isinstance(ref, str):
@@ -62,6 +63,7 @@ def reference_details(root, request):
             receipt = read_json(path)
             execution = read_json(Path(root) / 'operations/executions' / (receipt['job_id'] + '.json'))
             details[ref] = {'kind': 'collection_receipt', 'research_binding': execution.get('metadata', {}).get('research_binding'),
+                            'validation': receipt.get('validator_result'),
                             'input_refs': list(execution.get('metadata', {}).get('input_evidence_basis', {}))}
         elif re.fullmatch(r'job_[A-Za-z0-9_.:-]{1,200}', ref):
             path = Path(root) / 'operations/executions' / (ref + '.json')

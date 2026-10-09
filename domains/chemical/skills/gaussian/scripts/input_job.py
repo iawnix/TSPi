@@ -71,17 +71,27 @@ def run_input(args):
         target = out/name; target.parent.mkdir(parents=True, exist_ok=True); shutil.copyfile(file, target)
     result = new_result(args, args.method, args.basis, source)
     result.update(normal_termination=False, validation_requested=args.validation, input=checked)
+    result.update(execution_status='not_started', parsing={'status': 'not_run'},
+                  check_status='not_assessed')
     error = None
+    stage = 'execution'
     try:
         executable = shutil.which(args.executable)
         if not executable: raise ValueError('configured Gaussian executable unavailable after activation')
         with (out/'input.gjf').open('rb') as inp, (out/'gaussian.out').open('wb') as log:
             process = subprocess.run([executable], cwd=out, stdin=inp, stdout=log, stderr=subprocess.STDOUT)
         result['program_returncode'] = process.returncode
+        result['execution_status'] = 'succeeded' if process.returncode == 0 else 'failed'
+        stage = 'parsing'
         parsed = parse_log(out/'gaussian.out', expected_route=checked['routes'][-1])
         write_json(out/'parsed.json', parsed)
+        result['parsing']['status'] = 'completed'
         summary = parsed['summary']; result['normal_termination'] = summary['normal_termination'] and not summary['error_termination']
-        if process.returncode or not result['normal_termination']: raise ValueError('Gaussian execution did not finish normally')
+        if process.returncode or not result['normal_termination']:
+            result['execution_status'] = 'failed'
+            stage = 'execution'
+            raise ValueError('Gaussian execution did not finish normally')
+        stage = 'checks'
         if not summary['route_expectation'].get('matched'):
             raise ValueError('Gaussian route readback differs from the supplied input')
         energy = finite_energy(summary['electronic_energy_hartree'])
@@ -95,14 +105,24 @@ def run_input(args):
             if expected is not None and summary['imaginary_frequency_count'] != expected:
                 raise ValueError(f'expected {expected} imaginary frequencies')
         if args.validation == 'irc':
+            stage = 'parsing'
             irc = parse_irc_log(out/'gaussian.out'); write_irc_parse_artifacts(irc, out, 'gaussian', 'gaussian.out')
+            stage = 'checks'
             result['irc'] = irc['summary']
             if not irc['points'] or not irc['atoms']: raise ValueError('IRC path/endpoint evidence missing')
         # Numeric checks do not establish mode direction, basin identity or a mechanism.
         result['limitations'] = ['Inspect mode vectors, route readback and endpoint identities before scientific claims. Normal termination alone is not validation.']
+        result['check_status'] = 'satisfied'
         return_code = 0
     except Exception as exc:
         error = exc
+        result['failure_stage'] = stage
+        if stage == 'parsing':
+            result['parsing'] = {'status': 'failed', 'exception_type': type(exc).__name__}
+        elif stage == 'checks':
+            result['check_status'] = 'not_satisfied'
+        else:
+            result['execution_status'] = 'failed'
         return_code = 1
     finish(out, result, __file__, error)
     return return_code

@@ -89,6 +89,9 @@ def node_detail(root, node_id, *, jobs=()):
     reviews = [{'used': e['target'], 'superseded_by': replacement['id'], 'relation_id': e['id']}
                for e in links if e['source'] in result_ids | {node_id}
                for replacement in graph['results'].values() if replacement['supersedes'] == e['target']]
+    if assessment and assessment.get('schema_version') == 'research-result/1':
+        from .context import result_notices
+        reviews.extend(result_notices(root, assessment, graph))
     return {'node': node, 'relations': links, 'results': results, 'assessment': assessment,
             'review_notices': reviews, 'diagnostics': [d for d in relations.diagnostics(root) if node_id in d.get('node_ids', [])], 'jobs': [j for j in jobs if j.get('node_id') == node_id],
             'history': {'tool': 'research_search', 'node_id': node_id}}
@@ -105,7 +108,7 @@ def read(root, *, ref, offset=0, limit=16000, session_id=None, jobs=(), field=No
             if not ref.startswith('node_') or field not in basis.EDIT_FIELDS:
                 raise ValueError('node_field_invalid')
             selected = {'node_id': value['node']['id'], 'node_revision': value['node']['revision'], 'field': field,
-                        'value': value['relations'] if field == 'relations' else value['node'][field]}
+                        'value': value['relations'] if field == 'relations' else value['node'].get(field, {} if field == 'subjects' else None)}
         full = json.dumps(selected if selected is not None else value, ensure_ascii=False, indent=2)
         chunk = full[offset:offset + limit]
         # Character offsets are stable across Unicode; bytes bound transport size.
@@ -122,9 +125,9 @@ def read(root, *, ref, offset=0, limit=16000, session_id=None, jobs=(), field=No
                 container = value if field_name == 'relations' else value['node']
                 prefix = ('  ' if field_name == 'relations' else '    ') + json.dumps(field_name) + ': '
                 start = full.find(prefix)
-                serialized = json.dumps(container[field_name], ensure_ascii=False, indent=2)
+                serialized = json.dumps(container.get(field_name, {} if field_name == 'subjects' else None), ensure_ascii=False, indent=2)
                 # Scalar Node fields are one JSON value. Relations need the complete detail.
-                if field_name == 'relations':
+                if field_name in {'relations', 'subjects'}:
                     if offset == 0 and end == len(full):
                         visible.append(field_name)
                 elif offset <= start and start + len(prefix) + len(serialized) <= end:
@@ -140,4 +143,8 @@ def read(root, *, ref, offset=0, limit=16000, session_id=None, jobs=(), field=No
         # Structured convenience fields only when the combined response fits Pi's bound.
         if selected is None and offset == 0 and end == len(full) and len(full.encode()) < 15000:
             response.update(value if ref.startswith('node_') else {'result' if ref.startswith('result_') else 'record': value})
+        if ref.startswith('result_'):
+            from .context import result_notices
+            notices = result_notices(root, value)
+            response.update(review_notices=notices[:8], review_notice_count=len(notices))
         return response

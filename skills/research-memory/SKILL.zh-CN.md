@@ -62,3 +62,13 @@ map 可以有反馈和备选路径。requires 表达研究意图，不是工具�
 Monitor 事件包含 Job 及研究 Node。检查或收集执行后，在这里记录解释；结束回合不需要补齐 disposition。
 
 另见[存储与恢复](references/storage.zh-CN.md)、[公开工具](../research-workflow/references/public_contract.zh-CN.md)、[English](SKILL.md)。
+
+## 对象、检查与修订
+
+用 `subjects` 为不可变 Artifact 或 Result 引用指定角色，例如 `{"target":"a1","calculated":"a2"}`。Node 记录研究目标对象，Result 记录实际解释的对象。角色标签不证明身份正确；领域工具比较结构，Memory 不解析分子或裁定科学真伪。
+
+分开记录 `observation`、`conclusion` 和精确的 `check_refs`。检查失败、无法判断也可以保存和引用。检查回执分别记录执行、解析与有限范围的科学检查。
+
+一起修订当前判断和进度时，使用 `supersedes`、`as_assessment:true` 与 `progress`。这条操作是原子的：读取版本冲突时，两者均不保存；不带 progress 的普通发布继续保持原有的结果保存语义。更换 subjects 前先读取该字段。
+
+读取 Result、当前结论卡片和生成的 Markdown 时，若节点上下文变化或引用结果被替代，会显示需复核提示。报告用带 files 和精确 inputs 的 Result 登记，同样适用。提示不代表结论已被否定，不自动重写历史结果、报告或进度。

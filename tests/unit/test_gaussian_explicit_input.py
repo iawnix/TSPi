@@ -44,6 +44,9 @@ def test_normal_exit_without_frequency_does_not_validate_a_saddle(tmp_path):
     assert result.returncode == 1, result.stderr
     record = json.loads((output/'result.json').read_text())
     assert record['program_returncode'] == 0
+    assert record['execution_status'] == 'succeeded'
+    assert record['parsing']['status'] == 'completed'
+    assert record['check_status'] == 'not_satisfied'
     assert record['scientific_validation'] == 'not_assessed'
     assert record['checks_passed'] is False
     assert 'stationary point' in record['error']['message']

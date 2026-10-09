@@ -32,6 +32,7 @@ export interface CommandParameters {
     "session_id"?: string | null;
     "request_id"?: string;
     "read_basis"?: string | null;
+    "subjects"?: Record<string, string>;
   };
   "research.update": {
     "node_id": string;
@@ -48,6 +49,7 @@ export interface CommandParameters {
     "session_id"?: string | null;
     "request_id"?: string;
     "read_basis"?: string | null;
+    "subjects"?: Record<string, string>;
   };
   "research.result": {
     "node_id": string;
@@ -63,6 +65,9 @@ export interface CommandParameters {
     "session_id"?: string | null;
     "request_id"?: string;
     "read_basis"?: string | null;
+    "subjects"?: Record<string, string>;
+    "check_refs"?: Array<string>;
+    "progress"?: string;
   };
   "research.source": {
     "session_id": string | null;
@@ -210,6 +215,9 @@ export interface CommandResults {
           "ref": string;
         };
       }>;
+      "subjects"?: Record<string, string>;
+      "review_notices"?: Array<JsonValue>;
+      "review_notice_count"?: number;
     }>;
     "tasks": Array<JsonValue>;
     "new_records": Array<JsonValue>;
@@ -266,6 +274,7 @@ export interface CommandResults {
       "author": {
         "session_id": string | null;
       };
+      "subjects"?: Record<string, string>;
     };
     "relations"?: Array<{
       "id": string;
@@ -311,8 +320,17 @@ export interface CommandResults {
         "session_id": string | null;
       };
       "created_at": string;
+      "subjects"?: Record<string, string>;
+      "check_refs"?: Array<string>;
+      "checks"?: Array<JsonValue>;
+      "context_basis"?: {
+        "node_revision": number;
+        "sha256": string;
+      };
     };
     "record"?: JsonValue;
+    "review_notices"?: Array<JsonValue>;
+    "review_notice_count"?: number;
     [key: string]: unknown;
   };
   "research.search": {
@@ -355,6 +373,7 @@ export interface CommandResults {
       "author": {
         "session_id": string | null;
       };
+      "subjects"?: Record<string, string>;
     };
     "relations": Array<{
       "id": string;
@@ -392,6 +411,7 @@ export interface CommandResults {
       "author": {
         "session_id": string | null;
       };
+      "subjects"?: Record<string, string>;
     };
     "relations": Array<{
       "id": string;
@@ -429,6 +449,7 @@ export interface CommandResults {
       "author": {
         "session_id": string | null;
       };
+      "subjects"?: Record<string, string>;
     };
     "relations": Array<{
       "id": string;
@@ -467,6 +488,13 @@ export interface CommandResults {
         "session_id": string | null;
       };
       "created_at": string;
+      "subjects"?: Record<string, string>;
+      "check_refs"?: Array<string>;
+      "checks"?: Array<JsonValue>;
+      "context_basis"?: {
+        "node_revision": number;
+        "sha256": string;
+      };
     };
     "result_saved": true;
     "assessment_selected": boolean;

@@ -189,6 +189,17 @@
               "string",
               "null"
             ]
+          },
+          "subjects": {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {
+              "pattern": "^[a-z][a-z0-9_]{0,63}$"
+            },
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Named roles such as target and calculated, pointing to immutable Artifact or Result references. Labels do not certify identity."
           }
         },
         "required": [
@@ -280,6 +291,17 @@
               "string",
               "null"
             ]
+          },
+          "subjects": {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {
+              "pattern": "^[a-z][a-z0-9_]{0,63}$"
+            },
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Named roles such as target and calculated, pointing to immutable Artifact or Result references. Labels do not certify identity."
           }
         },
         "required": [
@@ -370,6 +392,30 @@
               "string",
               "null"
             ]
+          },
+          "subjects": {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {
+              "pattern": "^[a-z][a-z0-9_]{0,63}$"
+            },
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Named roles such as target and calculated, pointing to immutable Artifact or Result references. Labels do not certify identity."
+          },
+          "check_refs": {
+            "type": "array",
+            "maxItems": 128,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            },
+            "description": "Exact Artifact or collection receipt references for checks; no pass verdict is required."
+          },
+          "progress": {
+            "type": "string",
+            "description": "With as_assessment=true, atomically publish, select the Result and update progress; a read conflict aborts all changes."
           }
         },
         "required": [

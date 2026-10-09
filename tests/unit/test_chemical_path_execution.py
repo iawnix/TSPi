@@ -235,6 +235,12 @@ def test_generic_jobs_execute_candidate_gaussian_and_registered_validators(tmp_p
     raw=selected(ts,'gaussian.out')['artifact_id']
     validated=run_job(tmp_path,{'job_id':'job_saddle','validator_id':'chemical.gaussian_saddle', "validator_version": "1",'input_artifact_ids':[ref,raw]})
     assert validated['result_receipt']['validator_result']['verdict']=='pass'
+    proof = validated['result_receipt']['validator_result']
+    assert proof['execution_status'] == 'succeeded'
+    assert proof['parsing']['status'] == 'completed'
+    assert proof['scientific_verdict'] == 'pass'
+    assert proof['provenance']['status'] == 'verified'
+    assert proof['provenance']['input_versions'][raw].startswith('sha256:')
     checkpoint=selected(ts,'ts.chk')
     irc=helper.prepare_irc(Path(row['files']['spec.json']['path']),Path(checkpoint['location']),tmp_path/'irc')
     forwards=gaussian(irc['inputs'][0]['path'],'job_forward','irc',irc['checkpoint']['path'])

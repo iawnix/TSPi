@@ -10,6 +10,8 @@ from rdkit import Chem, rdBase
 from rdkit.Chem import AllChem, rdMolDescriptors
 from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers, StereoEnumerationOptions
 from name_resolution import resolve
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / '_shared'))
+from chemical_identity import identity, compare
 
 
 def inspect(smiles):
@@ -20,7 +22,7 @@ def inspect(smiles):
               if x.specified == Chem.StereoSpecified.Unspecified]
     return mol, {'smiles': Chem.MolToSmiles(mol), 'formula': rdMolDescriptors.CalcMolFormula(mol),
                  'charge': Chem.GetFormalCharge(mol), 'unspecified_stereo': stereo,
-                 'rdkit_version': rdBase.rdkitVersion, 'graph_valid': True}
+                 'rdkit_version': rdBase.rdkitVersion, 'graph_valid': True, 'identity': identity(mol)}
 
 
 def resolve_name(name, lookup_name=None):
@@ -61,7 +63,7 @@ def seeds(smiles, charge, multiplicity, output, enumerate_stereo=False):
         xyz = Chem.MolToXYZBlock(structure)
         path = output / f'seed-{index + 1}.xyz'; path.write_text(xyz)
         generated.append({'smiles': Chem.MolToSmiles(isomer), 'xyz': str(path.resolve()),
-                          'sha256': hashlib.sha256(xyz.encode()).hexdigest()})
+                          'sha256': hashlib.sha256(xyz.encode()).hexdigest(), 'identity': identity(isomer)})
     return {'schema_version': 'chemical-seeds/1', **metadata, 'multiplicity': multiplicity,
             'embedding': {'method': 'ETKDGv3', 'random_seed': 61453},
             'seeds': generated, 'geometry_status': 'initial_seed',
@@ -80,6 +82,7 @@ def main():
         if args.command == 'resolve': result = resolve_name(args.name, args.lookup_name)
         elif args.command == 'inspect': result = {'schema_version': 'chemical-structure/1', **inspect(args.smiles)[1], 'identity_status': 'supplied_graph'}
         elif args.command == 'seed': result = seeds(args.smiles, args.charge, args.multiplicity, args.output_dir, args.enumerate_stereo)
+        elif args.command == 'compare': result = compare(args.target, args.actual, actual_format=args.actual_format, charge=args.charge)
         else: result = reaction(args.smiles, json.loads(args.transformation.read_text()) if args.transformation else None)
         path = Path(args.output); path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(result, indent=2, ensure_ascii=False) + '\n')

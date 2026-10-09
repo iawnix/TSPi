@@ -55,16 +55,19 @@
         ]
       },
       "resources": {
-        "skills/_shared/path_validation.py": "sha256:a418d379f48fa9dd6fd6857cfda18aff48c608015dc74336f2440e996b17aed2",
+        "skills/_shared/path_validation.py": "sha256:5d7b4e1a797001bc8cf6685b003af0d1a712e6d0191af69248f810bccab9467f",
         "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
         "skills/_shared/science.py": "sha256:83699605ae35fccd8724997c366dfb4451aee06b0f0da9dc87ad9aee0ac26220",
         "skills/_shared/xyz.py": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9",
         "skills/cf22d/scripts/cli.py": "sha256:17680bbcb6b5fe4af59bc333f9ba30164d8e03d787661f84cbb56a190c94ed7b",
-        "skills/cf22d/scripts/doctor.py": "sha256:e5bb3bbc3f24544f9e322bd8a682ecd06b7bc14fb564f987c38c7bc11e9fcf7f",
+        "skills/cf22d/scripts/doctor.py": "sha256:4455e8f7c09390d2575fc3a186170421a8da4d54570556c8565d726c12d5ddb6",
         "skills/cf22d/scripts/run.py": "sha256:1126b01c6f10bd5ef0cd008a7cc689a14ec9d6c69001b31fe31c4ec65992937c",
         "skills/cf22d/scripts/runner.py": "sha256:1935ab27fc3444d1c5335ec390bff8a3be010d95f4a4d872b3c78b6f433ddd2d",
         "skills/cf22d/scripts/settings.py": "sha256:7007f4e90d828962ef144aaeb4d9d01d9676b8f3664120bfb8b4719308f0aa6d"
-      }
+      },
+      "module_paths": [
+        "skills/_shared"
+      ]
     },
     {
       "id": "chemical.xtb",
@@ -111,14 +114,17 @@
         "python": ">=3.11"
       },
       "resources": {
-        "skills/_shared/path_validation.py": "sha256:a418d379f48fa9dd6fd6857cfda18aff48c608015dc74336f2440e996b17aed2",
+        "skills/_shared/path_validation.py": "sha256:5d7b4e1a797001bc8cf6685b003af0d1a712e6d0191af69248f810bccab9467f",
         "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
         "skills/_shared/science.py": "sha256:83699605ae35fccd8724997c366dfb4451aee06b0f0da9dc87ad9aee0ac26220",
         "skills/_shared/xyz.py": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9",
         "skills/xtb/scripts/cli.py": "sha256:c1dec3cb29f2e30a5bcc66180efc793e9f3dd30fa542bc215fd7ef850decc016",
         "skills/xtb/scripts/parser.py": "sha256:5922d0093eddf05b166d11be7b17220dc2da30e5d78a36ce887bfd67c34fc677",
         "skills/xtb/scripts/run.py": "sha256:0d42f9865ff3fdbf18e0cb84f1c3aeaa1aae48aba8532a85f4215b006b2a2114"
-      }
+      },
+      "module_paths": [
+        "skills/_shared"
+      ]
     },
     {
       "id": "chemical.gaussian",
@@ -165,15 +171,18 @@
         "python": ">=3.11"
       },
       "resources": {
-        "skills/_shared/path_validation.py": "sha256:a418d379f48fa9dd6fd6857cfda18aff48c608015dc74336f2440e996b17aed2",
+        "skills/_shared/path_validation.py": "sha256:5d7b4e1a797001bc8cf6685b003af0d1a712e6d0191af69248f810bccab9467f",
         "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
         "skills/_shared/science.py": "sha256:83699605ae35fccd8724997c366dfb4451aee06b0f0da9dc87ad9aee0ac26220",
         "skills/_shared/xyz.py": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9",
         "skills/gaussian/scripts/cli.py": "sha256:5026fdc19cdf46eb4f2c9a4afd7091e0607e4064229f7792d2e02bc7bb9566dc",
         "skills/gaussian/scripts/gaussian_io.py": "sha256:b7f6d18391e7e481dee206c9696ae664946fb53710a56a9d05d620ec204abb13",
-        "skills/gaussian/scripts/input_job.py": "sha256:0674f3313c304e4cb12989bb5300bfc89543df856d4b1cd08e4eb06551508b69",
+        "skills/gaussian/scripts/input_job.py": "sha256:4effba6319eb907e048295eb777897e24f143fe4b357a2875ffd11fa24515660",
         "skills/gaussian/scripts/run.py": "sha256:29dd77a8f9c6b653db58f7025ab89f4edcff79b07c025efc0e83873888669604"
-      }
+      },
+      "module_paths": [
+        "skills/_shared"
+      ]
     },
     {
       "id": "chemical.gaussian-input",
@@ -232,15 +241,18 @@
         "python": ">=3.11"
       },
       "resources": {
-        "skills/_shared/path_validation.py": "sha256:a418d379f48fa9dd6fd6857cfda18aff48c608015dc74336f2440e996b17aed2",
+        "skills/_shared/path_validation.py": "sha256:5d7b4e1a797001bc8cf6685b003af0d1a712e6d0191af69248f810bccab9467f",
         "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
         "skills/_shared/science.py": "sha256:83699605ae35fccd8724997c366dfb4451aee06b0f0da9dc87ad9aee0ac26220",
         "skills/_shared/xyz.py": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9",
         "skills/gaussian/scripts/cli.py": "sha256:5026fdc19cdf46eb4f2c9a4afd7091e0607e4064229f7792d2e02bc7bb9566dc",
         "skills/gaussian/scripts/gaussian_io.py": "sha256:b7f6d18391e7e481dee206c9696ae664946fb53710a56a9d05d620ec204abb13",
-        "skills/gaussian/scripts/input_job.py": "sha256:0674f3313c304e4cb12989bb5300bfc89543df856d4b1cd08e4eb06551508b69",
+        "skills/gaussian/scripts/input_job.py": "sha256:4effba6319eb907e048295eb777897e24f143fe4b357a2875ffd11fa24515660",
         "skills/gaussian/scripts/run.py": "sha256:29dd77a8f9c6b653db58f7025ab89f4edcff79b07c025efc0e83873888669604"
-      }
+      },
+      "module_paths": [
+        "skills/_shared"
+      ]
     },
     {
       "version": "1",
@@ -277,14 +289,18 @@
         ]
       },
       "resources": {
-        "skills/_shared/path_validation.py": "sha256:a418d379f48fa9dd6fd6857cfda18aff48c608015dc74336f2440e996b17aed2",
+        "skills/_shared/chemical_identity.py": "sha256:14160579cc59849209b7a4424accd460aeb051e42df6c5097d2eadcc9a74f6c0",
+        "skills/_shared/path_validation.py": "sha256:5d7b4e1a797001bc8cf6685b003af0d1a712e6d0191af69248f810bccab9467f",
         "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
         "skills/_shared/science.py": "sha256:83699605ae35fccd8724997c366dfb4451aee06b0f0da9dc87ad9aee0ac26220",
         "skills/_shared/xyz.py": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9",
-        "skills/chemical-input/scripts/cli.py": "sha256:41a6068347be19f80dc7f4f23fa0d9ae6c7b7c8402173bbce4f78e7c10c3abda",
+        "skills/chemical-input/scripts/cli.py": "sha256:3e13c5f5d92ee54ebc6b2b5a77409dd8d06f6b41c252087350c7340dcc32d098",
         "skills/chemical-input/scripts/name_resolution.py": "sha256:5d638a78b8ebc2e1aa88dceca18db44a113d37e94bf7f3cc23220a02729403c6",
-        "skills/chemical-input/scripts/prepare.py": "sha256:b53f3c91ee86e91cefafd19706ed603e9bbca804b4f69780ec9f9738387a8ec0"
-      }
+        "skills/chemical-input/scripts/prepare.py": "sha256:6d69d70a5b755e3b5d3d18e7fbdebe42e2c28564097c18de5560cfacf84b1c6f"
+      },
+      "module_paths": [
+        "skills/_shared"
+      ]
     },
     {
       "version": "1",
@@ -321,14 +337,18 @@
         ]
       },
       "resources": {
-        "skills/_shared/path_validation.py": "sha256:a418d379f48fa9dd6fd6857cfda18aff48c608015dc74336f2440e996b17aed2",
+        "skills/_shared/chemical_identity.py": "sha256:14160579cc59849209b7a4424accd460aeb051e42df6c5097d2eadcc9a74f6c0",
+        "skills/_shared/path_validation.py": "sha256:5d7b4e1a797001bc8cf6685b003af0d1a712e6d0191af69248f810bccab9467f",
         "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
         "skills/_shared/science.py": "sha256:83699605ae35fccd8724997c366dfb4451aee06b0f0da9dc87ad9aee0ac26220",
         "skills/_shared/xyz.py": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9",
-        "skills/chemical-input/scripts/cli.py": "sha256:41a6068347be19f80dc7f4f23fa0d9ae6c7b7c8402173bbce4f78e7c10c3abda",
+        "skills/chemical-input/scripts/cli.py": "sha256:3e13c5f5d92ee54ebc6b2b5a77409dd8d06f6b41c252087350c7340dcc32d098",
         "skills/chemical-input/scripts/name_resolution.py": "sha256:5d638a78b8ebc2e1aa88dceca18db44a113d37e94bf7f3cc23220a02729403c6",
-        "skills/chemical-input/scripts/prepare.py": "sha256:b53f3c91ee86e91cefafd19706ed603e9bbca804b4f69780ec9f9738387a8ec0"
-      }
+        "skills/chemical-input/scripts/prepare.py": "sha256:6d69d70a5b755e3b5d3d18e7fbdebe42e2c28564097c18de5560cfacf84b1c6f"
+      },
+      "module_paths": [
+        "skills/_shared"
+      ]
     },
     {
       "version": "1",
@@ -373,14 +393,18 @@
         ]
       },
       "resources": {
-        "skills/_shared/path_validation.py": "sha256:a418d379f48fa9dd6fd6857cfda18aff48c608015dc74336f2440e996b17aed2",
+        "skills/_shared/chemical_identity.py": "sha256:14160579cc59849209b7a4424accd460aeb051e42df6c5097d2eadcc9a74f6c0",
+        "skills/_shared/path_validation.py": "sha256:5d7b4e1a797001bc8cf6685b003af0d1a712e6d0191af69248f810bccab9467f",
         "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
         "skills/_shared/science.py": "sha256:83699605ae35fccd8724997c366dfb4451aee06b0f0da9dc87ad9aee0ac26220",
         "skills/_shared/xyz.py": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9",
-        "skills/chemical-input/scripts/cli.py": "sha256:41a6068347be19f80dc7f4f23fa0d9ae6c7b7c8402173bbce4f78e7c10c3abda",
+        "skills/chemical-input/scripts/cli.py": "sha256:3e13c5f5d92ee54ebc6b2b5a77409dd8d06f6b41c252087350c7340dcc32d098",
         "skills/chemical-input/scripts/name_resolution.py": "sha256:5d638a78b8ebc2e1aa88dceca18db44a113d37e94bf7f3cc23220a02729403c6",
-        "skills/chemical-input/scripts/prepare.py": "sha256:b53f3c91ee86e91cefafd19706ed603e9bbca804b4f69780ec9f9738387a8ec0"
-      }
+        "skills/chemical-input/scripts/prepare.py": "sha256:6d69d70a5b755e3b5d3d18e7fbdebe42e2c28564097c18de5560cfacf84b1c6f"
+      },
+      "module_paths": [
+        "skills/_shared"
+      ]
     },
     {
       "version": "1",
@@ -417,14 +441,18 @@
         ]
       },
       "resources": {
-        "skills/_shared/path_validation.py": "sha256:a418d379f48fa9dd6fd6857cfda18aff48c608015dc74336f2440e996b17aed2",
+        "skills/_shared/chemical_identity.py": "sha256:14160579cc59849209b7a4424accd460aeb051e42df6c5097d2eadcc9a74f6c0",
+        "skills/_shared/path_validation.py": "sha256:5d7b4e1a797001bc8cf6685b003af0d1a712e6d0191af69248f810bccab9467f",
         "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
         "skills/_shared/science.py": "sha256:83699605ae35fccd8724997c366dfb4451aee06b0f0da9dc87ad9aee0ac26220",
         "skills/_shared/xyz.py": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9",
-        "skills/chemical-input/scripts/cli.py": "sha256:41a6068347be19f80dc7f4f23fa0d9ae6c7b7c8402173bbce4f78e7c10c3abda",
+        "skills/chemical-input/scripts/cli.py": "sha256:3e13c5f5d92ee54ebc6b2b5a77409dd8d06f6b41c252087350c7340dcc32d098",
         "skills/chemical-input/scripts/name_resolution.py": "sha256:5d638a78b8ebc2e1aa88dceca18db44a113d37e94bf7f3cc23220a02729403c6",
-        "skills/chemical-input/scripts/prepare.py": "sha256:b53f3c91ee86e91cefafd19706ed603e9bbca804b4f69780ec9f9738387a8ec0"
-      }
+        "skills/chemical-input/scripts/prepare.py": "sha256:6d69d70a5b755e3b5d3d18e7fbdebe42e2c28564097c18de5560cfacf84b1c6f"
+      },
+      "module_paths": [
+        "skills/_shared"
+      ]
     },
     {
       "version": "1",
@@ -471,13 +499,16 @@
         ]
       },
       "resources": {
-        "skills/_shared/path_validation.py": "sha256:a418d379f48fa9dd6fd6857cfda18aff48c608015dc74336f2440e996b17aed2",
+        "skills/_shared/path_validation.py": "sha256:5d7b4e1a797001bc8cf6685b003af0d1a712e6d0191af69248f810bccab9467f",
         "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
         "skills/_shared/science.py": "sha256:83699605ae35fccd8724997c366dfb4451aee06b0f0da9dc87ad9aee0ac26220",
         "skills/_shared/xyz.py": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9",
         "skills/candidate-generation/scripts/cli.py": "sha256:4df989e443d35dd2bab4a67bf090091d55946474742370639f9ba4cf87aca3b5",
-        "skills/candidate-generation/scripts/prepare_path.py": "sha256:0aa3749d609afbfb4924b120e175f9ad50d943a89bd64b9cdcc690f1a01e2514"
-      }
+        "skills/candidate-generation/scripts/prepare_path.py": "sha256:bd85531fe315d12f67d970055eee814b853ba286691c3317a6c39e0926e1eb1b"
+      },
+      "module_paths": [
+        "skills/_shared"
+      ]
     },
     {
       "version": "1",
@@ -527,13 +558,16 @@
         ]
       },
       "resources": {
-        "skills/_shared/path_validation.py": "sha256:a418d379f48fa9dd6fd6857cfda18aff48c608015dc74336f2440e996b17aed2",
+        "skills/_shared/path_validation.py": "sha256:5d7b4e1a797001bc8cf6685b003af0d1a712e6d0191af69248f810bccab9467f",
         "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
         "skills/_shared/science.py": "sha256:83699605ae35fccd8724997c366dfb4451aee06b0f0da9dc87ad9aee0ac26220",
         "skills/_shared/xyz.py": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9",
         "skills/candidate-generation/scripts/cli.py": "sha256:4df989e443d35dd2bab4a67bf090091d55946474742370639f9ba4cf87aca3b5",
-        "skills/candidate-generation/scripts/prepare_path.py": "sha256:0aa3749d609afbfb4924b120e175f9ad50d943a89bd64b9cdcc690f1a01e2514"
-      }
+        "skills/candidate-generation/scripts/prepare_path.py": "sha256:bd85531fe315d12f67d970055eee814b853ba286691c3317a6c39e0926e1eb1b"
+      },
+      "module_paths": [
+        "skills/_shared"
+      ]
     },
     {
       "id": "chemical.cf22d-doctor",
@@ -562,16 +596,19 @@
         ]
       },
       "resources": {
-        "skills/_shared/path_validation.py": "sha256:a418d379f48fa9dd6fd6857cfda18aff48c608015dc74336f2440e996b17aed2",
+        "skills/_shared/path_validation.py": "sha256:5d7b4e1a797001bc8cf6685b003af0d1a712e6d0191af69248f810bccab9467f",
         "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
         "skills/_shared/science.py": "sha256:83699605ae35fccd8724997c366dfb4451aee06b0f0da9dc87ad9aee0ac26220",
         "skills/_shared/xyz.py": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9",
         "skills/cf22d/scripts/cli.py": "sha256:17680bbcb6b5fe4af59bc333f9ba30164d8e03d787661f84cbb56a190c94ed7b",
-        "skills/cf22d/scripts/doctor.py": "sha256:e5bb3bbc3f24544f9e322bd8a682ecd06b7bc14fb564f987c38c7bc11e9fcf7f",
+        "skills/cf22d/scripts/doctor.py": "sha256:4455e8f7c09390d2575fc3a186170421a8da4d54570556c8565d726c12d5ddb6",
         "skills/cf22d/scripts/run.py": "sha256:1126b01c6f10bd5ef0cd008a7cc689a14ec9d6c69001b31fe31c4ec65992937c",
         "skills/cf22d/scripts/runner.py": "sha256:1935ab27fc3444d1c5335ec390bff8a3be010d95f4a4d872b3c78b6f433ddd2d",
         "skills/cf22d/scripts/settings.py": "sha256:7007f4e90d828962ef144aaeb4d9d01d9676b8f3664120bfb8b4719308f0aa6d"
-      }
+      },
+      "module_paths": [
+        "skills/_shared"
+      ]
     },
     {
       "id": "chemical.render",
@@ -629,14 +666,73 @@
         ]
       },
       "resources": {
-        "skills/_shared/path_validation.py": "sha256:a418d379f48fa9dd6fd6857cfda18aff48c608015dc74336f2440e996b17aed2",
+        "skills/_shared/path_validation.py": "sha256:5d7b4e1a797001bc8cf6685b003af0d1a712e6d0191af69248f810bccab9467f",
         "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
         "skills/_shared/science.py": "sha256:83699605ae35fccd8724997c366dfb4451aee06b0f0da9dc87ad9aee0ac26220",
         "skills/_shared/xyz.py": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9",
         "skills/report/scripts/build.py": "sha256:d7fbff0400da3716ebda6d6e6a73edff5e58e2c9131c6d215876f81ef905f4ca",
         "skills/report/scripts/render.py": "sha256:8051c71dadca3485efa053638445501d413876d693736112cf4dafe0251dcf3f",
         "skills/report/scripts/render_cli.py": "sha256:99e43d16785c16239697aee9ade7d501b9504321a18fb19e37e798a61a8c54d8"
-      }
+      },
+      "module_paths": [
+        "skills/_shared"
+      ]
+    },
+    {
+      "version": "1",
+      "backend": "structure",
+      "runtime": "python",
+      "id": "chemical.compare",
+      "skill": "chemical-input",
+      "entry": "skills/chemical-input/scripts/prepare.py",
+      "cli": "skills/chemical-input/scripts/cli.py",
+      "argv": [
+        "{entry}",
+        "--output",
+        "results/comparison.json",
+        "compare",
+        "--target",
+        "{input:target}",
+        "--actual",
+        "{input:actual}",
+        "{args}"
+      ],
+      "inputs": {
+        "target": "target.json",
+        "actual": "actual.input"
+      },
+      "outputs": [
+        {
+          "path": "results/comparison.json",
+          "required": true,
+          "min_bytes": 2,
+          "media_type": "application/json"
+        }
+      ],
+      "requirements": {
+        "python": ">=3.11",
+        "packages": {
+          "rdkit": ">=2025.9,<2027",
+          "numpy": ">=2,<3"
+        },
+        "imports": [
+          "rdkit.Chem.AllChem",
+          "numpy"
+        ]
+      },
+      "resources": {
+        "skills/_shared/chemical_identity.py": "sha256:14160579cc59849209b7a4424accd460aeb051e42df6c5097d2eadcc9a74f6c0",
+        "skills/_shared/path_validation.py": "sha256:5d7b4e1a797001bc8cf6685b003af0d1a712e6d0191af69248f810bccab9467f",
+        "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
+        "skills/_shared/science.py": "sha256:83699605ae35fccd8724997c366dfb4451aee06b0f0da9dc87ad9aee0ac26220",
+        "skills/_shared/xyz.py": "sha256:40144fd8c30dac3b650a89064b49821f22a90e06f2063e5e27f1a49e3df7b1a9",
+        "skills/chemical-input/scripts/cli.py": "sha256:3e13c5f5d92ee54ebc6b2b5a77409dd8d06f6b41c252087350c7340dcc32d098",
+        "skills/chemical-input/scripts/name_resolution.py": "sha256:5d638a78b8ebc2e1aa88dceca18db44a113d37e94bf7f3cc23220a02729403c6",
+        "skills/chemical-input/scripts/prepare.py": "sha256:6d69d70a5b755e3b5d3d18e7fbdebe42e2c28564097c18de5560cfacf84b1c6f"
+      },
+      "module_paths": [
+        "skills/_shared"
+      ]
     }
   ],
   "validators": [
@@ -648,7 +744,8 @@
       "backend": "validation",
       "requirements": {
         "python": ">=3.11"
-      }
+      },
+      "module_paths": []
     },
     {
       "id": "chemical.reaction_mapping",
@@ -673,7 +770,7 @@
         },
         "path_validation.py": {
           "path": "skills/_shared/path_validation.py",
-          "sha256": "sha256:a418d379f48fa9dd6fd6857cfda18aff48c608015dc74336f2440e996b17aed2"
+          "sha256": "sha256:5d7b4e1a797001bc8cf6685b003af0d1a712e6d0191af69248f810bccab9467f"
         },
         "gaussian_io.py": {
           "path": "skills/gaussian/scripts/gaussian_io.py",
@@ -695,7 +792,8 @@
           "rdkit.Chem.AllChem",
           "numpy"
         ]
-      }
+      },
+      "module_paths": []
     },
     {
       "id": "chemical.gaussian_saddle",
@@ -725,7 +823,7 @@
         },
         "path_validation.py": {
           "path": "skills/_shared/path_validation.py",
-          "sha256": "sha256:a418d379f48fa9dd6fd6857cfda18aff48c608015dc74336f2440e996b17aed2"
+          "sha256": "sha256:5d7b4e1a797001bc8cf6685b003af0d1a712e6d0191af69248f810bccab9467f"
         },
         "gaussian_io.py": {
           "path": "skills/gaussian/scripts/gaussian_io.py",
@@ -747,7 +845,8 @@
           "rdkit.Chem.AllChem",
           "numpy"
         ]
-      }
+      },
+      "module_paths": []
     },
     {
       "id": "chemical.gaussian_irc_connectivity",
@@ -787,7 +886,7 @@
         },
         "path_validation.py": {
           "path": "skills/_shared/path_validation.py",
-          "sha256": "sha256:a418d379f48fa9dd6fd6857cfda18aff48c608015dc74336f2440e996b17aed2"
+          "sha256": "sha256:5d7b4e1a797001bc8cf6685b003af0d1a712e6d0191af69248f810bccab9467f"
         },
         "gaussian_io.py": {
           "path": "skills/gaussian/scripts/gaussian_io.py",
@@ -809,7 +908,8 @@
           "rdkit.Chem.AllChem",
           "numpy"
         ]
-      }
+      },
+      "module_paths": []
     }
   ],
   "acceptance_profiles": [

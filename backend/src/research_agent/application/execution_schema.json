@@ -133,6 +133,14 @@
               "type": "string",
               "pattern": "^sha256:[0-9a-f]{64}$"
             }
+          },
+          "module_paths": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         },
         "required": [
@@ -267,6 +275,14 @@
             },
             "required": [],
             "additionalProperties": false
+          },
+          "module_paths": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         },
         "required": [

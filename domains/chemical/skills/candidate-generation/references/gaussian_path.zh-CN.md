@@ -44,8 +44,9 @@
 ```
 
 将返回的 `request_file` 和 `request_sha256`  交给 `job_start`，在 Job 终止后收集结果。
-runner 成功不是科学结论：用已注册鞍点验证器检查收集的原始 `gaussian.out`。检查通过后，
-从该 Job 收集的 `ts.chk` 准备正反 IRC 输入：
+runner 成功不是科学结论：可用已注册鞍点验证器检查收集的原始 `gaussian.out`。
+分别审查检查结果与适用范围；解析失败不等于科学否定，也不禁止进一步探索。记录缺少的证据与下一步理由，不把未确定项说成通过。
+当选择 IRC 作为下一步时，从该 Job 收集的 `ts.chk` 准备正反 IRC 输入：
 
 ```text
 "$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.path-irc --version 1 --input spec=<branch>/spec.json --input checkpoint=<collected-ts.chk> --input-artifact <spec-ref> --input-artifact <checkpoint-ref> --output <workspace>/irc-request.json

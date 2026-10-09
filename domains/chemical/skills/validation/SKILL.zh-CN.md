@@ -28,3 +28,5 @@ description: 根据鞍点、目标振动模式、结构、电子态与立体化�
 和 `chemical.gaussian_irc_connectivity` 验证器，版本均为 `1`。输入顺序、执行 helper 与有限
 科学范围见 [gaussian_path.zh-CN.md](../candidate-generation/references/gaussian_path.zh-CN.md)。
 该交付物使用 `chemical.diels_alder_path@1` 验收 profile。
+
+检查提供有限范围的证据，不是通用研究门禁。区分工具执行失败、材料无法解析和已完成检查但条件不满足。parsing.status、scientific_verdict（若提供）与回执 provenance 分别表达这些状态。Job 输入输出摘要证明记录的来源；求解器标题标记只是附加核对。证据未确定不禁止有理由的后续实验，但需要明确记录不确定性，不声称检查通过。

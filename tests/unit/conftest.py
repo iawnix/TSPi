@@ -70,10 +70,19 @@ command = \"xtb\"
 @pytest.fixture
 def mock_environment_probe(monkeypatch):
     """Routing-only tests use nonexistent hosts; guard behavior has real tests."""
+    import importlib
     from research_agent.jobs.config_contract import binding_digest
+    # Load every module that holds an alias before replacing the original.
+    # Otherwise a lazy import can retain the fake after monkeypatch teardown.
+    modules = [importlib.import_module(name) for name in (
+        'research_agent.jobs.environment',
+        'research_agent.application.executors',
+        'research_agent.application.execution_environment',
+        'research_agent.application.environment_check',
+    )]
     def probe(settings, selected, requirements):
         observation = {"files": {}, "python": {"fixture": "routing-only"}}
         return {"schema_version": "job-environment/1", "requirements": requirements,
                 "observation": observation, "sha256": binding_digest(observation)}
-    monkeypatch.setattr('research_agent.jobs.environment.probe_binding', probe)
-    monkeypatch.setattr('research_agent.application.executors.probe_binding', probe)
+    for module in modules:
+        monkeypatch.setattr(module, 'probe_binding', probe)

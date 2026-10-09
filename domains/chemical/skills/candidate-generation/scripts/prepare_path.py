@@ -154,7 +154,7 @@ def prepare_irc(spec_file, checkpoint, output, max_points=80):
         rows.append({'direction':direction,'path':str(output/name),'sha256':digest(output/name)})
     result={'schema_version':'chemical-irc-inputs/1','spec_sha256':digest(spec_file),
             'checkpoint':{'path':str(output/'ts.chk'),'sha256':digest(output/'ts.chk')},'inputs':rows,
-            'limitations':['The source checkpoint must belong to the validated saddle; preserve its collected Artifact reference.']}
+            'limitations':['Preserve the checkpoint collected Artifact reference. Assess saddle evidence and record unresolved checks before interpreting IRC.']}
     write_json(output/'irc_inputs.json',result)
     return result
 

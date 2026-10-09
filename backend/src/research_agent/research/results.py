@@ -33,6 +33,19 @@ def publish(root, request):
     node = get_node(root, request['node_id'])
     conclusion = text(request.get('conclusion'), 'conclusion', required=True, limit=64000)
     external = request.get('_reference_details', {})
+    from .context import subjects, node_context
+    subject_refs = subjects(root, request.get('subjects', {}), external)
+    check_refs = validate_refs(root, request.get('check_refs', []), external)
+    if any(external.get(ref, {}).get('kind') not in {'artifact', 'collection_receipt'} for ref in check_refs):
+        raise ValueError('checks_require_fixed_artifacts_or_receipts')
+    # An explicit progress+assessment revision is all-or-nothing. Plain publication
+    # still permits negative/uncertain results without selecting an assessment.
+    progress = None
+    if 'progress' in request:
+        if request.get('as_assessment') is not True:
+            raise ValueError('result_progress_requires_assessment')
+        progress = text(request['progress'], 'progress', required=True)
+        basis.check(root, node, request, {'progress', 'assessment_ref'})
     inputs = list(validate_refs(root, request.get('inputs', []), external))
     if any(not ref.startswith('result_') and external.get(ref, {}).get('kind') != 'artifact' for ref in inputs):
         raise ValueError('result_inputs_require_fixed_results_or_artifacts: cite execution records in evidence_refs')
@@ -54,7 +67,7 @@ def publish(root, request):
     if 'as_assessment' in request and type(request['as_assessment']) is not bool:
         raise ValueError('as_assessment_requires_boolean')
     bindings = []
-    for ref in dict.fromkeys(inputs + evidence):
+    for ref in dict.fromkeys(inputs + evidence + check_refs + list(subject_refs.values())):
         detail = external.get(ref, {})
         if detail.get('research_binding'):
             bindings.append({'ref': ref, **detail['research_binding']})
@@ -68,6 +81,10 @@ def publish(root, request):
                   observation=text(request.get('observation'), 'observation', limit=64000), conclusion=conclusion,
                   limitations=text(request.get('limitations'), 'limitations', limit=32000),
                   inputs=inputs, evidence_refs=evidence, files=files, supersedes=supersedes,
+                  subjects=subject_refs, check_refs=check_refs,
+                  checks=[{'ref': ref, 'kind': external[ref]['kind'], 'validation': external[ref].get('validation')} for ref in check_refs],
+                  context_basis={'node_revision': node['revision'],
+                                 'sha256': node_context({**node, **({'progress': progress} if progress is not None else {})})},
                   authored_node_revision=basis.seen_revision(root, node['id'], request), basis_refs=bindings,
                   author={'session_id': request.get('session_id')}, created_at=now())
     write_json(root / 'research/nodes' / node['id'] / 'results' / (result['id'] + '.json'), result)
@@ -77,7 +94,7 @@ def publish(root, request):
     log = append_record(root, origin='agent', kind='result_published', title=node['title'], content=result['summary'],
                         node_id=node['id'], node_revision=node['revision'], references=[result['id']],
                         data={'result_id': result['id'], 'result_digest': digest(result)}, identity=['result', result['id']])
-    for ref in dict.fromkeys(inputs + evidence + [item['artifact_ref'] for item in files]):
+    for ref in dict.fromkeys(inputs + evidence + check_refs + list(subject_refs.values()) + [item['artifact_ref'] for item in files]):
         relations.cite(root, result['id'], ref, basis_ref=log['ref'], kind='uses' if ref in inputs else 'cites')
     selected, conflict = False, None
     if request.get('as_assessment'):
@@ -87,6 +104,8 @@ def publish(root, request):
             conflict = str(exc)
         else:
             node.update(assessment_ref=result['id'], revision=node['revision'] + 1, updated_at=now())
+            if progress is not None:
+                node['progress'] = progress
             save(root, node)
             append_record(root, origin='agent', kind='node_updated', title=node['title'], content='Assessment selected',
                           node_id=node['id'], node_revision=node['revision'], references=[result['id']],

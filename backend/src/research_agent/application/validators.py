@@ -105,7 +105,8 @@ def prepare(root, params):
         inputs.append({'source': str(expected_location), 'destination': f'input_{index}', 'sha256': digest})
         input_versions[ref] = 'sha256:' + digest
         records.append({'role': role.get('name', str(index)), 'artifact_id': ref, 'sha256':'sha256:'+digest,
-                        'source': source, 'job_id': producer_id, 'result_receipt_ref': result_ref})
+                        'source': source, 'job_id': producer_id, 'result_receipt_ref': result_ref,
+                        'execution_inputs': producer.get('metadata', {}).get('input_roles', {}) if producer else {}})
     manifest_data = json.dumps({'schema_version':'validator-bound-inputs/1','inputs':records},sort_keys=True).encode()
     manifest_digest = hashlib.sha256(manifest_data).hexdigest()
     manifest_path = root/'operations/validator-inputs'/f'{manifest_digest}.json'
@@ -119,7 +120,8 @@ def prepare(root, params):
     inputs.append({'source':str(manifest_path),'destination':'validator_inputs.json','sha256':manifest_digest})
     environment = probe_binding(settings, selected, descriptor.get('requirements', {}))
     argv = ['validator.py', *[f'input_{i}' for i in range(len(refs))]]
-    command, guard_inputs = guarded_command(selected, argv, environment)
+    module_paths = descriptor.get('module_paths')
+    command, guard_inputs = guarded_command(selected, argv, environment, module_paths=module_paths)
     inputs.extend(guard_inputs)
     return {**params, 'platform': selected['environment'],
         'command': command,
@@ -127,6 +129,7 @@ def prepare(root, params):
         'inputs': inputs, 'outputs': [{'path': 'validator_result.json', 'required': True, 'min_bytes': 2}],
         'metadata': {**selected['submission'], 'execution_binding': selected, 'python_binding': selected['python'],
             'execution_environment': environment, 'execution_argv': argv,
+            **({'module_paths': module_paths} if module_paths is not None else {}),
             'configuration_sha256': binding_digest(selected),
             'resources_sha256': {row['destination']: row['sha256'] for row in inputs if not row['destination'].startswith('input_')},
             'validator': {'id': descriptor['id'], 'version': descriptor['version'],
@@ -158,7 +161,8 @@ def collect_validation(receipt, collected):
     result = next((a for a in collected.get('artifacts', [])
                    if a.get('provenance', {}).get('source_path', '').endswith('/validator_result.json')), None)
     if collected.get('status', {}).get('state') != 'succeeded' or not result:
-        return {**validator, 'verdict': 'blocked', 'reason': 'validator execution did not succeed'}
+        return {**validator, 'verdict': 'blocked', 'execution_status': 'failed',
+                'parsing': {'status': 'not_run'}, 'reason': 'validator execution did not succeed'}
     payload = Path(result['location']).read_bytes()
     digest = 'sha256:' + hashlib.sha256(payload).hexdigest()
     if digest != result['sha256']:
@@ -169,4 +173,10 @@ def collect_validation(receipt, collected):
     if 'bindings' in value and not isinstance(value['bindings'], dict):
         raise ValueError('validator_output_bindings_invalid')
     return {**validator, 'verdict': value['verdict'], 'output_sha256': digest,
-            **({k:value[k] for k in ('bindings','checks','scope') if k in value})}
+            'execution_status': 'succeeded',
+            'parsing': value.get('parsing', {'status': 'not_reported'}),
+            'provenance': {'status': 'verified', 'basis': 'staged_inputs_and_collected_output',
+                           'input_versions': validator['input_versions'],
+                           'input_result_versions': validator['input_result_versions'],
+                           'scope': 'Recorded execution source and bytes; not scientific identity or truth'},
+            **({k:value[k] for k in ('bindings','checks','scope','scientific_verdict') if k in value})}

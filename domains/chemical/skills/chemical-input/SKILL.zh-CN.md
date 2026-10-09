@@ -47,3 +47,9 @@ seed 不是优化结构、过渡态或连接关系证明；构象和分子间接
 - [structure_input.zh-CN.md](references/structure_input.zh-CN.md)：分子图、seed 和反应检查。
 
 - [reaction_mapping.zh-CN.md](references/reaction_mapping.zh-CN.md): 原子映射与反应图检查。
+
+## 对照目标与实际对象
+
+inspect 和 seed 输出版本化 `chemical-identity/1` 对象，包含规范异构 SMILES、电荷、RDKit 版本与内容身份。将检查后的目标登记为 Artifact，通过 Node 的 `subjects.target` 引用；product.xyz 文件名不证明结构身份。
+
+使用 `chemical.compare@1`，指定 `--input target=<inspect.json>`、`--input actual=<结构JSON或几何XYZ>`。Job 的具名输入角色记录两份文件摘要。XYZ 需要追加 `-- --actual-format xyz --charge <实际电荷>`；默认比较结构 JSON。收集 results/comparison.json，获得 match、mismatch 或 indeterminate，以及目标、实际结构和检查范围。XYZ 的键级明确标记为推断；未确定的立体化学不当作身份完全匹配。Result 用 check_refs 引用检查材料，并用 subjects 区分目标和实际对象；检查不决定能否保存结论或继续实验。

@@ -35,3 +35,5 @@ For the supported mapped DA path, use the registered `chemical.reaction_mapping`
 version `1`. Their ordered inputs, execution helpers and limited scientific scope
 are documented in [gaussian_path.md](../candidate-generation/references/gaussian_path.md).
 Use the `chemical.diels_alder_path@1` acceptance profile for that deliverable.
+
+Checks are scoped evidence, not a universal research gate. Distinguish tool execution failure, unreadable evidence and a completed check that did not satisfy its criterion. `parsing.status`, `scientific_verdict` (when supplied), and receipt `provenance` keep these separate. Job input/output digests establish recorded provenance; a solver title marker is an additional cross-check, not the sole provenance record. Unknown evidence does not prohibit a reasoned next experiment. Record the uncertainty and chosen method without claiming a pass.

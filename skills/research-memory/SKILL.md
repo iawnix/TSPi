@@ -62,3 +62,13 @@ For files use `files: [{name, purpose?, artifact_ref}]` referencing registered m
 Monitor events identify the Job and its research Node. Inspect or collect the execution, then record your interpretation here. No lifecycle repair prompt or mandatory disposition is needed to finish a turn.
 
 See [storage and recovery](references/storage.md), [public tools](../research-workflow/references/public_contract.md), and [中文说明](SKILL.zh-CN.md).
+
+## Subjects, checks and revisions
+
+Use `subjects` to name immutable Artifact or Result references, for example `{"target":"a1","calculated":"a2"}`. Nodes describe intended subjects; Results record the subjects actually interpreted. Roles are explicit labels, not proof of identity. Domain tools compare structures; Memory never parses molecular graphs or certifies scientific truth.
+
+Keep measured `observation`, authored `conclusion`, and exact `check_refs` separate. Checks may be failed or inconclusive; either may be cited in a Result. A check receipt records execution, parsing and scoped scientific checks separately.
+
+To revise the current synthesis and progress together, publish with `supersedes`, `as_assessment:true` and `progress`. This operation is atomic: a stale read saves neither the Result nor the progress. Plain publication without progress retains its existing save-even-if-assessment-conflicts behavior. Read `subjects` before replacing them.
+
+Result reads, current-assessment cards and generated Markdown expose review notices when the authored Node context changes or a cited Result is superseded. A report should be a Result with its files and exact input Results attached; those same notices apply to it. Notices request review, not retraction. Notes alone never rewrite progress. Historical Results and report bytes remain immutable.

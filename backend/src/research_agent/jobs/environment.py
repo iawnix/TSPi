@@ -155,7 +155,7 @@ def probe_binding(settings, selected, requirements):
             "observation": observation, "sha256": binding_digest(observation)}
 
 
-def guarded_command(selected, argv, snapshot):
+def guarded_command(selected, argv, snapshot, *, module_paths=None):
     """Build the command deterministically so Runtime can reject forged metadata."""
     observation = snapshot["observation"]
     script = "set -eu\n" + _activation(selected, observation["files"].get("activation"))
@@ -166,6 +166,14 @@ def guarded_command(selected, argv, snapshot):
         inputs = [{"source": str(PROBE_FILE), "destination": PROBE_DESTINATION, "sha256": digest}]
         script += 'research_agent_hash=$(sha256sum < ' + shlex.quote(PROBE_DESTINATION) + ')\n'
         script += '[ "${research_agent_hash%% *}" = ' + shlex.quote(digest) + ' ] || exit 125\n'
+        if module_paths is not None:
+            launcher = Path(__file__).with_name('python_entrypoint.py')
+            target = '.research-agent/python_entrypoint.py'
+            launcher_digest = hashlib.sha256(launcher.read_bytes()).hexdigest()
+            inputs.append({'source': str(launcher), 'destination': target, 'sha256': launcher_digest})
+            script += 'research_agent_hash=$(sha256sum < ' + shlex.quote(target) + ')\n'
+            script += '[ "${research_agent_hash%% *}" = ' + shlex.quote(launcher_digest) + ' ] || exit 125\n'
+            argv = [target, json.dumps(module_paths), *argv]
         command = python_command(selected["python"]) + [PROBE_DESTINATION,
             json.dumps(_python_request(selected, snapshot["requirements"]), sort_keys=True),
             json.dumps(observation["python"], sort_keys=True), "--", *argv]

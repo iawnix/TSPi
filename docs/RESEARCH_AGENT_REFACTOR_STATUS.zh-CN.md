@@ -4,6 +4,8 @@
 
 ## 已实施的边界
 
+研究对象、检查证据、统一受管 Python 入口与当前判断修订见[研究证据架构](RESEARCH_EVIDENCE_ARCHITECTURE.zh-CN.md)。Memory 保持通用，不将科学验证通过作为发布结论或继续研究的前提。
+
 - Pi SDK、Server、Durable 和原生终端保留；Node 适配集中到 `apps/agent/`，私有 Pi 源码入口集中在 `pi/source.mjs`。
 - Python 合并为 `backend/src/research_agent/`，分别管理 research、jobs、artifacts、application、foundation 和 bootstrap。
 - 产品 Skills 位于 `skills/`，领域 Skills 与科学声明位于 `domains/chemical/`。Pi 负责 Skill 加载，Python 独立解析科学执行目录。

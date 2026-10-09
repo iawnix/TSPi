@@ -56,6 +56,7 @@ def _destination(value, destinations, *, reserved=_RESERVED):
 def _executor(root, entry):
     validate_requirements(entry.get('requirements', {}), entry['runtime'])
     resources = entry['resources']
+    _module_paths(entry, resources)
     destinations = set()
     for relative, expected in resources.items():
         _destination(relative, destinations)
@@ -86,6 +87,7 @@ def _executor(root, entry):
 def _validator(root, entry):
     validate_requirements(entry.get('requirements', {}), 'python')
     _verify(root, entry['entry'], entry['sha256'])
+    _module_paths(entry, entry.get('resources', {}))
     destinations = set()
     reserved = _RESERVED | {'validator.py', 'validator_inputs.json', 'validator_result.json'}
     for destination, resource in entry.get('resources', {}).items():
@@ -96,6 +98,16 @@ def _validator(root, entry):
     roles = entry.get('input_contract', {}).get('roles', [])
     if len({role['name'] for role in roles}) != len(roles):
         raise ValueError('validator_input_role_duplicate')
+
+
+def _module_paths(entry, resources):
+    paths = entry.get('module_paths', [])
+    if len(set(paths)) != len(paths) or paths and entry.get('runtime', 'python') != 'python':
+        raise ValueError('execution_module_paths_invalid')
+    for value in paths:
+        path = _relative(value)
+        if not any(path in PurePosixPath(resource).parents for resource in resources):
+            raise ValueError('execution_module_path_unstaged')
 
 
 def installed_catalogs(package_root=None):

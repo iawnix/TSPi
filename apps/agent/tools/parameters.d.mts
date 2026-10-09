@@ -31,6 +31,7 @@ export interface ToolParameters {
       "target": string;
       "reason"?: string;
     }>;
+    "subjects"?: Record<string, string>;
   };
   update: {
     "root"?: string;
@@ -47,6 +48,7 @@ export interface ToolParameters {
     }>;
     "remove_relations"?: Array<string>;
     "assessment_ref"?: string;
+    "subjects"?: Record<string, string>;
   };
   result: {
     "root"?: string;
@@ -64,6 +66,9 @@ export interface ToolParameters {
     }>;
     "supersedes"?: string;
     "as_assessment"?: boolean;
+    "subjects"?: Record<string, string>;
+    "check_refs"?: Array<string>;
+    "progress"?: string;
   };
   jobStart: {
     "node_id": string;

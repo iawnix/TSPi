@@ -12,7 +12,7 @@ from pathlib import Path
 def identity(pid: int) -> dict | None:
     try:
         raw = Path(f'/proc/{pid}/stat').read_text()
-    except FileNotFoundError:
+    except (FileNotFoundError, ProcessLookupError):
         return None
     fields = raw[raw.rindex(')') + 2:].split()
     return {'pid':pid, 'ppid':int(fields[1]), 'start':fields[19], 'state':fields[0]}

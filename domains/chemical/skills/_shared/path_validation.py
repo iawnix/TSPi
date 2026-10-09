@@ -20,7 +20,10 @@ def bindings(spec, manifest):
 def output(checks, binding, scope):
     verdicts=[v['verdict'] for v in checks.values()]
     verdict='fail' if 'fail' in verdicts else 'inconclusive' if any(v!='pass' for v in verdicts) else 'pass'
-    return {'schema_version':'validator-output/1','verdict':verdict,'checks':checks,'bindings':binding,'scope':scope}
+    scientific = [v['verdict'] for k, v in checks.items() if not k.endswith('specification_binding')]
+    return {'schema_version':'validator-output/1','verdict':verdict,'checks':checks,'bindings':binding,'scope':scope,
+            'parsing': {'status': 'completed'},
+            'scientific_verdict': 'fail' if 'fail' in scientific else 'inconclusive' if any(v != 'pass' for v in scientific) else 'pass'}
 
 
 def record(value, details=None, missing=False):
@@ -34,6 +37,32 @@ def specification(path, manifest):
     spec=json.loads(raw); checked,sides=path_spec(spec)
     spec['_bound_spec_sha256']=hashlib.sha256(raw).hexdigest()
     return spec,checked,sides
+
+
+def specification_markers(text):
+    """Read only title lines starting with a known marker, including Gaussian wrapping.
+
+    Never compact the whole log: a truncated digest must not consume unrelated text.
+    Older marker names remain readable in historical scientific evidence.
+    """
+    lines = text.splitlines()
+    markers, malformed = [], False
+    for index, line in enumerate(lines):
+        match = re.match(r'^\s*(?:ResearchAgentSpec|TSPiSpec)\s+([0-9a-f]+)(.*)$', line)
+        if not match:
+            if re.match(r'^\s*(?:ResearchAgentSpec|TSPiSpec)\b', line):
+                malformed = True
+            continue
+        value, tail = match.groups()
+        if len(value) < 64 and not tail.strip() and index + 1 < len(lines):
+            continuation = re.match(r'^\s+([0-9a-f]+)(?=\s|$)', lines[index + 1])
+            if continuation and len(value) + len(continuation[1]) == 64:
+                value += continuation[1]
+        if len(value) == 64 and (not tail or tail[0].isspace()):
+            markers.append(value)
+        else:
+            malformed = True
+    return markers, malformed
 
 
 def log_checks(path, spec, atoms):
@@ -50,8 +79,13 @@ def log_checks(path, spec, atoms):
     memory=re.findall(r'%mem\s*=\s*(\d+)\s*(MB|GB)',text,re.I)
     expected_elements=[a.GetSymbol() for a in atoms.GetAtoms()]
     found=[a[0] for a in parsed['atoms']]
-    markers=re.findall(r'ResearchAgentSpec\s+([0-9a-f]{64})',text)
-    checks={'specification_binding':record(bool(markers) and all(m==spec.get('_bound_spec_sha256') for m in markers),missing=not markers),
+    markers, malformed = specification_markers(text)
+    mismatch = any(m != spec.get('_bound_spec_sha256') for m in markers)
+    marker_check = record(bool(markers) and not malformed and not mismatch,
+                          {'status': 'mismatch' if mismatch else 'unreadable' if malformed else 'matched' if markers else 'missing',
+                           'scope': 'Output title cross-check; execution provenance is recorded separately'},
+                          missing=not mismatch and (not markers or malformed))
+    checks={'specification_binding':marker_check,
             'normal_termination':record(summary['normal_termination'] and not summary['error_termination']),
             'method_basis':record(method),
             'processor_binding':record(bool(processors) and all(int(n)==spec['threads'] for n in processors),missing=not processors),
@@ -123,11 +157,13 @@ def aligned_rmsd(a,b):
     return float(np.sqrt(np.mean(np.sum((x@u@fix@vt-y)**2,axis=1))))
 
 
-def validate(kind, paths, manifest):
+def _validate(kind, paths, manifest):
     try:
         spec,checked,sides=specification(paths[0],manifest)
     except (ValueError, KeyError) as exc:
-        return {'schema_version':'validator-output/1','verdict':'fail','checks':{'specification':record(False,str(exc))},'scope':'declared input specification'}
+        return {'schema_version':'validator-output/1','verdict':'fail','checks':{'specification':record(False,str(exc))},
+                'parsing': {'status': 'failed' if isinstance(exc, json.JSONDecodeError) else 'completed'},
+                'scientific_verdict': 'not_assessed', 'scope':'declared input specification'}
     binding=bindings(spec,manifest)
     if kind=='mapping':
         names=('molecular_graphs','element_charge_balance','map_identity','atom_hydrogen_changes','declared_transformation')
@@ -156,6 +192,16 @@ def validate(kind, paths, manifest):
             checks[direction+'_path_complete']=record(False,str(exc),missing=True);assignments.append(None)
     checks['opposite_endpoint_basins']=record(sorted(x for x in assignments if x is not None)==[0,1],{'assignments':assignments})
     return output(checks,binding,'bidirectional completed IRC from the supplied saddle to declared mapped connectivity; excludes bond-order determination and exhaustive pathways')
+
+
+def validate(kind, paths, manifest):
+    try:
+        return _validate(kind, paths, manifest)
+    except (ValueError, KeyError, IndexError, TypeError, OSError) as exc:
+        return {'schema_version': 'validator-output/1', 'verdict': 'inconclusive',
+                'scientific_verdict': 'not_assessed', 'checks': {},
+                'parsing': {'status': 'failed', 'exception_type': type(exc).__name__, 'reason': str(exc)},
+                'scope': 'Input could not be interpreted; no scientific conclusion is established'}
 
 
 def main(kind, paths):

@@ -52,7 +52,7 @@ Prepare a TS request with the existing method-selection helper:
 Submit the returned `request_file` and `request_sha256` through `job_start`.
 Collect the terminal Job. A successful runner is not a scientific verdict:
 validate the raw collected `gaussian.out` with the registered saddle validator.
-After its checks pass, prepare IRC inputs from that Job's collected `ts.chk`:
+Inspect the checks and their scope before choosing the next experiment. A parser failure is not a scientific rejection and does not prohibit further exploration. Record missing evidence and your rationale; do not describe unresolved checks as passed. When IRC is the chosen next step, prepare inputs from that Job's collected `ts.chk`:
 
 ```text
 "$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.path-irc --version 1 --input spec=<branch>/spec.json --input checkpoint=<collected-ts.chk> --input-artifact <spec-ref> --input-artifact <checkpoint-ref> --output <workspace>/irc-request.json

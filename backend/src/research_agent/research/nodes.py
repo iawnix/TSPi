@@ -65,18 +65,20 @@ def create(root, request):
     if any(not ref.startswith('user_') for ref in source_refs):
         raise ValueError('source_refs_require_user_messages')
     input_refs = validate_refs(root, request.get('input_refs', []), request.get('_reference_details'))
+    from .context import subjects
+    subject_refs = subjects(root, request.get('subjects', {}), request.get('_reference_details', {}))
     node = dict(schema_version='research-node/1', id='node_' + uuid.uuid4().hex,
                 workspace_id=read_json(root / 'workspace_manifest.json')['workspace_id'],
                 title=title, goal=goal, proposal=text(request.get('proposal'), 'proposal'),
                 plan=text(request.get('plan'), 'plan'), progress='', status='open', assessment_ref=None,
-                source_refs=source_refs, input_refs=input_refs, revision=1, created_at=now(), updated_at=now(),
+                source_refs=source_refs, input_refs=input_refs, subjects=subject_refs, revision=1, created_at=now(), updated_at=now(),
                 author={'session_id': request.get('session_id')})
     save(root, node)
     log = append_record(root, origin='agent', kind='node_created', title=title, content=goal,
                         references=source_refs + input_refs, node_id=node['id'], node_revision=1,
                         data={'node': node}, identity=['create', node['id']])
     relations.change(root, node['id'], request.get('relations', []), author=node['author'])
-    for ref in input_refs:
+    for ref in dict.fromkeys(input_refs + list(subject_refs.values())):
         relations.cite(root, node['id'], ref, basis_ref=log['ref'])
     (root / 'research/nodes' / node['id'] / 'work').mkdir(parents=True, exist_ok=True)
     return response(root, node, request, ref=log['ref'])
@@ -91,8 +93,11 @@ def update(root, request):
     if request.get('add_relations') or request.get('remove_relations'):
         changed.add('relations')
     basis.check(root, node, request, changed)
-    for key in changed - {'relations', 'status', 'assessment_ref'}:
+    for key in changed - {'relations', 'status', 'assessment_ref', 'subjects'}:
         node[key] = text(request[key], key, required=key in {'goal', 'title'})
+    if 'subjects' in changed:
+        from .context import subjects
+        node['subjects'] = subjects(root, request['subjects'], request.get('_reference_details', {}))
     if 'status' in changed:
         if request['status'] not in {'open', 'paused', 'closed'}:
             raise ValueError('node_status_invalid')
