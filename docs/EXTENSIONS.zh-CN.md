@@ -1,47 +1,65 @@
-# 已安装扩展合同
+# Skill 与科学执行目录
 
-这里的 `extensions/` 指可安装的能力扩展。包内核心 server tool 装配位于
-`apps/app-server/server-tools/`，不属于外置扩展发现流程。
+[English](EXTENSIONS.md) | [简体中文](EXTENSIONS.zh-CN.md)
 
-ResearchAgent 将 Agent、Research Memory 与具体计算软件解耦。已安装扩展是带有
-`manifest.json` 的目录；App Server 从 `RESEARCH_AGENT_EXTENSION_MANIFESTS`（按系统路径
-分隔符分割）、Host 显式配置，或包内所有 `extensions/*/manifest.json` 中发现
-这些 manifest。
+项目将方法指导、便捷执行入口和实际计算环境分别维护。Agent 可以根据研究问题编写输入与脚本，
+通过通用 Job 执行；内置入口不构成能力白名单，也不规定研究步骤。
 
-manifest 格式为 `research-agent-extension/1`，机器可验证的 JSON Schema 位于
-`contracts/research-agent-extension/1/extension-manifest.schema.json`：
+## Skill 发现与语言
 
-```json
-{
-  "schema_version": "research-agent-extension/1",
-  "name": "amber-tools",
-  "version": "1.2.0",
-  "skills": [{"name": "amber", "path": "skills/amber"}],
-  "server": {
-    "entry": "server/index.mjs",
-    "sha256": "sha256:<64 位十六进制字符>",
-    "tools": ["amber_run"],
-    "permissions": ["workspace.read"]
-  }
-}
+根 `package.json` 的 `pi.skills` 声明 `skills/` 和 `domains/chemical/skills/`。
+`apps/agent/resources/skills.mjs` 校验发布资源后调用 Pi 的 `loadSkills`，并关闭默认目录发现。
+Pi 从 Skill 目录的 `SKILL.md` 发现技能；当前这些入口使用英文。
+名称、描述和文件位置用于技能选择，正文由 Agent 按需读取，参考资料继续按需展开。
+
+`SKILL.zh-CN.md` 是供阅读和维护的中文对照，不会因用户使用中文或系统 locale 为中文就替换英文入口，
+也不会作为第二个独立 Skill 自动加载。Agent 可以在需要时显式读取中文文件；回复和报告语言遵循用户要求。
+中英文须同步维护；仅修复中文不能修复默认加载的英文指导。完整入口见 [Skill 目录](../skills/README.zh-CN.md)。
+
+
+## 系统提示词
+
+`apps/agent/pi/setup.mjs` 将工作目录、`prompts/research-agent.md` 和已发现的 Skill 描述组装为系统提示词。
+`prompts/research-agent.zh-CN.md` 是中文维护对照，不会同时注入，也不会随会话语言自动切换。
+`/sys-prompt` 可以检查当前 worker 的实际提示词及来源。
+
+系统提示词保留跨任务通用的决策规则：指令优先级、研究对象、执行归属、授权与预算、证据标准、
+结果纠正和沟通。具体科学方法与完整工具示例留在按需读取的 Skill 中。
+工作区 AGENTS.md 由提示词要求 Agent 主动读取，不在上述组装步骤中自动拼接。
+每次模型请求前另外注入有限的研究快照；它提供当前记录，不赋予新指令或行动授权。
+
+资源摘要检查能验证加载字节，确定性测试能验证注入与记录行为；这些检查不能证明模型会遵循所有准则，
+也不能替代实际费用限制或执行权限控制。
+
+## execution.json 的作用
+
+根 `package.json` 的 `researchAgent.execution` 指向 `domains/chemical/execution.json`。
+Python 的 `backend/src/research_agent/application/execution_catalog.py` 独立读取与验证它。
+该文件声明：
+
+- `executors`：便捷执行入口的 ID/版本、脚本、参数模板、输入角色、输出文件、依赖和资源摘要。
+- `validators`：针对具体证据的检查脚本及输入契约。
+- `acceptance_profiles`：特定交付物的检查清单；适用范围由具体 profile 决定。
+
+它不加载 Skill，不编排 workflow，也不把 Agent 限制在这些脚本内。
+选择 `--executor` 或 `validator_id` 时必须使用已登记 ID 和版本；这是所选便捷入口的契约。
+对目录外的方法，可以直接通过 `job_start` 提交明确的 command、inputs、outputs 和 platform，
+或使用准备器的 `--script <file.py> --backend <binding>`。无需为每个新任务修改此 JSON。
+实际程序、Python、激活脚本和计算资源由安装级 `etc/job.toml` 的环境绑定配置。
+
+完整的准备、提交、收集与恢复过程见[科学计算指南](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。
+
+## 维护
+
+`config/resources.json` 保存随包 Skill、参考资料、脚本和提示词的资源摘要；执行目录另行固定其脚本依赖。
+修改资源后运行：
+
+```bash
+python3 scripts/update_resources.py
+python3 scripts/update_resources.py --check
+python3 tools/lint_skills.py
 ```
 
-Skill 路径必须包含普通文件 `SKILL.md`。扩展中的 provider entry 只是可选 server 集成的旧元数据；科学 Skill 不需要 provider descriptor。App Server loader 只建立扩展清单。科学 preflight 检查选定的 Job Runtime 环境；Skill 负责输入构造、命令 argv、解析和验证。科学命令通过 `job_start` 提交，它是本地与远端共用的执行边界。
-
-现有 `apps/agent/tools/legacy-extensions.json` 合同保持不变：server 工具仍要求包内
-manifest、allowlist 选择和逐 entry 摘要。已安装 manifest 增加 Skill、provider
-元数据和显式 allowlist 的 server 工具，但不改变 Agent 核心、Harness 生命周期或
-内置 server 工具。
-
-`RESEARCH_AGENT_EXTENSION_MANIFESTS` 未设置或为空是合法配置，此时只使用包内 Skill 和能力。
-重复的 extension、provider 或 Skill 名称，路径穿越、符号链接、错误元数据及摘要
-不匹配都会在 session 启动前失败。
-
-可选的 `server` entry 只有在扩展名称进入 Host allowlist
-`RESEARCH_AGENT_INSTALLED_SERVER_EXTENSIONS` 后才会执行。其模块必须导出
-`createServerExtension()`，返回的 Harness 工具必须与声明的名称、参数 schema
-和生命周期 metadata 完全一致。entry 摘要会在发现阶段以及导入前再次校验；
-Agent 不能选择 import 路径或绕过 allowlist。
-
-
-包内当前只有 core-tools，提供 Research Memory、通用 Job Runtime 和 Artifact 工具。chemical 与 email 通过包含脚本的 Skill 提供能力，不加载 chemical-tools 或原生通知入口。providers 是可选的历史元数据。可执行 Skill 的 resources_sha256 绑定 resources.json；其中路径相对扩展根，loader 校验索引及脚本/辅助模块摘要。修改后运行 scripts/update_skill_resources.py 更新摘要。
+新增 Skill 放入已声明根目录，并提供中英文入口及对应参考资料。
+仅在新增可复用的便捷执行入口时更新执行目录。核心工具装配属于 `apps/agent/`，
+不使用旧的 extension manifest、动态 server allowlist 或 provider 注册流程。

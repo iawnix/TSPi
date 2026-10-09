@@ -2,17 +2,30 @@
 
 [English](SCIENTIFIC_CAPABILITIES_OPERATIONS.md)
 
-扩展 manifest 声明执行方法和验证器；Skill 说明方法选择、科学限制和解释。Research Memory 记录原始要求、研究问题与结果，新增执行入口不需要添加方法专用研究字段。
+`domains/chemical/execution.json` 声明随包的便捷执行入口和验证器；Skill 说明方法选择、科学限制和解释。Research Memory 记录原始要求、研究问题与结果，新增执行入口不需要添加方法专用研究字段。
+
+这些入口不是 workflow 或能力白名单。Agent 可以准备原生命令或任务脚本，使用通用 Job 执行，
+无需为每项计算登记新入口。目录字段与加载机制见 [Skill 与科学执行目录](EXTENSIONS.zh-CN.md)。
 
 ## 准备与执行
 
 用 `"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --list` 查看已安装入口，选择 id/version 和安装目录 `etc/job.toml` 中的命名环境。声明提供后端键、固定脚本、纯 CLI 解析器、输入角色和输出。原生入口无需 Python 绑定；Python 入口使用目标环境配置的解释器。
 
-准备命令写入请求并返回 `request_file` 与 `request_sha256`，连同 `node_id` 提交到 `job_start`。Runtime 检查文件和输入，固定 Node 归属、当时方案版本、`prepared_ref` 与提交意图。准备本身不派发 Job，也不证明科学结果。
+准备命令写入请求并返回 `request_file` 与 `request_sha256`，提交到 `job_start`；关联研究问题时提供 `node_id`。Runtime 检查文件和输入，固定所选 Node 归属与内容版本、`prepared_ref` 与提交意图。准备本身不派发 Job，也不证明科学结果。
 
 任务临时 Python 方法用 `--script <文件.py> --backend <绑定>` 替代 executor/version，声明暂存依赖和收集输出。已登记证据通过 `--input-artifact <id或引用>` 传入，Runtime 核验实际暂存字节并保留来源。
 
 丢失响应时复用原请求身份，通过 `job_status`、`job_reconcile` 和 `job_collect` 恢复；超时或客户端断连不代表允许重投。明确重复计算需要新身份和前驱、原因、预算声明。
+
+## 平台检查
+
+在会话中使用 `job_probe` 检查已配置平台的可达性与执行条件。维护者可在安装的控制环境中核验软件绑定：
+
+```bash
+"$RESEARCH_AGENT_PYTHON" -m research_agent.application.environment_check --config "$RESEARCH_AGENT_JOB_CONFIG"
+```
+
+该命令检查已配置环境，可能连接配置中的 SSH 目标。`job_probe` 的平台观察与具体软件依赖核验是不同检查。
 
 ## 环境与进程归属
 
@@ -37,6 +50,11 @@ job.toml 所选后端提供程序、Python 绑定、激活脚本及资源默认�
 Job 文件位于 `runs/jobs/<job_id>`。收集把声明文件登记为生产 Job 的 Artifact；显式 recursive 输出目录中的文件逐个保留来源。Agent 结合领域方法解释证据，在对应 Node 中记事并按需发布 Result。退出码为零或报告已生成不足以证明科学成功。
 
 随包执行入口覆盖 CF22D、xTB、Gaussian 输入、结构与图检查、映射 DA 候选、IRC 输入准备及 CF22D 就绪检查。Gaussian 显式输入入口也执行所支持的 TS/Freq/IRC 路由。CREST/QBICS 指导和 NEB 讨论不表示存在随包 runner；可使用已验证的安装程序或明确绑定的任务脚本，并说明实际覆盖范围。
+
+xTB 的便捷封装接受 `sp/opt/opt-sp`；频率、扫描和动力学使用原生命令与通用 Job，
+详见 [xTB Skill](../domains/chemical/skills/xtb/SKILL.zh-CN.md)。专用反应路径检查不适用于所有反应，
+通用判据见[过渡态验证](../domains/chemical/skills/validation/SKILL.zh-CN.md)。
+报告整理包含分子图、数据表和能量曲线，做法与证据要求见[报告 Skill](../domains/chemical/skills/report/SKILL.zh-CN.md)。
 
 ## 验证
 

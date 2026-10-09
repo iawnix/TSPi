@@ -60,17 +60,19 @@ Job Runtime 拥有执行回执，Artifact Store 拥有文件和来源。Monitor 
 科学命令构造器和解析器位于 `domains/chemical/skills/<skill>/scripts/`，共享 helper
 位于 `domains/chemical/skills/_shared/`。`backend/src/research_agent/jobs/` 负责通用本地和远端执行，
 `backend/src/research_agent/application/` 记录 Job 事实并将收集产物登记到 Artifact Store；公开命令字段由
-`backend/src/research_agent/application/command_catalog.json` 定义。每个 Artifact 必须有
+`contracts/commands/` 定义，生成的 Python 与 Node 目录在构建时核验。每个 Artifact 必须有
 内容摘要和经过核实的位置。记录 scheduler、Job 身份、命令及收集结果时必须保留先前证据。
 
-独立分析由 Skill 脚本通过通用 Job 执行。注册验证器和验收 profile 在 extension manifest
+独立分析由 Skill 脚本通过通用 Job 执行。注册验证器和验收 profile 在 `domains/chemical/execution.json`
 中声明，`backend/src/research_agent/application/validators.py` 验证并暂存声明的验证器和输入。
-扩展 manifest 合同位于 `contracts/research-agent-extension/1/`。核心与领域 Skill 共用清单加载器，入口、参考资料及脚本
-由 `scripts/update_skill_resources.py` 固定摘要。新增算法必须声明有界输入、适用条件、反例、
-可重放候选，并在确定性输出语义变化时提升版本。不要加入科学 successor routing。
+Python 独立核验执行目录；Pi 按 `package.json.pi.skills` 发现产品与领域 Skill。
+修改资源后使用 `scripts/update_resources.py` 更新摘要，再用 `--check` 检查。
+默认发现英文 `SKILL.md`，中文入口为对照资料，须同步维护；详见 [Skill 与执行目录](EXTENSIONS.zh-CN.md)。
+新增算法必须声明适用条件、反例、可重放候选，并在确定性输出语义变化时提升版本。
+不要加入科学 successor routing。
 
 Job 状态与恢复由执行运行时管理；派发意图、执行观察和收集证据必须遵守
-工作区事务边界，同时保持查看、收集和取消能力。应测试 Harness client、server extension 合同、Monitor
+工作区事务边界，同时保持查看、收集和取消能力。应测试 Harness client、Pi 资源与科学执行合同、Monitor
 重试与回执、wheel 安装、研究快照和检索的 Web 展示 和源码篡改拒绝。当前证据以稳定的运维文档、
 源码测试和组件测试为准，旧验收报告仅放 docs/archive，不作为当前完成证据。
 

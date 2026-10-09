@@ -15,11 +15,18 @@ imaginary mode that represents the proposed elementary step. Numerical noise,
 constraints, flat modes, and competing imaginary modes must remain visible.
 Inspect the displacement vectors rather than relying on frequency count alone.
 
-For the declared DA path, `chemical.gaussian_saddle` checks the raw collected log
-against a registered path spec, including method/resources, convergence, complete
-frequencies and simultaneous forming-bond motion. See the [executable path](../../candidate-generation/references/gaussian_path.md).
-Its normalized displacement threshold is a limited mode check, not proof of an entire mechanism.
-The older `chemical.gaussian_frequency` checks only normal termination and one negative frequency.
+Define relevant displacement from the current hypothesis: bond formation, bond
+cleavage, proton transfer, rearrangement, or another reaction coordinate. Do not
+prescribe two forming bonds or one concerted motion pattern for every reaction.
+Compare geometries displaced in both signs of the mode and changes in relevant
+internal coordinates; the overall sign of an eigenvector has no physical meaning.
+
+Check a helper's scope before selecting it. `chemical.gaussian_frequency@1`
+checks only normal termination and one negative frequency and cannot certify a
+transition state. The [specialized path validators](../../candidate-generation/references/gaussian_path.md)
+have additional topology and input constraints and apply only to the systems
+specified there. For other systems, use primary outputs and analysis scripts
+suited to the actual reaction; no specialized acceptance profile is required.
 
 Validate element count, atom mapping, charge, multiplicity, electronic state,
 key distances and dihedrals, stereochemistry, and the absence of unintended

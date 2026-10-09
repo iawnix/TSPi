@@ -8,4 +8,4 @@ Collection registers materials with producing Job and input provenance. Research
 
 Monitor next_run owns durable event delivery to the original session, independently of Memory sequence. Host/Pi owns admission and input consumption. No research checkpoint is required at turn end; Memory changes neither grant tool access nor initiate model turns.
 
-Email uses its own preparation, send identity, receipt and uncertain-outcome recovery. A failed research projection cannot cause another send. Extension manifests pin executable resources; validators run as ordinary Jobs and do not impose generic scientific lifecycle transitions.
+Email uses its own preparation, send identity, receipt and uncertain-outcome recovery. A failed research projection cannot cause another send. Execution catalogs pin executable resources; validators run as ordinary Jobs and do not impose generic scientific lifecycle transitions.

@@ -30,10 +30,11 @@ alignment, and stereochemical comparisons.
 
 Registered validator: `job_start` with `validator_id="chemical.gaussian_frequency"`, a new `request_id`, and `input_artifact_ids=[<collected parsed.json artifact>]`. Its version is `1`. The runtime records actual execution and input digests. This checks normal termination and exactly one negative frequency only; mode character, geometry and IRC connectivity still require separate criteria.
 
-For the supported mapped DA path, use the registered `chemical.reaction_mapping`,
-`chemical.gaussian_saddle`, and `chemical.gaussian_irc_connectivity` validators,
-version `1`. Their ordered inputs, execution helpers and limited scientific scope
-are documented in [gaussian_path.md](../candidate-generation/references/gaussian_path.md).
-Use the `chemical.diels_alder_path@1` acceptance profile for that deliverable.
+Define forming/breaking bonds, atom transfers, or other coordinates from the
+actual reaction hypothesis. Analyze collected primary outputs with suitable
+scripts through generic Jobs; reaction-specific validator registration is not
+required. Before selecting the bundled [specialized path validators](../candidate-generation/references/gaussian_path.md),
+check their topology and input scope. Their criteria are not a universal
+definition of a transition state.
 
 Checks are scoped evidence, not a universal research gate. Distinguish tool execution failure, unreadable evidence and a completed check that did not satisfy its criterion. `parsing.status`, `scientific_verdict` (when supplied), and receipt `provenance` keep these separate. Job input/output digests establish recorded provenance; a solver title marker is an additional cross-check, not the sole provenance record. Unknown evidence does not prohibit a reasoned next experiment. Record the uncertainty and chosen method without claiming a pass.

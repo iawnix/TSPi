@@ -28,9 +28,9 @@ path direction alone.
 
 Combine stationary, mode, forward/reverse path and structure-comparison evidence
 in an assessment. Bind each extracted endpoint to the expected Artifact explicitly.
-For the declared DA path, use `chemical.gaussian_irc_connectivity` with the spec,
-saddle log and both directional logs; [the executable path](../../candidate-generation/references/gaussian_path.md) documents
-its origin, completion and endpoint checks. Missing checks remain unresolved;
-this is not a general mechanism-audit executor.
+Choose endpoint comparisons for the current research question.
+The [specialized path checks](../../candidate-generation/references/gaussian_path.md)
+cover only their declared systems; analyze other reactions using their actual
+atom mapping, bond changes, and transfers. Missing checks remain unresolved.
 
 Record the observations, scientific criteria, unresolved questions and next steps with research_update using the existing node_id and a note. Publish a reusable conclusion with research_result, citing collected materials and stating limitations. A completed computation does not establish a scientific conclusion.

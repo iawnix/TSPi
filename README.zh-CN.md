@@ -2,140 +2,89 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-ResearchAgent 是基于 Pi 的、领域无关的科学 Research Harness，用于运行有边界的研究流程。
-当前随附的 Skill 主要面向计算化学，包括过渡态搜索和反应路径分析。研究状态、证据、
-计算结果和报告都保存在同一个工作区。
+ResearchAgent 是一个 AI 科研助手：帮助你制定研究方案、运行计算、分析结果，并整理成可追溯的研究报告。
+目前主要提供计算化学技能，涵盖分子结构、过渡态搜索、反应路径分析和能量比较。
+研究记录与计算结果保存在工作区中，可以随时继续研究。
 
-本仓库目前处于积极开发的预发布阶段。受支持的运行时只有 Native Pi Harness；已经退役的
-ordinary-Pi 兼容运行时不会被打包或选择。当前化学 Skill 包使用领域无关的研究笔记、Job 执行和 Artifact 存储。
-原始任务、研究动作与研究结果分别记录，Agent 通过快照和检索恢复进度。
+## 可以做什么
+
+- 根据研究问题选择方法、准备输入，在本机或配置好的远程计算平台运行任务。
+- 分析结构、频率和反应路径，记录结论、依据与尚未解决的问题。
+- 整理包含分子图、数据表和能量曲线的报告；具体内容取决于已有计算证据。
+- 在终端中交互，通过 TS Phone 连接同一工作区，或用可选的 TS Web 浏览研究记录。
+
+项目仍在积极开发。计算需要相应的科学软件及环境配置，详见[科学计算指南](docs/SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。
 
 ## 安装
 
-准备 Git、Python 3.11+、Node.js 22.19+、Conda/Mamba 以及 Pi 凭据。只有使用
-私有 SSH 仓库或远程计算时才需要 OpenSSH。然后运行交互式安装器：
+准备 Git、Python 3.11+、Node.js 22.19+、Conda/Mamba 和模型访问凭据，然后运行：
 
 ```bash
 git clone https://github.com/iawnix/TSPi.git
-cd ResearchAgent
+cd TSPi
 ./install.sh
 ```
 
-需要非交互、可复现安装时，可以编辑 `install-configured.sh` 顶部的配置变量，或使用对应的
-`RESEARCH_AGENT_*` 环境变量覆盖，然后运行：
+需要非交互安装时，编辑 `install-configured.sh` 中的配置并执行：
 
 ```bash
 ./install-configured.sh
 ```
 
-需要固定源码版本时，将 `RESEARCH_AGENT_INSTALL_REF` 设置为完整的 commit SHA。该脚本会把 compute、
-name resolver、workspace、服务、Web、Phone 和通知配置统一传给同一个安装器。
+安装、模型配置、远程计算、手机连接和服务管理见[安装与运维](docs/INSTALLATION.zh-CN.md)。
 
-同一次非交互安装默认会部署 Link Relay：默认 URL 是
-`https://tsphone.iawnix.xyz`，安装器会创建 Relay 服务、生成一次性 Host enrollment
-code，并自动完成 Host 注册。Relay 必须部署在另一台机器时，设置
-`RESEARCH_AGENT_WITH_LINK_RELAY=false` 并提供已有 code，或单独使用 `install-link-relay.sh`。
+## 开始研究
 
-核心安装包含 Agent 和最小控制运行时；科学计算、验证和渲染使用单独配置的 Job 环境。
-TS Web 是可选组件。安装器配置
-整个安装目录共用的 ResearchAgent Host；不再安装 TS Phone 守护进程。
-
-安装器还会询问是否安装可选的 ResearchAgent 模型图标字体。交互安装默认安装；非交互安装
-默认不写入用户字体目录，可显式传入 `--with-model-icons`，或用
-`--without-model-icons` 禁用。字体安装在 `$XDG_DATA_HOME/fonts/research-agent`（未设置时为
-`$HOME/.local/share/fonts/research-agent`），未安装时仍使用 Nerd Font/Unicode 回退；设置
-`RESEARCH_AGENT_ICON_STYLE=unicode` 或 `RESEARCH_AGENT_ICON_STYLE=nerd` 可以覆盖自动选择。
-模型字形使用补充私用区，不会被终端主 Nerd Font 中已有的图标码位遮蔽。
-安装器会在可用时刷新 fontconfig 缓存；已经打开的终端可能需要重启后才能加载回退字体。
-
-详见[安装与运维](docs/INSTALLATION.zh-CN.md)（英文版：[Installation and Operations](docs/INSTALLATION.md)），
-其中包含依赖、运行时、升级、回滚和恢复说明；
-模型与 provider 边界见[模型兼容性](docs/MODEL_COMPATIBILITY.zh-CN.md)。
-
-完整文档导航见[文档索引](docs/README.zh-CN.md)。公开 Skill 入口和按需 references 见
-[Skill 目录](skills/README.zh-CN.md)。
-
-## Host 与终端
-
-整个安装目录运行一个 ResearchAgent Host，负责认证路由、幂等回执、会话发现和 Monitor 管理。
-每个 workspace 由一个固定版本 Pi `SessionWorker`/`durable Harness` lane 拥有。lane
-拥有 agent loop、模型、工具、transcript 和 Root lock；终端、Phone、Monitor 都是同一
-lane 的客户端。直接打开工作区即可：
+打开一个工作区：
 
 ```bash
-./research-agent --workspace reaction-a
-./research-agent --workspace reaction-a -c
-./research-agent --workspace quick-task --mode light
-./research-agent --workspace reaction-study --mode research
+./research-agent --workspace reaction-study
 ```
 
-Research Memory 保存原始要求、持续研究的问题 Node、不可变 Result 和显式关系。计算与材料由 Job Runtime 和 Artifact Store 独立管理，笔记不参与工具准入。
-
-第一条命令创建 Harness 会话，第二条命令继续该工作区最近的可写会话。ResearchAgent 先向 Host
-取得本地 Pi connection descriptor，再启动 Pi 官方 native remote client/TUI。默认路径不
-使用 tmux、PTY scraping，也不会创建第二个 agent loop。Host 不可用时会明确报错；旧的独立
-Pi 运行时已经移除，Native Pi Harness 是唯一受支持的后端。
-安装器默认创建、启用并启动 user-scoped Host；使用
-`systemctl --user stop|restart|status ts-app-server-research-agent.service` 管理 Host 生命周期。
-Host 是终端、Phone 和 Monitor 的必需依赖；`--service-scope none` 仅用于底层包暂存或测试，
-该模式下普通 workspace 入口不可用。`--host` 只是服务内部入口，不用于日常启动。
-
-TS Phone Flutter 应用通过 ResearchAgent Link 连接同一个 Host 和 Pi Harness lane。Phone 和 Host 分别向
-ResearchAgent Link Relay 建立出站 WSS；Relay 只负责设备授权与不透明字节转发，不管理会话或研究状态。
-参阅 [ResearchAgent Link](docs/RESEARCH_AGENT_LINK.zh-CN.md)、[终端文档](docs/TERMINAL.zh-CN.md)、
-[中文架构](docs/ARCHITECTURE.zh-CN.md)、
-[TS Phone 客户端说明](https://github.com/iawnix/ts-phone/blob/main/README.zh-CN.md)。
-
-## 研究与远程计算
-
-安装时可以在配置中设置执行平台（使用 `--compute-config` 导入已有文件）。远端平台可用下面的命令验证：
+在终端中直接描述研究问题、已有材料和希望得到的结果。之后可以继续最近的会话：
 
 ```bash
-./research-agent --check-remote
+./research-agent --workspace reaction-study -c
 ```
 
-Job Runtime 是 local 和 remote 共用的生命周期。Skill 使用 bash/write 生成输入和命令，
-再调用 `job_start`、`job_collect` 获取原始输出；`job_probe` 只探测执行平台，不阻止 Agent
-行动。解析出的领域值通过 `artifact_register` 保存材料，`research_update` 记录 Node 进展，`research_result` 发布结论。
+工作区服务由安装器配置。会话切换与终端操作见[终端文档](docs/TERMINAL.zh-CN.md)，
+手机连接见 [ResearchAgent Link](docs/RESEARCH_AGENT_LINK.zh-CN.md)。
 
-Skill 覆盖 Gaussian、xTB、CREST、ASE-NEB 和结构验证。Skill 只描述命令与解析方式，不能证明
-程序已经安装。
+## 文档
 
-## 浏览器查看
+- [文档索引](docs/README.zh-CN.md)
+- [Skill 目录与加载语言](skills/README.zh-CN.md)
+- [科学计算与远程执行](docs/SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)
+- [模型兼容性](docs/MODEL_COMPATIBILITY.zh-CN.md)
+- [架构](docs/ARCHITECTURE.zh-CN.md)与[维护者指南](docs/MAINTAINER_GUIDE.zh-CN.md)
 
-TS Web 是可选的只读工作区浏览器。安装时选择后可使用 `TSWeb`；其 token 和状态保留
-在安装目录的 `etc/web*` 中。
+## 开发
+
+在源码目录执行：
+
+```bash
+python3 tools/test/runner.py list
+python3 tools/test/runner.py fast -- -q
+npm run lint:public
+npm run lint:skills
+```
+
+测试环境、缓存和证据统一放在本机私有的 `local_debug/`，不得提交或打包。
+测试准备与完整检查见[维护者指南](docs/MAINTAINER_GUIDE.zh-CN.md)。
 
 ## 卸载
-
-运行安装器附带的卸载脚本，并选择是否保留工作区、Pi 会话、配置和托管运行时：
 
 ```bash
 ./uninstall.sh
 ```
 
-## 开发
+卸载器会询问是否保留工作区、会话、配置和托管运行时。
 
-在源码目录执行项目检查：
+## 社区与许可
 
-```bash
-python3 tools/test/runner.py list
-python3 tools/test/runner.py fast -- -q
-python3 tools/test/runner.py source -- -q
-npm run lint:public
-npm run lint:skills
-```
+- [贡献指南](CONTRIBUTING.zh-CN.md)
+- [安全策略](SECURITY.zh-CN.md)
+- [行为准则](CODE_OF_CONDUCT.zh-CN.md)
+- [变更日志](CHANGELOG.zh-CN.md)
 
-[维护者指南](docs/MAINTAINER_GUIDE.zh-CN.md)介绍包校验、App Server 生命周期和发布流程；
-英文版本见 [Architecture](docs/ARCHITECTURE.md)、[Terminal](docs/TERMINAL.md) 和
-[Maintainer Guide](docs/MAINTAINER_GUIDE.md)。
-
-## 社区与项目政策
-
-- [贡献指南](CONTRIBUTING.zh-CN.md) / [Contributing](CONTRIBUTING.md)
-- [安全策略](SECURITY.zh-CN.md) / [Security policy](SECURITY.md)
-- [行为准则](CODE_OF_CONDUCT.zh-CN.md) / [Code of Conduct](CODE_OF_CONDUCT.md)
-- [变更日志](CHANGELOG.zh-CN.md) / [Changelog](CHANGELOG.md)
-
-本仓库由项目拥有的源码采用 [Apache License 2.0](LICENSE) 授权。第三方依赖、固定版本的
-Pi 源码、本地化学程序和随附资源可能适用各自的许可证；重新分发时必须保留相应声明。
+项目源码采用 [Apache License 2.0](LICENSE)。第三方依赖、Pi 源码、科学软件及随附资源可能适用各自的许可证。

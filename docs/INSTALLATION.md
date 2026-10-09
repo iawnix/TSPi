@@ -102,7 +102,7 @@ Host installation uses the exact Conda builds in `environment.lock.txt` without
 solving `environment.yml` again. The base identity includes both files; the Python
 overlay identity binds the base and release payload. The Host probe checks JSON
 Schema, version constraints, and the installed wheel's origin. Scientific
-dependencies are declared by extension entries and verified on their local or
+dependencies are declared by execution catalog entries and verified on their local or
 remote `job.toml` targets. The pinned Pi source runtime
 also needs hydrated model data and built workspace dependencies;
 `scripts/prepare_pi_source.py --install` prepares both when missing. See
@@ -224,8 +224,8 @@ internal service entrypoint; ordinary users do not run `research-agent --host`.
 The default and recommended scope is a systemd user unit. A system unit must be
 given an explicit `--service-user`; the installer sets `HOME`, `PI_CODING_AGENT_DIR`,
 and a private runtime directory so the Host identity and local Pi connection
-are usable by the same account as the service user. The Host worker facet,
-server-extension allowlist, and native client are selected from the validated
+are usable by the same account as the service user. The Host worker,
+tool assembly, and native client are selected from the validated
 Package release.
 
 ## Services Created By The Installer

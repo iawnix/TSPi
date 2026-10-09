@@ -1,58 +1,80 @@
-# Installed Extension Contract
+# Skills and the scientific execution catalog
 
-Here `extensions/` means installable capability extensions. Package-owned core
-server tool assembly lives under `apps/app-server/server-tools/` and is outside
-the installed-extension discovery flow.
+[English](EXTENSIONS.md) | [简体中文](EXTENSIONS.zh-CN.md)
 
-ResearchAgent keeps the Agent and Research Memory independent from installed scientific
-software. An installed extension is a directory with a `manifest.json`; the
-App Server discovers manifests listed in `RESEARCH_AGENT_EXTENSION_MANIFESTS` (an OS
-path-list), passed by its host configuration, or every package-owned
-`extensions/*/manifest.json` file.
+Method guidance, convenience executors, and compute environments are maintained
+separately. The Agent can write inputs and scripts for a research question and
+execute them through generic Jobs. Bundled entries neither define an exhaustive
+capability list nor prescribe research steps.
 
-The manifest format is `research-agent-extension/1`; its JSON Schema is
-`contracts/research-agent-extension/1/extension-manifest.schema.json`:
+## Skill discovery and language
 
-```json
-{
-  "schema_version": "research-agent-extension/1",
-  "name": "amber-tools",
-  "version": "1.2.0",
-  "skills": [{"name": "amber", "path": "skills/amber"}],
-  "server": {
-    "entry": "server/index.mjs",
-    "sha256": "sha256:<64 hex characters>",
-    "tools": ["amber_run"],
-    "permissions": ["workspace.read"]
-  }
-}
+Root `package.json.pi.skills` declares `skills/` and `domains/chemical/skills/`.
+`apps/agent/resources/skills.mjs` verifies release resources and invokes Pi's
+`loadSkills` with default discovery disabled. Pi discovers a skill through its
+`SKILL.md`, which is currently English. Names, descriptions, and paths support
+selection; the Agent reads the body and then references on demand.
+
+`SKILL.zh-CN.md` is a Chinese translation for reading and maintenance. A Chinese
+user message or system locale does not replace the English entrypoint, and the
+translation is not automatically loaded as a second skill. The Agent may explicitly
+read it when needed; response and report language follows the user's request.
+Maintain both languages together: fixing only the translation leaves the default
+instructions unchanged. See the [Skill catalog](../skills/README.md).
+
+
+## System prompt
+
+`apps/agent/pi/setup.mjs` assembles the working directory, `prompts/research-agent.md`,
+and discovered Skill descriptions into the system prompt. `prompts/research-agent.zh-CN.md`
+is a translation for maintenance; it is not injected alongside English or selected by
+conversation language. `/sys-prompt` inspects the current worker's actual prompt and sources.
+
+The prompt contains decisions shared across tasks: instruction priority, research
+objects, execution ownership, authorization and budgets, evidence, corrections,
+and communication. Scientific procedures and full tool examples remain in on-demand
+Skills. It instructs the Agent to read applicable workspace AGENTS.md files; the
+assembly step does not automatically concatenate them. A bounded research snapshot
+is injected separately before each model request as current records, not new
+instructions or authorization.
+
+Resource checks verify loaded bytes and deterministic tests verify injection and
+record behavior. They do not establish model compliance with every rule or replace
+actual spending limits and execution permissions.
+
+## What execution.json does
+
+Root `package.json.researchAgent.execution` points to
+`domains/chemical/execution.json`. Python independently loads and validates it in
+`backend/src/research_agent/application/execution_catalog.py`. It declares:
+
+- `executors`: convenience entry IDs/versions, scripts, argument templates, input roles, outputs, requirements, and resource digests.
+- `validators`: scoped evidence-checking scripts and their input contracts.
+- `acceptance_profiles`: checklists for specific deliverables, with scope defined by each profile.
+
+It does not load Skills, orchestrate workflows, or limit the Agent to these scripts.
+Selecting `--executor` or `validator_id` requires a registered ID/version as the
+contract for that helper. For other methods, submit explicit command, inputs,
+outputs, and platform through `job_start`, or prepare a task with
+`--script <file.py> --backend <binding>`. Neither requires a new catalog entry.
+Installation-level `etc/job.toml` bindings configure actual programs, Python,
+activation scripts, and compute resources.
+
+See [Scientific operations](SCIENTIFIC_CAPABILITIES_OPERATIONS.md) for preparation,
+submission, collection, and recovery.
+
+## Maintenance
+
+`config/resources.json` records bundled Skill, reference, script, and prompt
+digests; the execution catalog also pins its script dependencies. After editing resources:
+
+```bash
+python3 scripts/update_resources.py
+python3 scripts/update_resources.py --check
+python3 tools/lint_skills.py
 ```
 
-Skill paths must contain a regular `SKILL.md`. Extension provider entries are
-legacy metadata for optional server integrations; scientific Skills do not need
-provider descriptors. The App Server loader inventories extension metadata.
-Scientific preflight checks the selected Job Runtime environment, while the
-Skill owns input construction, command argv, parsing, and validation. A
-scientific command is submitted through `job_start`, which is the shared local
-and remote execution boundary.
-
-The existing `apps/agent/tools/legacy-extensions.json` contract remains unchanged:
-server tools still require a package-owned manifest, allowlist selection, and
-per-entry digest. Installed manifests add Skills, provider metadata, and
-explicitly allowlisted server tools without changing Agent core, Harness
-lifecycle, or the built-in server tools.
-
-An empty or unset `RESEARCH_AGENT_EXTENSION_MANIFESTS` value is valid and leaves the
-package's built-in Skills and capabilities unchanged. Duplicate extension,
-provider, or Skill names, path traversal, symbolic links, malformed metadata,
-and digest mismatches fail closed before a session starts.
-
-The optional `server` entry is executable only when its extension name is in
-the Host allowlist `RESEARCH_AGENT_INSTALLED_SERVER_EXTENSIONS`. Its module must export
-`createServerExtension()`, and returned Harness tools must exactly match the
-declared names, parameter schemas, and lifecycle metadata. The entry digest is
-checked during discovery and immediately before import; the Agent cannot
-choose an import path or bypass the allowlist.
-
-
-The active bundled server entry is core-tools: Research Memory, generic Job Runtime and Artifact tools. Chemical and email extensions supply Skills with scripts; no chemical-tools or native notification entry is loaded. providers is optional legacy metadata. An executable Skill declares resources_sha256 for its resources.json index, whose paths are relative to the extension root. The loader validates the index and every listed script/helper digest. Regenerate hashes with scripts/update_skill_resources.py after changing Skill resources.
+Add Skills under declared roots with matching English and Chinese entrypoints
+and references. Update the execution catalog when adding a reusable convenience
+executor. Core tool assembly belongs to `apps/agent/`; it does not use the retired
+extension-manifest, dynamic server allowlist, or provider registration flow.

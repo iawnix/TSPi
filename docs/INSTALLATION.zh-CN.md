@@ -188,7 +188,7 @@ system scope 安装省略 `--user`。Host 是终端、Phone 和后台 Monitor �
 
 默认且推荐的 scope 是 systemd user unit。system unit 必须提供显式的 `--service-user`；安装器
 会设置 `HOME`、`PI_CODING_AGENT_DIR` 和私有运行时目录，确保 Host 身份和本地 Pi 连接使用
-服务账户。Host worker facet、server-extension allowlist 和 native client 都来自已验证的
+服务账户。Host worker、工具装配和 native client 都来自已验证的
 Package release。
 
 ## 安装器会创建哪些服务

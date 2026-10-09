@@ -1,6 +1,6 @@
 # 科学 Job 合同
 
-领域扩展负责科学输入、argv、解析与验证；manifest 声明执行入口，Skill 说明选择条件和结果解释。
+领域扩展负责科学输入、argv、解析与验证；`execution.json` 声明执行入口，Skill 说明选择条件和结果解释。
 
 ## 提交
 
@@ -17,3 +17,5 @@ job_probe 只检查平台可达，不证明科学方法可用。command 和 acti
 job_start 返回 job_id；研究笔记引用真实 Job。job_collect 返回退出事实、output_validation，以及研究 Job 登记的 Artifact。退出 0、文件齐全、科学验证通过是不同事实；记录研究笔记 前读取 Skill result.json 和日志。
 
 artifact_derive 只记录派生描述，不执行分析。通过 Skill 脚本执行后登记真实结果，artifact_link 持久关联证据。科学输入/设置改变需新 Job；不确定提交用 job_reconcile 恢复，不能自动重提。
+
+执行目录仅约束所选的已登记入口。通用 `job_start` 可以直接提交明确的 command、inputs、outputs 和 platform；临时 Python 方法也可使用准备器的 `--script` 与 `--backend`，无需新增目录条目。

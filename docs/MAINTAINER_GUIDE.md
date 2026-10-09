@@ -92,6 +92,8 @@ installation, Memory Node/Result Web queries and retrieval, and source-tampering
 Use the stable operations guide and focused test suites as the current evidence;
 superseded one-off reports belong only in docs/archive and are not current acceptance evidence.
 
+Maintain English `SKILL.md` and Chinese translations together: English is the discovery entrypoint. See [Skills and the execution catalog](EXTENSIONS.md).
+
 ## Documentation Ownership
 
 - `docs/ARCHITECTURE.md` — runtime and scientific boundaries.

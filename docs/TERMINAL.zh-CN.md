@@ -7,16 +7,7 @@ Pi 的 editor、transcript 渲染或输入循环。它与普通 Pi 的 Interacti
 命令和扩展能力以实验性远程客户端为准。选中的 workspace
 绑定到安装级 Pi Harness SQLite durable 会话。
 
-新工作区可以在入口处显式绑定不可变模式：
-
-```bash
-./research-agent --workspace quick-task --mode light
-./research-agent --workspace reaction-a --mode research
-```
-
-`light` 创建最小工作区；`research` 创建 Research Memory 状态，并在终端会话启动前完成
-Host admission。已有框架工作区省略 `--mode` 时使用 manifest 中记录的模式，工作区创建后
-不能在两种模式之间转换。
+工作区统一使用 research 模式，启动时无需选择模式。创建或继续工作区的命令见下文。
 
 ## 运行边界
 

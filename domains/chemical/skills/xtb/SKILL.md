@@ -1,25 +1,33 @@
 ---
 name: xtb
-description: Run GFN2-xTB single-point and geometry optimization calculations for inexpensive structure screening.
+description: Use xTB for inexpensive structure screening, single points, optimization, frequencies, constrained scans, and molecular dynamics; interpret the raw outputs.
 ---
 
-# GFN2-xTB calculations
+# xTB calculations
 
-`chemical.xtb@1` uses the configured `xtb` command and wrapper environment.
-Its executable tasks are `sp`, `opt`, and `opt-sp`.
+Choose single points, optimization, frequencies, constrained scans, or molecular
+dynamics for the question; specify method, charge, electronic state, and solvent.
+
+For single points and optimization, `chemical.xtb@1` provides a GFN2-xTB wrapper
+with `sp`, `opt`, and `opt-sp` tasks:
 
 ```bash
 "$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.xtb --version 1 --input geometry=input.xyz --output prepared/xtb.json -- --task opt-sp --charge 0 --multiplicity 1
 ```
 
-Submit the returned request file/digest with `job_start` and the intended node_id.
-Read the [runner contract](../method-selection/references/runner_results.md)
-for output and electronic-state semantics. Multiplicity is converted to xTB's
-unpaired-electron parameter inside the runner.
+Submit the returned request file and digest with `job_start`; supply node_id when
+associating the calculation with a research question. See the [runner contract](../method-selection/references/runner_results.md)
+for output and electronic-state semantics. This wrapper converts multiplicity
+to xTB's unpaired-electron parameter.
 
-Check SCC and optimization convergence and retention of the intended molecular
-structure. Use GFN2-xTB energies within a consistent method and state; their
-absolute values are not an accuracy ranking against DFT energies. The bundled
-executor does not implement frequency, scan or molecular-dynamics tasks.
+Run frequencies, scans, and dynamics as native xTB commands through generic Jobs,
+preparing control files and declaring collected outputs. No executor registration
+is required. Native options are not values for the wrapper's `--task` argument.
+See [xTB execution and interpretation](references/xtb_executor.md) for commands,
+inputs, and the actual parser coverage.
 
-See [xTB execution and interpretation](references/xtb_executor.md).
+Check SCC where applicable, optimization convergence, and structure identity;
+inspect vibrational modes, scan constraints and point convergence, or integration
+stability and trajectories as appropriate. Compare energies with consistent methods,
+electronic states, and energy definitions; absolute xTB–DFT energy differences do
+not measure accuracy.

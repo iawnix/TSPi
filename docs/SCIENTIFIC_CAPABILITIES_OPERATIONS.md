@@ -2,17 +2,33 @@
 
 [简体中文](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)
 
-The extension manifest declares executable methods and validators. Skills explain method selection, scientific limitations and interpretation. Research Memory records original requirements, research questions and results; adding an executor does not require method-specific research fields.
+`domains/chemical/execution.json` declares bundled convenience executors and validators. Skills explain method selection, scientific limitations and interpretation. Research Memory records original requirements, research questions and results; adding an executor does not require method-specific research fields.
+
+These entries are not a workflow or a capability allowlist. The Agent can prepare
+native commands or task scripts and execute generic Jobs without registering a
+new entry for each calculation. See [Skills and the execution catalog](EXTENSIONS.md).
 
 ## Prepare and execute
 
 List installed entries with `"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --list`. Select an executor id/version and a named environment from installation-owned `etc/job.toml`. The descriptor supplies its backend key, pinned scripts, pure CLI parser, input roles and output declarations. Native entries need no Python binding; Python entries use the selected target's configured interpreter.
 
-The preparation command writes a request and returns `request_file` and `request_sha256`. Submit these with `node_id` to `job_start`. Runtime checks the file and inputs and fixes the Node association, inspected plan revision, `prepared_ref` and dispatch intent. Preparation alone dispatches no Job and proves no scientific outcome.
+The preparation command writes a request and returns `request_file` and `request_sha256`. Submit these to `job_start`, supplying `node_id` when associating a research question. Runtime checks the file and inputs and fixes the selected Node association and content revision, `prepared_ref` and dispatch intent. Preparation alone dispatches no Job and proves no scientific outcome.
 
 A task-specific Python method can use `--script <file.py> --backend <binding>` instead of executor/version. Declare staged dependencies and collected outputs. For registered input evidence, pass `--input-artifact <id-or-ref>` so Runtime verifies its actual staged bytes and preserves lineage.
 
 Recover a lost response with the original request identity. Use `job_status`, `job_reconcile` and `job_collect`; a timeout or disconnected client does not authorize another submission. Intentional repetition needs a new identity and the predecessor/reason/budget declaration.
+
+## Platform checks
+
+Use `job_probe` in a session to inspect a configured platform. Maintainers can
+verify software bindings from the installed control environment:
+
+```bash
+"$RESEARCH_AGENT_PYTHON" -m research_agent.application.environment_check --config "$RESEARCH_AGENT_JOB_CONFIG"
+```
+
+This checks configured environments and may contact their SSH targets. Platform
+observations from `job_probe` and software dependency checks are distinct.
 
 ## Environments and ownership
 
@@ -37,6 +53,13 @@ Submission disables scheduler mail and automatic reruns; the research workflow o
 Job files live below `runs/jobs/<job_id>`. Collection registers declared files as Artifacts belonging to their producing Job, including all files in an explicitly declared recursive output directory. The Agent applies domain methods, records interpretation in the corresponding Node and publishes useful Results. Exit zero or a formatted report alone does not establish scientific success.
 
 Bundled executable entries cover CF22D, xTB, Gaussian inputs, structure/graph preparation, mapped DA candidates, IRC-input preparation and CF22D readiness. Gaussian's explicit-input runner also handles supported TS/Freq/IRC routes. CREST/QBICS guidance and NEB discussion do not imply a bundled callable runner: use a verified installed program or an explicitly bound task script and describe its actual scope.
+
+The xTB convenience wrapper accepts `sp/opt/opt-sp`; frequencies, scans, and dynamics
+use native commands through generic Jobs. See the [xTB Skill](../domains/chemical/skills/xtb/SKILL.md).
+Specialized reaction-path checks do not cover every reaction; use the general
+[transition-state criteria](../domains/chemical/skills/validation/SKILL.md).
+See the [report Skill](../domains/chemical/skills/report/SKILL.md) for molecular images,
+data tables, energy plots, and their evidence requirements.
 
 ## Validation
 

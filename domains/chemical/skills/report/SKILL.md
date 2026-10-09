@@ -1,18 +1,50 @@
 ---
 name: report
-description: Build calculation reports from supplied scientific results, or render supplied XYZ geometries as SVG and PNG images.
+description: Write illustrated research reports from evidence, with molecular structures, energy plots, data tables, methods, conclusions, and traceable sources.
 ---
 
-# Calculation report
+# Research reports
 
-Use native bash to invoke the installed [scripts/build.py](scripts/build.py) with bounded execution time:
+Answer the user's research question with conclusions, evidence, methods, and
+limitations, using the requested language and delivery format. A full report
+should combine text and visuals: molecular images when structures are available,
+energy plots for comparable energies, and tables of values and validation status.
+Choose visuals from actual data; never invent structures, paths, energies, or
+error bars to fill a layout.
+
+Read [figures and report production](references/illustrated_report.md) to prepare
+reproducible data tables, plotting scripts, images, and the final document.
+Markdown with an image directory is a usable default; export HTML/PDF or other
+requested formats with available tools. Embed figures with captions in the
+report itself rather than providing only a list of image paths.
+
+## Basic evidence table
+
+For existing `science-result` files, invoke [scripts/build.py](scripts/build.py)
+through native bash:
 
 ```bash
 "$RESEARCH_AGENT_PYTHON" <installed-report-skill>/scripts/build.py --result local=<workspace>/path/to/result.json --output-dir <workspace>/reports/comparison-v1
 ```
 
-Resolve the script from this Skill's listed location. Repeat `--result environment=path` for each collected scientific result. Use a new missing or empty output directory; the builder refuses to overwrite existing files. Report formatting uses existing results and creates no Job or calculation Job. Additional scientific computation still uses job_*.
+Pass one `--result environment=path` per result and use a new or empty output
+directory. This helper produces a basic `report.md` table and `report.json` source
+digests; it does not automatically produce energy plots, molecular images, or a
+scientific narrative. Read its outputs, then complete the research question,
+evidence analysis, figures, and conclusions. For other source formats, build a
+report dataset directly from the collected materials.
 
-Read report.md and report.json, verify source digests and every requested method/environment combination, then register both materials. Explain failures, missing results and method limitations. Cross-method absolute energies are not accuracy rankings. Use the email Skill for authorized delivery, retain receipts and record progress with research_update.
+## Images and delivery
 
-For molecular images, prepare `chemical.render@1` with input role `geometry=<XYZ file>` and an environment with the `render` binding. The declared entry produces SVG, PNG and a source-digest record through a Job. Optional arguments are `--style`, `--size`, `--charge` and `--multiplicity`; the renderer uses the supplied coordinates. An image does not prove optimization, connectivity or transition-state validity. Text report formatting above remains independent of rendering dependencies.
+For molecular images, use `chemical.render@1` with input role `geometry=<XYZ file>`
+and an environment with the `render` binding. The Job produces SVG, PNG, and a
+source-digest record; options include `--style`, `--size`, `--charge`, and
+`--multiplicity`. Rendering depicts supplied coordinates; an image does not
+establish optimization, connectivity, or transition-state validity.
+
+Use file and scripting tools to assemble existing results; additional scientific
+calculations use `job_*`. Plot with an available library, and run rendering Jobs
+in their configured environments. Open the final document and images to check
+links, axes, captions, units, tables, and provenance. Register the report and its
+figures, data, and scripts as materials and cite them in the research conclusion.
+Use the email Skill for delivery only with sending authorization.

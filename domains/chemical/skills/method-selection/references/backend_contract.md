@@ -1,6 +1,6 @@
 # Scientific Job contract
 
-A domain extension owns scientific inputs, argv, parsing and validation. Its manifest declares executable entries; its Skills explain when to use them and how to interpret results.
+A domain extension owns scientific inputs, argv, parsing and validation. Its execution catalog declares convenience entries; its Skills explain when to use them and how to interpret results.
 
 ## Submission
 
@@ -17,3 +17,5 @@ job_probe checks the selected platform, not scientific readiness. The configured
 Record the observations, scientific criteria, unresolved questions and next steps with research_update using the existing node_id and a note. Publish a reusable conclusion with research_result, citing collected materials and stating limitations. A completed computation does not establish a scientific conclusion.
 
 artifact_derive records a derivation descriptor; it does not execute analysis. Run a Skill script then register its actual output. artifact_link persists evidence relations. Changed scientific inputs/settings create a new Job; recovery of an uncertain submission uses job_reconcile, not automatic resubmission.
+
+The catalog constrains selected registered helpers only. Generic `job_start` also accepts explicit command, inputs, outputs, and platform; task-specific Python methods can use the preparer's `--script` and `--backend` without a new catalog entry.

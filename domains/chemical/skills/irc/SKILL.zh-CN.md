@@ -10,10 +10,10 @@ description: 规划和评估双向内禀反应坐标计算，并将端点归属�
 使用本 Skill 处理正向/反向 IRC 的设计、运行结果解释、路径完成性、端点提取与端点身份。
 Gaussian Skill 负责检查 Gaussian 文件，本 Skill 负责路径的化学含义。
 
-Gaussian 路径使用 `chemical.path-irc` Job 入口，根据已验证鞍点的检查点和路径 spec
-准备双向输入，再分别用 `chemical.gaussian-input` 执行。输入准备及证据绑定见
-[可执行路径流程](../candidate-generation/references/gaussian_path.zh-CN.md)。
-内置路径构造器限于其声明的 DA 范围，其他机理需要明确的方法及经过验证的 runner。
+Gaussian 计算从鞍点几何或检查点准备正反向 IRC 输入，保留方法、基组、电荷和电子态，
+按实际 Hessian 来源选择输入选项，再通过 `chemical.gaussian-input` 或通用 Job 执行。
+[专用路径准备器](../candidate-generation/references/gaussian_path.zh-CN.md)仅用于其明确支持的拓扑与 spec；
+其他反应可以直接准备 Gaussian 输入，无需将反应改写为该路径格式。
 
 从已验证的鞍点候选出发并保留路径方向。核对 IRC 起点与该结构是否一致，分别检查两个
 方向的终止与路径完整性、末端几何和梯度，并判断盆地归属前是否需要优化端点。使用明确

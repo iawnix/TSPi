@@ -15,11 +15,11 @@
 
 将每个端点与一个显式选择的反应物或产物 Artifact 比较。核验元素计数、原子 mapping、
 电荷、多重度或电子态、形成/断裂键、关键内坐标、片段配对、构象与立体化学。映射比较必须
-通过真实分析工具或 Job 执行并登记输出；`artifact_derive` 只记录描述。不能只从文件名或路径方向推断端点 身份。
+通过真实分析工具或 Job 执行并登记输出；`artifact_derive` 只记录描述。不能只从文件名或路径方向推断端点身份。
 
 评估时组合驻点、振动模式、正向/反向路径和结构比较证据，显式将每个提取端点绑定到预期
-Artifact。声明的 DA 路径可将 spec、鞍点 log 和正反向 log 交给 `chemical.gaussian_irc_connectivity`；
-起点、路径完成与端点检查见 [可执行路径](../../candidate-generation/references/gaussian_path.zh-CN.md)。
-缺失检查仍未解决，这不是通用机理审计执行器。
+Artifact。按当前研究问题选择端点比较方法。
+[专用路径检查](../../candidate-generation/references/gaussian_path.zh-CN.md)只覆盖其声明的体系；
+其他反应应依据实际原子映射、成断键与迁移模式执行分析。缺失的检查应保留为未解决问题。
 
 在研究笔记中明确检查标准、支持证据、未解决问题和下一步，引用实际收集的材料。计算完成不能代替对科学结论的判断。

@@ -8,16 +8,7 @@ This is a separate presentation from ordinary Pi `InteractiveMode`, with its own
 command and plugin capabilities. The selected workspace is
 bound to one installation-level Pi Harness SQLite durable session.
 
-New workspaces may be explicitly bound to one immutable framework mode:
-
-```bash
-./research-agent --workspace quick-task --mode light
-./research-agent --workspace reaction-a --mode research
-```
-
-`light` creates the minimal workspace profile. `research` creates the Research Memory workspace and performs Host admission before the terminal session starts.
-For an existing framework workspace, omitting `--mode` uses the recorded mode;
-a workspace cannot be converted between modes.
+Workspaces use the research mode automatically. No mode selection is needed; see the workspace commands below.
 
 ## Runtime shape
 
