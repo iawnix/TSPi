@@ -64,7 +64,7 @@ transfer_timeout_seconds = 3600
 
 # Choose an installation-approved queue explicitly; allowed_queues is not a default.
 [environments.remote.submission]
-queue = "fata"
+queue = "batch"
 queue_wait_seconds = 900
 [environments.remote.submission.resources]
 cpus = 1
