@@ -1,26 +1,20 @@
 # ResearchMap 状态模型
 
-`ResearchMap` 是一个研究项目的规范类型化科学状态。Research State filesystem boundary 将其持久化到
-`research_map/context.json`（`schema_version=research_map_context_2`）。有效 Context 始终包含
-数组 collection：`phases`、`claims`、`nodes`、`findings`、`gates`、`claim_relations`、
-`attempts`、`artifacts`、`evidence_links`、`lifecycle_actions`、`strategy_plans`、
-`strategy_reviews`、`attempt_interpretations`、`claim_assessments`、`claim_revisions`；`focus.claim_ids` 与 `focus.node_ids` 也必须是
-数组。生命周期投影到 `lifecycle/liveness.json`（`research_liveness_2`）；
-`workspace_manifest.json` 绑定 identity、mode、root 和 admission。已废弃的 SQLite 与
-`research_map.json` 文件会被拒绝，不是运行时权威。
+`ResearchMap` 是一个研究项目的规范类型化科学状态，包含研究对象、执行证据和用户要求。
+工作区合同负责文件布局，运行时 command catalog 和 operation schema 负责精确字段及支持的
+读写操作。本参考解释对象职责与不变量，不重复维护这些合同。存储边界见
+[工作区所有权](workspace_contract.zh-CN.md)，用户交付义务见[要求与交付](requirements.zh-CN.md)。
 
 ## 对象
 
-| 对象 | 作用 | 重要字段 |
-| --- | --- | --- |
-| `ResearchPhase` | 相关 Node 的可选导航分组 | `title`、`objective`、`node_ids` |
-| `ResearchClaim` | 正在研究的陈述 | `statement`、`status`、`predictions`、`falsifiers`、`node_ids`、`finding_ids`、`gate_ids` |
-| `ResearchNode` | 一个有边界的问题与交付物 | `title`、`objective`、`phase_id`、`claim_ids`、`dependencies`、`state`、`outcome`、`finding_ids`、`gate_ids`、`artifact_refs`、`attempt_refs` |
-| `Finding` | Node 输出 | `node_id`、`statement`、`kind`、`status`、`claim_ids`、`source_refs` |
-| `FactFinding` | 已核验值；`kind=fact` | `value`、`datatype`、`unit`、`provenance` |
-| `IssueFinding` | 局限、异常、冲突或未决问题；`kind=issue` | `severity`、`resolution` |
-| `Gate` | 面向一个 Node 或 Claim 的 criteria 与 evaluations | `scope`、`target_id`、`criteria`、`evaluations` |
-| `NodeGate` / `ClaimGate` | Gate 的类型化实现 | `scope=node` / `scope=claim` |
+| 对象 | 作用 |
+| --- | --- |
+| `ResearchPhase` | 相关 Node 的可选导航分组。 |
+| `ResearchClaim` | 正在研究的科学陈述。 |
+| `ResearchNode` | 有边界的问题与交付物，带有依赖和证据引用。 |
+| `Requirement` | 来源于用户的交付要求和最低验收条件，独立于研究计划。 |
+| `Finding` | Node 输出；已核验值使用 `FactFinding`，局限、异常、冲突或未决问题使用 `IssueFinding`。 |
+| `Gate` | 面向一个 Node 或 Claim 的条件与评估；`NodeGate` 和 `ClaimGate` 表示作用域，不是两套协议。 |
 
 `Finding` 是科学结论的共同数据结构。运行证据由 Research State 单独管理：`AttemptRecord`、
 `ArtifactManifest` 与 `EvidenceLink` 构成 Evidence Registry；原始 payload 保留在 Node
@@ -40,35 +34,18 @@ Claim。Map 维护反向索引（`node_ids`、`finding_ids`、`gate_ids`），�
 
 ## 读取与写入
 
-Research State command catalog 使用以下内部读取 ID：
-
-```text
-research.map          完整规范 map
-research.summary      进展与焦点
-research.detail       一个 phase、claim、node、finding 或 gate
-research.locate       在 map 对象中进行文本搜索
-research.validate     校验 map
-research.operations   当前 ChangeSet operation catalog
-research.context      有界 turn context
-research.liveness     生命周期诊断
-research.decisions    有界 strategy/interpretation/checkpoint 历史
-research.evidence     Attempt/Artifact/EvidenceLink 元数据
-research.storage      canonical Research State filesystem boundary 文档与 revision
-```
-
-Agent 只能调用公共 `research_read`，并通过对应的有界 `mode`（`map`、`summary`、`detail`、
-`locate`、`validate`、`operations`、`context`、`liveness`、`decisions`、`evidence` 或
-`storage`）访问上述读取。交互式读取
-使用 `/research`。Strategy、interpretation、checkpoint、Evidence Registry 与 map 变更都使用
-各自的类型化 Research State command；不要创建通用 memory write。
+Agent 使用公共 `research_read` 和 `research_change`。运行时 catalog 是当前读取模式的
+权威来源，operation catalog 是写入字段的权威来源。陌生写入前查询
+`research_read mode=operations`；requirement 工作流参见[要求与交付](requirements.zh-CN.md)。
+Strategy、interpretation、checkpoint、Evidence Registry 与 map 变更使用类型化 Research State
+command；不要创建通用 memory write。
 
 `research_read mode=evidence` 可选筛选字段为 `record_type`（`attempt`、`artifact` 或 `link`）、
 `node_id`、`artifact_id`、`subject_id` 和 `limit`（1--2048）。`record_type=link` 读取
 `evidence_links`，不会产生第二套写入协议。
 
-生命周期动作是通过 `research.change` 管理的 State 记录，`research_checkpoint` 是 turn checkpoint。
-使用规范的 `set_lifecycle_action` 和 `resolve_lifecycle_action` 操作，并显式提供 scope、target、
-action、status、reason 和 request identity。唯一写入者仍然是 Research State。
+Lifecycle action 和 checkpoint 都由公共 Research State 工具管理。当前操作名和字段以运行时
+operation catalog 为准；Research State 仍是唯一写入者。
 
 不要直接编辑 canonical 文档。ChangeSet 在隔离副本上校验，只递增一次 `revision`，并原子更新
 context、liveness、memory 与 manifest。Host 会在每次内部 mutation request 中附加 Root Agent 的
