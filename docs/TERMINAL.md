@@ -97,6 +97,21 @@ ResearchAgent command names, arguments, and completions share one catalogue:
 
 The nonfunctional `/debug` placeholder has been removed.
 
+Successful command feedback expires after three seconds and informational feedback
+after five; errors remain until dismissed or another input is submitted. Submitting
+a message clears completed command feedback. With a selector or document open, Esc
+returns to chat. In ordinary chat, Esc interrupts the running turn even when command
+feedback is visible.
+
+While this session has background jobs or pending deliveries, a compact line above
+the input shows `Monitor ✓` (healthy), `Monitor …` (checking or briefly reconnecting),
+`Monitor !` (warning), or `Monitor ×` (error). An optional `· ↑N` counts monitor events
+awaiting delivery; ordinary pending delivery is not a warning. The line hides when
+irrelevant or while a selector/document is open, and restores the latest state on
+return. Background refreshes preserve selection, reading position and input focus.
+`/usage` explains the symbols and shows job counts, warning reasons and the last
+successful poll. Counts belong to this session; worker health is shared across workspaces.
+
 At launch, `-c` selects the latest writable SQLite durable session and
 `--session-id <id>` selects an exact session. Startup `-r`/`--resume` is
 rejected because the Host-mediated client must obtain an exact connection

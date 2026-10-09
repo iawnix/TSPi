@@ -1,6 +1,6 @@
 --- a/packages/coding-agent/src/experimental/client-tui.ts
 +++ b/packages/coding-agent/src/experimental/client-tui.ts
-@@ -9,8 +9,9 @@
+@@ -10,8 +10,9 @@
  	type LoadedFacets,
  } from "@earendil-works/chord";
 -import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -11,14 +11,14 @@
 +	matchesKey,
  	type Component,
  	Container,
-@@ -42,5 +43,5 @@
+@@ -43,5 +44,5 @@
  } from "./services/connection.ts";
  import { PresentationPlugins } from "./services/plugins.ts";
 -import { PresentationUI } from "./services/presentation-ui.ts";
 +import { PresentationUI, type CommandPresentation, type CommandFeedbackKind } from "./services/presentation-ui.ts";
  import { SessionDirectory, SessionManagement, type SessionSummary } from "./services/sessions.ts";
  import { SlashCommands } from "./services/slash-commands.ts";
-@@ -77,4 +78,10 @@
+@@ -78,4 +79,10 @@
  	readonly presentationPlugins: JsonValue;
  }
 +
@@ -29,7 +29,7 @@
 +const COMMAND_RUN = createContextKey<CommandRun>("pi.command-presentation");
  
  interface PendingSelection {
-@@ -103,5 +110,17 @@
+@@ -104,5 +111,22 @@
  	readonly #statusContainer = new Container();
  	readonly #editorContainer = new Container();
 -	readonly #footerComponent = new Text("", 1, 0);
@@ -41,6 +41,11 @@
 +	#commandRun: CommandRun | undefined;
 +	#commandFeedback: Component | undefined;
 +	#commandFeedbackKind: CommandFeedbackKind | undefined;
++	#commandFeedbackTimer: ReturnType<typeof setTimeout> | undefined;
++	readonly #activityComponent: Component = {
++		render: (width) => this.#customDocument || this.#selection ? [] : this.#customActivity?.render(width) ?? [],
++		invalidate: () => this.#customActivity?.invalidate(),
++	};
 +	#resolveDocument: (() => void) | undefined;
 +	readonly #footerComponent: Component = {
 +		render: (width) => (this.#customFooter ?? this.#defaultFooter).render(width),
@@ -48,14 +53,14 @@
 +	};
  	readonly #layoutRoot: Component;
  	readonly #sharedFacets: LoadedFacets;
-@@ -114,5 +133,5 @@
+@@ -115,5 +139,5 @@
  	#controller: AgentController | undefined;
  	readonly #chatInput: CustomEditor;
 -	#selectList: SelectList | undefined;
 +	#selectList: Component | undefined;
  	#selection: PendingSelection | undefined;
  	#screen: "select" | "chat" = "chat";
-@@ -146,4 +165,9 @@
+@@ -147,4 +171,9 @@
  			this.#chatInput.setText("");
  			void this.#queueFollowUp(text);
 +		});
@@ -65,15 +70,9 @@
 +			handleInput: (data: string) => this.handleInput(data),
  		});
  		this.#editorContainer.addChild(this.#chatInput);
-@@ -203,4 +227,15 @@
+@@ -204,4 +233,9 @@
  
  	handleInput(data: string): void {
-+		if (this.#commandRun && this.#commandFeedback && !this.#customDocument && !this.#selection) {
-+			if (matchesKey(data, "escape")) {
-+				this.#dismissCommand();
-+				return;
-+			}
-+		}
 +		if (this.#customDocument) {
 +			this.#customDocument.handleInput?.(data);
 +			this.#requestRender();
@@ -81,7 +80,7 @@
 +		}
  		if (this.#busy) {
  			if (
-@@ -217,5 +252,6 @@
+@@ -218,5 +252,6 @@
  			return;
  		}
 -		this.#selectList?.handleInput(data);
@@ -89,7 +88,7 @@
 +		this.#requestRender();
  	}
  
-@@ -276,13 +312,60 @@
+@@ -277,13 +312,64 @@
  			setup: (env) => {
  				env.provide(PresentationUI, {
 -					select: (title, items, selectedValue) =>
@@ -107,20 +106,24 @@
 +					select: (title, items, selectedValue, context) => {
 +						const run = context.value(COMMAND_RUN);
 +						if (this.#closed || run?.dismissed || context.abortSignal?.aborted) return Promise.resolve(undefined);
++						clearTimeout(this.#commandFeedbackTimer);
 +						this.#commandFeedback = undefined;
 +						return this.#select(title, items, selectedValue, run, context.abortSignal);
 +					},
 +					setFooter: (component) => {
++						const changedVisibility = Boolean(this.#customFooter) !== Boolean(component);
 +						this.#customFooter = component;
-+						this.#rebuild();
++						if (changedVisibility) this.#rebuild();
++						else this.#requestRender();
 +					},
 +					setActivity: (component) => {
 +						this.#customActivity = component;
-+						this.#rebuild();
++						this.#requestRender();
 +					},
 +					showDocument: (component, context) => {
 +						const run = context.value(COMMAND_RUN);
 +						if (this.#closed || run?.dismissed || context.abortSignal?.aborted) return Promise.resolve();
++						clearTimeout(this.#commandFeedbackTimer);
 +						this.#commandFeedback = undefined;
 +						if (this.#customDocument || this.#selection)
 +							throw new Error("A document or selector is already open");
@@ -158,24 +161,31 @@
 +						}
  					},
  				});
-@@ -374,5 +457,5 @@
+@@ -346,4 +432,5 @@
+ 	async #close(): Promise<void> {
+ 		this.#closed = true;
++		this.#dismissCommand();
+ 		this.#completeSelection(undefined);
+ 		const errors: unknown[] = [];
+@@ -375,5 +462,5 @@
  	#rebuild(): void {
  		this.#sessionHeading.setText(
 -			this.#sessionId === undefined || this.#selectedServerId === undefined
 +			this.#customFooter !== undefined || this.#sessionId === undefined || this.#selectedServerId === undefined
  				? ""
  				: theme.fg("dim", `Server: ${this.#selectedServerId}\nSession: ${this.#sessionId}`),
-@@ -383,18 +466,18 @@
+@@ -384,18 +471,19 @@
  		}
  		if (this.#chatView !== undefined) this.#statusContainer.addChild(this.#chatView.status);
 -		this.#footerComponent.setText(theme.fg("dim", this.#footer()));
 +		this.#defaultFooter.setText(theme.fg("dim", this.#footer()));
-+		if (this.#customActivity) this.#statusContainer.addChild(this.#customActivity);
  		this.#editorContainer.clear();
 -		if (this.#screen === "select" && this.#selection !== undefined) {
 +		if (this.#commandFeedback && !this.#customDocument && !this.#selection) {
 +			this.#statusContainer.addChild(this.#commandFeedback);
 +		}
++		// Background activity has no focus or command lifecycle of its own.
++		this.#statusContainer.addChild(this.#activityComponent);
 +		// Focus is owned by the command router, never a detached child editor.
 +		this.#ui.setFocus(this);
 +		if (this.#customDocument) {
@@ -196,7 +206,7 @@
 +			if (this.#selectList) this.#editorContainer.addChild(this.#selectList);
  		} else {
  			this.#selectList = undefined;
-@@ -406,11 +489,80 @@
+@@ -407,11 +495,90 @@
  	}
  
 -	#select(title: string, items: readonly SelectItem[], selectedValue?: string): Promise<string | undefined> {
@@ -260,6 +270,7 @@
 +
 +	#feedback(run: CommandRun, messageText: string, kind: CommandFeedbackKind): void {
 +		if (run.dismissed || this.#closed || this.#commandRun !== run) return;
++		clearTimeout(this.#commandFeedbackTimer);
 +		this.#commandFeedbackKind = kind;
 +		this.#commandFeedback =
 +			this.#commandPresentation?.feedback({
@@ -267,10 +278,19 @@
 +				message: messageText,
 +				kind,
 +			}) ?? new Text(`/${run.command} · ${kind}: ${messageText}`, 1, 0);
++		if (kind === "success" || kind === "info") {
++			const feedback = this.#commandFeedback;
++			this.#commandFeedbackTimer = setTimeout(() => {
++				if (this.#commandRun === run && this.#commandFeedback === feedback) this.#dismissCommand();
++			}, kind === "success" ? 3000 : 5000);
++			this.#commandFeedbackTimer.unref?.();
++		}
 +		this.#rebuild();
 +	}
 +
 +	#dismissCommand(): void {
++		clearTimeout(this.#commandFeedbackTimer);
++		this.#commandFeedbackTimer = undefined;
 +		if (this.#commandRun) this.#commandRun.dismissed = true;
 +		this.#commandFeedback = undefined;
 +		this.#commandFeedbackKind = undefined;
@@ -280,25 +300,25 @@
 +		if (!this.#closed) this.#rebuild();
  	}
  
-@@ -463,4 +615,5 @@
+@@ -464,4 +631,5 @@
  		this.#busy = true;
  		this.#status = state.status === "connecting" ? "Reconnecting to Radius…" : "Radius disconnected; retrying…";
 +		this.#dismissCommand();
  		this.#queueRecovery(() => this.#closeLane());
  		this.#rebuild();
-@@ -530,4 +683,5 @@
+@@ -531,4 +699,5 @@
  
  	async #closeLane(): Promise<void> {
 +		this.#dismissCommand();
  		this.#laneUnsubscribe?.();
  		this.#laneUnsubscribe = undefined;
-@@ -546,4 +700,5 @@
+@@ -547,4 +716,5 @@
  			const name = prompt.slice(1, separator === -1 ? undefined : separator);
  			const args = separator === -1 ? "" : prompt.slice(separator + 1).trim();
 +			this.#chatInput.setText("");
  			await this.#executeSlashCommand(name, args);
  			return;
-@@ -559,22 +714,46 @@
+@@ -560,26 +730,51 @@
  
  	async #executeSlashCommand(name: string, args: string): Promise<void> {
 +		this.#dismissCommand();
@@ -354,6 +374,23 @@
 +			);
  		}
  	}
+ 
+ 	async #submitPrompt(prompt: string): Promise<void> {
++		if (this.#commandFeedbackKind !== "running") this.#dismissCommand();
+ 		const controller = this.#selectedController();
+ 		if (controller === undefined) throw new Error("No Session AgentController service is available");
+@@ -594,4 +789,5 @@
+ 
+ 	async #queueFollowUp(text: string): Promise<void> {
++		if (this.#commandFeedbackKind !== "running") this.#dismissCommand();
+ 		const controller = this.#selectedController();
+ 		if (controller === undefined) return;
+@@ -617,4 +813,5 @@
+ 
+ 	#interrupt(): void {
++		if (this.#commandFeedback) this.#dismissCommand();
+ 		const view = this.#conversationView();
+ 		const controller = this.#selectedController();
 --- a/packages/coding-agent/src/experimental/services/presentation-ui.ts
 +++ b/packages/coding-agent/src/experimental/services/presentation-ui.ts
 @@ -1,2 +1,3 @@

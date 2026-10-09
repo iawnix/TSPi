@@ -6,14 +6,15 @@ import { pathToFileURL } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import test from "node:test";
+import { createServer } from "node:http";
 import { TEST_ROOT, TEST_SOCKET_ROOT, retainPiDiagnostics, managedPython, pinnedPiSource, assertInstalledRuntime } from "./test-environment.mjs";
 
 const execute = promisify(execFile);
 const sourceRoot = pinnedPiSource();
 const packageRoot = resolve(process.env.RESEARCH_AGENT_TEST_PACKAGE_ROOT || process.cwd());
 
-test("real worker queries and terminal resume/quit preserve durable sessions without model requests", {
-  timeout: 60_000,
+test("real worker terminal isolates monitor refresh, command feedback and task cancellation", {
+  timeout: 90_000,
 }, async () => {
   await assertInstalledRuntime(packageRoot);
   await mkdir(TEST_ROOT, { recursive: true });
@@ -23,6 +24,15 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
   const savedEnvironment = { ...process.env };
   let completed = false;
   let backend;
+  let modelRequests = 0;
+  const modelServer = createServer((_request, response) => {
+    modelRequests++;
+    response.writeHead(200, {'content-type':'text/event-stream'});
+    response.write(`data: ${JSON.stringify({id:'fixture',object:'chat.completion.chunk',created:1,model:'fixture',
+      choices:[{index:0,delta:{role:'assistant',content:'Local deterministic response'},finish_reason:null}]})}\n\n`);
+    // Keep this local stream open until the user aborts; no remote provider is used.
+  });
+  await new Promise(resolve => modelServer.listen(0, '127.0.0.1', resolve));
   try {
     process.env.RESEARCH_AGENT_DEBUG = "1";
     process.env.RESEARCH_AGENT_PI_DIAGNOSTIC_FILE = join(root, "pi-child.log");
@@ -30,7 +40,7 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
     process.env.PI_AGENT_DIR = process.env.PI_CODING_AGENT_DIR;
     await mkdir(process.env.PI_CODING_AGENT_DIR);
     await writeFile(join(process.env.PI_CODING_AGENT_DIR, "models.json"), JSON.stringify({ providers: { fixture: {
-      baseUrl: "http://127.0.0.1:9/v1", apiKey: "fixture-only", api: "openai-completions",
+      baseUrl: `http://127.0.0.1:${modelServer.address().port}/v1`, apiKey: "fixture-only", api: "openai-completions",
       models: [{id:"fixture", name:"Fixture", reasoning:false, input:["text"],
         cost:{input:0, output:0, cacheRead:0, cacheWrite:0}, contextWindow:200000, maxTokens:4096}],
     } } }));
@@ -110,6 +120,9 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
         const presentation=env.use(PresentationUI), commands=env.use(TestCommands);
         env.onActivate(()=>{
           testUI=presentation;
+          env.own(commands.replace({name:'feedback',description:'Fixture feedback',run(_args,context){
+            presentation.showStatus('Fixture completed',context,'success');
+          }}));
           env.own(commands.replace({name:'slow',description:'Delayed read',async run(_args,context){
             await new Promise(resolve=>{finishSlow=resolve});
             await presentation.showDocument({render:()=>['STALE DOCUMENT'],invalidate(){}},context);
@@ -125,6 +138,9 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
       }});
       const facet = await createResearchAgentNativeClientFacet({ sourceRoot, session: {
         workspaceId: "startup", sessionId: created.session.session_id, quit() { quit = true; },
+        async monitorStatus() { return {workspace_id:'startup',
+          monitors:[{session_id:created.session.session_id,last_state:'running',enabled:true}],
+          host_worker_health:{last_successful_poll:new Date().toISOString()},supervisor_health:{state:'running'}}; },
         async list() { return [...await backend.listSessions("startup"), {session_id:'another-session'}]; },
         async resume() { throw new Error("Selecting the current session should be a no-op"); },
       } });
@@ -133,9 +149,9 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
         ui, servers: [{ serverId: server.route.serverId, radius: false, server: server.server, session: server.session }],
         facetLoader: createStaticFacetLoader([facet,driver]), requestRender() { ui.requestRender(); }, finish() {},
       });
-      const waitFor = async (predicate) => {
-        for (let i = 0; i < 100; i++) {
-          if (predicate()) return;
+      const waitFor = async (predicate, timeout = 2000) => {
+        for (let i = 0; i < timeout / 10; i++) {
+          if (await predicate()) return;
           await new Promise((resolve) => setTimeout(resolve, 10));
         }
         assert.fail(component.render(100).join("\n"));
@@ -157,9 +173,17 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
         await waitFor(() => !component.render(100).join("\n").includes("Context Unknown"));
         assert.doesNotMatch(component.render(100).join("\n"), /Server:| entries|\/model ·/);
         await clickEditor();
+        testUI.setActivity({render:()=>['Monitor ✓ · ↑1'],invalidate(){}});
         submit("/usage");
         await waitFor(() => component.render(100).join("\n").includes("Session usage"));
+        assert.doesNotMatch(component.render(100).join('\n'),/Monitor ✓ · ↑1/);
+        const beforeRefresh=component.render(100).join('\n');
+        const documentFocus=ui.getFocusedComponent();
+        testUI.setActivity({render:()=>['Monitor ✓ · ↑2'],invalidate(){}});
+        assert.equal(component.render(100).join('\n'),beforeRefresh);
+        assert.equal(ui.getFocusedComponent(),documentFocus);
         terminal.sendInput("\u001b");
+        await waitFor(()=>component.render(100).join('\n').includes('Monitor ✓ · ↑2'));
         await new Promise(resolve => setImmediate(resolve));
         submit("/research read");
         await waitFor(() => component.render(100).join("\n").includes("Research state"));
@@ -167,6 +191,11 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
         await new Promise((resolve) => setImmediate(resolve));
         submit("/sys-prompt");
         await waitFor(() => component.render(100).join("\n").includes("You are ResearchAgent"));
+        terminal.sendInput('\x1b[C');
+        const scrolledDocument=component.render(100).join('\n');
+        testUI.setActivity({render:()=>['Monitor !'],invalidate(){}});
+        assert.equal(component.render(100).join('\n'),scrolledDocument);
+        terminal.sendInput('\x1b[H');
         const originalRows=process.stdout.rows;
         try {
           for (const [width,height] of [[80,24],[120,30],[32,12],[20,10]]) {
@@ -183,7 +212,10 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
         submit("/resume");
         await waitFor(() => component.render(100).join("\n").includes("Resume session"));
         terminal.sendInput('\x1b[B');
-        testUI.setActivity({render:()=>['background monitor refresh'],invalidate(){}});
+        const selectorFocus=ui.getFocusedComponent();
+        testUI.setActivity({render:()=>['Monitor ✓ · ↑3'],invalidate(){}});
+        assert.equal(ui.getFocusedComponent(),selectorFocus);
+        assert.doesNotMatch(component.render(100).join('\n'),/Monitor ✓ · ↑3/);
         assert.match(component.render(100).join('\n'),/› another-session/);
         assert.match(component.render(100).join('\n'),/\[current\]/);
         terminal.sendInput("\u001b");
@@ -228,6 +260,21 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
         submit('/model fixture/fixture');
         await waitFor(()=>component.render(100).join('\n').includes('Selected fixture/fixture'));
         assert.match(component.render(100).join('\n'),/\/model · ✓ Done/);
+        const commandLines=component.render(100);
+        const monitorIndex=commandLines.findIndex(line=>line.includes('Monitor ✓'));
+        assert.ok(monitorIndex > commandLines.findIndex(line=>line.includes('/model ·')));
+        assert.match(commandLines[monitorIndex+1],/─/);
+        terminal.sendInput('timer draft');
+        await waitFor(()=>!component.render(100).join('\n').includes('/model ·'),4500);
+        assert.match(component.render(100).join('\n'),/timer draft/);
+        terminal.sendInput('\x05'); terminal.sendInput('\x15');
+        submit('/feedback');
+        await waitFor(()=>component.render(100).join('\n').includes('Fixture completed'));
+        // A prior success timer must not dismiss a newer error.
+        submit('/unknown');
+        await waitFor(()=>component.render(100).join('\n').includes('Unknown command'));
+        await new Promise(resolve=>setTimeout(resolve,3200));
+        assert.match(component.render(100).join('\n'),/Unknown command/);
         terminal.sendInput('\x1b');
         submit('/thinking off');
         await waitFor(()=>component.render(100).join('\n').includes('Thinking level: off'));
@@ -236,6 +283,7 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
         submit('/compact');
         await waitFor(() => component.render(100).join('\n').includes('Nothing to compact.'));
         assert.doesNotMatch(component.render(100).join('\n'), /Esc (Dismiss|Hide)|Operation submitted/);
+        await waitFor(()=>!component.render(100).join('\n').includes('Nothing to compact.'),6500);
         terminal.sendInput('compact draft');
         assert.match(component.render(100).join('\n'), /compact draft/);
         terminal.sendInput('\x05'); terminal.sendInput('\x15');
@@ -246,6 +294,18 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
         assert.match(component.render(100).join('\n'), /reload draft/);
         terminal.sendInput('\x05'); terminal.sendInput('\x15');
         terminal.sendInput('\x1b');
+        assert.equal(modelRequests,0);
+        submit('/feedback');
+        await waitFor(()=>component.render(100).join('\n').includes('Fixture completed'));
+        terminal.sendInput('Run the local deterministic fixture'); terminal.sendInput('\r');
+        assert.doesNotMatch(component.render(100).join('\n'),/Fixture completed/);
+        await waitFor(()=>modelRequests===1,10000);
+        await waitFor(()=>component.render(100).join('\n').includes('Working'),10000);
+        submit('/feedback');
+        await waitFor(()=>component.render(100).join('\n').includes('Fixture completed'));
+        terminal.sendInput('\x1b');
+        await waitFor(async()=>!(await backend.readSession('startup',created.session.session_id)).session.is_streaming,10000);
+        assert.doesNotMatch(component.render(100).join('\n'),/Fixture completed/);
         submit("/quit");
         await waitFor(() => quit);
       } finally {
@@ -311,6 +371,8 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
 
     completed = true;
   } finally {
+    modelServer.closeAllConnections();
+    await new Promise(resolve => modelServer.close(resolve));
     try { await backend?.close(); }
     finally {
       for (const key of Object.keys(process.env)) if (!(key in savedEnvironment)) delete process.env[key];

@@ -20,7 +20,7 @@ all pending patches can be checked before changing files.
 | 004-client-lifecycle | AbortSignal closes only the presentation; Host-selected sessions must already exist | Session switching, quit, missing-session rejection, connection disposal |
 | 005-client-history | Populate input history from accepted user entries in the active transcript | Pi presentation/history tests; each session gets a new editor |
 | 006-tool-presentation | Register compact tool renderers and connect Ctrl+O expansion | Native tool card rendering and retained full results |
-| 007-client-status | Local footer/activity components and a dismissible document surface | Native status, document, resize, session-switch and disposal tests |
+| 007-client-status | Independent footer/activity display, expiring command feedback and dismissible documents | Native status, timer, focus, Esc interruption, resize, session-switch and disposal tests |
 | 008-request-admission | Fail-closed generation hooks and one bounded compaction attempt | Request admission failure, context budget and compaction outcome tests |
 | 009-input-identity | Native clients supply stable request IDs; AgentController preserves them and specific admission errors | Real native-controller and common input-admission tests |
 

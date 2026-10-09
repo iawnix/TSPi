@@ -34,20 +34,20 @@ export async function createResearchAgentNativeClientFacet({ sourceRoot, session
         let stopped = false, refreshing = false, dirty = false, timer;
         const redraw = () => { if (!stopped) { ui.setFooter(status.footer); ui.setActivity(status.activity); } };
         const refresh = async () => {
-          if (stopped) return;
+          if (stopped || session.signal?.aborted) return;
           if (refreshing) { dirty = true; return; }
           refreshing = true; dirty = false;
           const results = await Promise.allSettled([queries.telemetry(queryContext), session.monitorStatus?.()]);
-          if (!stopped) {
+          if (!stopped && !session.signal?.aborted) {
             const [usage, monitor] = results;
             if (usage.status === "fulfilled" && usage.value.session_id === session.sessionId && usage.value.workspace_id === session.workspaceId) status.update({telemetry:usage.value.result});
             else status.update({telemetry:null});
-            if (monitor.status === "fulfilled") status.update({monitor:monitor.value, monitorError:null});
+            if (monitor.status === "fulfilled" && monitor.value?.workspace_id === session.workspaceId) status.update({monitor:monitor.value, monitorError:null});
             else status.update({monitorError:"Monitor unavailable"});
             redraw();
           }
           refreshing = false;
-          if (!stopped) { clearTimeout(timer); timer = setTimeout(refresh, dirty ? 250 : 5000); timer.unref?.(); }
+          if (!stopped && !session.signal?.aborted) { clearTimeout(timer); timer = setTimeout(refresh, dirty ? 250 : 5000); timer.unref?.(); }
         };
         let signature;
         env.own(transcript.state.subscribe(view => {
@@ -57,7 +57,10 @@ export async function createResearchAgentNativeClientFacet({ sourceRoot, session
           // Pi already repaints transcript changes; the components read current state at render time.
         }));
         redraw(); void refresh();
-        if (session.subscribeMonitor) env.own(session.subscribeMonitor(() => { void refresh(); }, () => { status.update({monitorError:"Monitor unavailable"}); redraw(); }));
+        if (session.subscribeMonitor) env.own(session.subscribeMonitor(() => { void refresh(); }, () => {
+          if (stopped || session.signal?.aborted) return;
+          status.update({monitorError:"Monitor unavailable"}); redraw();
+        }));
         env.own(() => { stopped = true; lifetime.abort(); clearTimeout(timer); ui.setFooter(undefined); ui.setActivity(undefined); ui.setCommandPresentation(undefined); });
         const show = (title, body, context, command, scope) => ui.showDocument(createDocumentView({ title, body, command, scope,
           ...components, wrapText: components.wrapTextWithAnsi }), context);
