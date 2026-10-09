@@ -3,8 +3,8 @@
   "files": {
     "skills/README.md": "sha256:fee91880b93ac9999eefbdc4b8df423a92dcc4ee5578702329d6d91969c1497f",
     "skills/README.zh-CN.md": "sha256:8f2dac067e35dc5a8c4d44e2a0e1009d7abbfcfb4b85df8e096d400aab7ef561",
-    "skills/email/SKILL.md": "sha256:86f841b2e2e06317efb5b7a767d7b33334eafef4391608bab3e3ff3a4092deea",
-    "skills/email/SKILL.zh-CN.md": "sha256:68a00b522b8d400147aa43a3c34a9a74482401228474c353c03d2bfd3cf92983",
+    "skills/email/SKILL.md": "sha256:e428895f7a4c8e468cbffaf9872c6796060ea672cb4f4afcc085382aea1ba1b5",
+    "skills/email/SKILL.zh-CN.md": "sha256:d99b976f3b8b761218da9507a094f584a563dc3b11b6c02be175c4f07860f372",
     "skills/email/references/email_delivery.md": "sha256:25a0843018874efc919be26c801bbeeab9fd087f47708909e819a7f20e75be28",
     "skills/email/references/email_delivery.zh-CN.md": "sha256:0226942f1a6b1243f773497d48e8bef1b0afee60934de29194b3959015148b07",
     "skills/email/scripts/email_cli.py": "sha256:57ff0a1c46ae758fff015e8e2282457042d7eef42a199c6cadf77f5cc393c63b",
@@ -143,7 +143,7 @@
     "domains/chemical/skills/xtb/scripts/cli.py": "sha256:c1dec3cb29f2e30a5bcc66180efc793e9f3dd30fa542bc215fd7ef850decc016",
     "domains/chemical/skills/xtb/scripts/parser.py": "sha256:5922d0093eddf05b166d11be7b17220dc2da30e5d78a36ce887bfd67c34fc677",
     "domains/chemical/skills/xtb/scripts/run.py": "sha256:0d42f9865ff3fdbf18e0cb84f1c3aeaa1aae48aba8532a85f4215b006b2a2114",
-    "prompts/research-agent.md": "sha256:007dd1a5bec610647dd9bde91502144705d447cabf8d11bcc15748631cc96307",
-    "prompts/research-agent.zh-CN.md": "sha256:2c46b19c94eb40e2ca76deaeb1251e42b429db0c41f6d258517f936ea150d96f"
+    "prompts/research-agent.md": "sha256:154cda4c6d5779438107d0c67dfc52cde45fe8c336d596eac06042a9992bd2a6",
+    "prompts/research-agent.zh-CN.md": "sha256:f7685869641d34f981c688c3751b9f2fe7dd9a2ca352adc686feb2211ed40af8"
   }
 }

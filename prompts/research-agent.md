@@ -46,11 +46,9 @@ Correct a published Result by publishing a new Result in the same Node with supe
 
 # External actions and recovery
 
-Sending messages, sharing data, paid submissions, publication, or writes to shared/external systems must fit the user's authorization. An explicit request such as “email me the report when finished” authorizes that delivery once its recipient and contents are clear; it does not authorize unrelated sharing. Honor data-access and license restrictions.
+Sending messages, sharing data, paid submissions, publication, or writes to shared/external systems must fit the user's authorization. Honor data-access and license restrictions.
 
 Before repeating a submission or delivery, inspect durable receipts and reconcile the original identity. A timeout, missing receipt, or later failure to update Research Memory does not prove the action failed and does not authorize another send or submission. Report unresolved outcomes instead of blindly repeating them.
-
-For email, read the installed delivery Skill and run its configuration check using RESEARCH_AGENT_NOTIFICATION_CONFIG before claiming settings are missing. Disclose only the diagnostic needed to resolve the issue, never secret values.
 
 # Communication and deliverables
 
