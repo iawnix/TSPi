@@ -408,10 +408,15 @@ CoRAgent Web is the read-only client in this architecture.
 
 ## Monitor operations
 
-The Host starts one Monitor worker for the configured workspace root. It polls
-durable Compute status and writes registrations, events, and delivery receipts
-inside each workspace. `monitor/list`, `monitor/status`, `monitor/enable`, and
-`monitor/disable` expose health and backlog. `next_run` persists authenticated execution events until the original session can accept them. Busy or paused sessions leave events pending. Delivery and Pi consumption identities recover retries independently of Memory revision; an accepted input does not mean the science was interpreted. The Agent reads the associated Node and actual Job receipts before recording a conclusion.
+The Host starts one Job monitoring worker for the configured workspace root. It polls compute status and writes bindings, events and delivery receipts inside each workspace. A Task Controller in each Pi SessionWorker records user tasks and continues active work through the existing durable input boundary, including work with no compute Job. Host restart discovers existing sessions and reopens Workers with bounded concurrency; Monitor health reports recovery errors.
+
+Use `/monitor` for the current task and Jobs, `/monitor tasks`, `/monitor jobs`, `/monitor runs` for lists, and `/monitor health` for service diagnostics. Task pause/resume/cancel uses `/monitor task`; cancel explicitly requires `--keep-jobs` or `--cancel-jobs`. Pi generation/tool details live under `/monitor run <run-id>`. The [canonical Host Monitor API](../contracts/monitor/README.md) serves the same views for all clients. There are no legacy status/list/enable/disable RPC aliases.
+
+Set `CORAGENT_AUTOMATIC_CONTINUATION=0` in the Agent Server environment to disable new automatic inputs while retaining user input, Job observation and queries. Existing transmitted model requests are not recalled. User interruption also pauses the current task so automatic continuation does not immediately undo the stop. Paused tasks keep their original objective and evidence; resume them explicitly.
+
+`next_run` persists authenticated execution events until the original session can accept them. Busy or paused sessions leave events pending. Delivery and Pi consumption identities recover retries independently of Memory revision; an accepted input does not mean the science was interpreted. The Agent reads the associated Node and actual Job receipts before recording a conclusion.
+
+Old Monitor bindings containing `enabled: false` require explicit migration of the persisted pause intent before automatic recovery. New bindings omit that field; legacy `enabled: true` is inert metadata. The upgrade does not silently enable disabled work or invent an authorized user task.
 
 The canonical `workspace_manifest.json` identity is verified before Monitor
 maps events to the Host route. Its `workspace_id` is the same value used by

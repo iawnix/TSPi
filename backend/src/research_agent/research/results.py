@@ -5,7 +5,7 @@ import uuid
 from research_agent.foundation.transactions import read_json, write_json, workspace_transaction
 from research_agent.foundation.path_safety import path_has_symlink
 from . import basis, relations
-from .records import workspace, now, append_record, digest
+from .records import workspace, now, append_record, digest, journal, record
 from .nodes import get_node, save, text, validate_refs, response
 
 
@@ -25,6 +25,13 @@ def get_result(root, result_id):
     if digest(result) != entry.get('content_digest'):
         raise ValueError('result_content_changed')
     return result
+
+
+def publication_order(root, graph=None):
+    """Read Result headers in immutable publication order, independent of UUIDs."""
+    graph = graph if graph is not None else relations.graph(root)
+    return [graph['results'][record(root, row['ref'])['data']['result_id']]
+            for row in journal(root)['records'] if row['origin'] == 'agent' and row['kind'] == 'result_published']
 
 
 @workspace_transaction('research.result')

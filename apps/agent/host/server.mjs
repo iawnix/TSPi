@@ -3,21 +3,18 @@ import { hostIdentity } from "../platform/environment.mjs";
 import { createMonitorEvents } from "./monitor/events.mjs";
 import { createHostSessions } from "./sessions.mjs";
 import { createRequestStore } from "./requests.mjs";
-import { validateId, cleanRequest } from "./validation.mjs";
+import { MONITOR_METHODS } from "../contracts/monitor.mjs";
+import { createHostMonitor } from "./monitor/api.mjs";
 import { createServer, createConnection } from "node:net";
 import { existsSync } from "node:fs";
-import { chmod, lstat, mkdir, readFile, realpath, unlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, realpath, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { createRpcPeer, HOST_PROTOCOL, protocolError } from "../transport/host-client.mjs";
 import { createWorkspaceCatalog, createHostWorkspaces } from "./workspaces.mjs";
 
-const executeFile = promisify(execFile);
 import { packageRoot as PACKAGE_ROOT } from "../platform/resources.mjs";
 const BASE_CAPABILITIES = ["workspace/list", "workspace/create", "workspace/attach", "session/list", "session/read", "session/create", "session/resume", "session/attach", "session/detach", "session/remove", "input/send", "input/status", "turn/interrupt", "models/list", "model/select"];
-const MONITOR_CAPABILITIES = ["monitor/list", "monitor/status", "monitor/enable", "monitor/disable"];
 
 /** Owns routing and durable acceptance records for the Native Pi Harness. */
 export async function startCoRAgentHost(options) {
@@ -44,7 +41,7 @@ export async function startCoRAgentHost(options) {
   const physicalRoot = await realpath(workspaceRoot);
   const epoch = randomUUID();
   const monitorAvailable = existsSync(join(packageRoot, "apps", "agent-cli", "monitor.py"));
-  const capabilities = monitorAvailable ? [...BASE_CAPABILITIES, ...MONITOR_CAPABILITIES] : [...BASE_CAPABILITIES];
+  const capabilities = [...BASE_CAPABILITIES, ...MONITOR_METHODS];
   const clients = new Set();
   for (const marker of [
     join(physicalRoot, "workspace_manifest.json"),
@@ -69,30 +66,7 @@ export async function startCoRAgentHost(options) {
 
   const deduplicate = createRequestStore(stateRoot);
 
-  async function runMonitor(method, params) {
-    if (!monitorAvailable) throw protocolError("method_not_found", "monitor support is not included in this release");
-    const root = await workspace(params.workspace_id);
-    const command = method.slice("monitor/".length);
-    const args = [join(packageRoot, "apps", "agent-cli", "monitor.py"), command, "--root", root];
-    if (params.monitor_id !== undefined) {
-      validateId(params.monitor_id, "monitor_id");
-      args.push("--monitor-id", params.monitor_id);
-    }
-    const execute = async () => {
-      const result = await executeFile(python, args, { cwd: root, env: { ...process.env, PYTHONNOUSERSITE: "1" }, timeout: 60_000, maxBuffer: 8 * 1024 * 1024 });
-      const status = JSON.parse(result.stdout);
-      if (typeof status.workspace_id === "string") status.canonical_workspace_id = status.workspace_id;
-      status.workspace_id = params.workspace_id;
-      if (command === "list" || command === "status") {
-        for (const [key, name] of [["host_worker_health", "monitor-health.json"], ["supervisor_health", "monitor-supervisor.json"]]) {
-          try { status[key] = JSON.parse(await readFile(join(stateRoot, name), "utf8")); } catch { status[key] = null; }
-        }
-      }
-      return status;
-    };
-    if (command === "enable" || command === "disable") return deduplicate(method, params.request_id, cleanRequest(params), execute);
-    return execute();
-  }
+  const runMonitor = createHostMonitor({ sessionBackend, workspace, stateRoot });
 
   const sessions = createHostSessions({ sessionBackend, workspace, deduplicate, clients, epoch, monitorToken });
 
@@ -115,9 +89,10 @@ export async function startCoRAgentHost(options) {
     if (/^(session|input|turn|model|models)\//u.test(method) || method === "internal/monitor-wake") {
       return sessions.handle(client, method, params);
     }
-    if (["monitor/list", "monitor/status", "monitor/enable", "monitor/disable"].includes(method)) {
+    if (MONITOR_METHODS.includes(method)) {
+      const result = await runMonitor(method, params);
       client.monitorWorkspaces.add(params.workspace_id);
-      return runMonitor(method, params);
+      return result;
     }
     throw protocolError("method_not_found", `Unsupported Host method: ${method}`);
   }
@@ -155,7 +130,7 @@ export async function startCoRAgentHost(options) {
   try {
     // Notifications are live transport events, not a durable replay log. Prime
     // the cursor before accepting clients so restarting Host does not replay
-    // historical monitor files; clients recover state through monitor/status.
+    // historical monitor files; clients recover state through monitor/overview.
     await scanMonitorFiles({ notify: false });
     monitorTimer = monitorAvailable && monitorPollMs > 0 ? setInterval(() => void pollMonitors().catch(() => {}), monitorPollMs) : null;
     monitorTimer?.unref();

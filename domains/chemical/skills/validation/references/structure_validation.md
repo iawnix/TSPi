@@ -35,3 +35,12 @@ Use an available analysis tool or implement a bounded script with explicit mappi
 atom selections and tolerances, then execute and register the result. Preserve
 input digests and report symmetry ambiguity. `artifact_derive` records a descriptor;
 it does not align structures or check stereochemistry.
+
+The existing DA path validator aligns its supplied atom order using proper rotations
+only and checks explicitly specified tetrahedral and E/Z stereochemistry against
+endpoint coordinates. Nonfinite coordinates are input errors, not evidence against
+a chemical hypothesis. Equivalent atom permutations are valid only when the
+correspondence is changed consistently; the RMSD helper does not search alternative
+mappings. The `chemical.compare` executor compares molecular identity, including
+specified stereo, independently of input atom order; XYZ bond orders remain an
+explicit inference. Neither check establishes a transition state or mechanism.

@@ -30,6 +30,8 @@ def valid_node_binding(value):
 
 def read_binding(path):
     value = read(path)
+    if value.get('enabled') is False:
+        raise ValueError('monitor_pause_migration_required: resolve the legacy Job pause explicitly before enabling Task Controller')
     if (value.get('schema_version') != 'coragent-job-monitor/2'
             or not valid_node_binding(value)
             or any(not value.get(key) for key in ('job_id', 'job_digest'))):
@@ -67,8 +69,9 @@ def bind(root, intent, session_id):
     manifest=read(root/'workspace_manifest.json')
     write(path,{'schema_version':'coragent-job-monitor/2','monitor_id':mid,'workspace_id':manifest['workspace_id'],
         'job_id':job,'node_id':intent.get('node_id'),'node_revision':intent.get('node_revision'),
+        'user_task_id':intent.get('user_task_id'),
         'job_digest':digest(intent),'session_id':session_id,'wake_policy':'next_run','notify_policy':'none',
-        'enabled':True,'created_at':now(),'sequence':0,'last_state':None})
+        'created_at':now(),'sequence':0,'last_state':None})
 
 
 def command(root, action, args):
@@ -92,10 +95,6 @@ def _command(root,base,action,args):
                 for binding in bindings for path in sorted((binding.parent/'deliveries').glob('*.json'))
                 if not (row := read_delivery(path)).get('delivered')]
         return result
-    if action in {'enable','disable'}:
-        for p in bindings:
-            row=read_binding(p);row['enabled']=action=='enable';write(p,row)
-        return {'workspace_id':workspace_id,'updated':len(bindings)}
     if action=='health':
         write(base/'health.json',{'checked_at':now(),'error':args.get('error')});return {'ok':True}
     if action=='tick':
@@ -182,12 +181,10 @@ def _delivery_command(root,base,action,args):
             for path, row in rows:
                 row.update(request_id=request_id, batch_event_ids=ids)
                 write(path, row)
-        # Disable pauses automatic delivery while observations continue. A fixed
-        # batch waits as a whole so retry membership never changes on resume.
-        paused_events = {p.stem for p, _ in pending
-                         if not read_binding(p.parent.parent / 'binding.json')['enabled']}
-        return {'deliveries': [row for _, row in pending
-                               if not paused_events.intersection(row['batch_event_ids'])]}
+        # Task Controller owns admission policy; the outbox retains facts only.
+        for path, _ in pending:
+            read_binding(path.parent.parent / 'binding.json')
+        return {'deliveries': [row for _, row in pending]}
     eid=args.get('event_id')
     path=next((p for p in deliveries if p.stem==eid),None)
     if path is None:raise ValueError('unknown monitor event')
@@ -196,7 +193,7 @@ def _delivery_command(root,base,action,args):
     row=read_delivery(path)
     if args.get('channel')!='wake':return {'claimed':False}
     if action=='claim':
-        if not read_binding(path.parent.parent / 'binding.json')['enabled']:return {'claimed':False}
+        read_binding(path.parent.parent / 'binding.json')
         if row.get('delivered') or row.get('lease_until',0)>time.time():return {'claimed':False}
         row.update(claim_token=uuid.uuid4().hex,lease_until=time.time()+60)
         write(path,row);return {**row,'claimed':True}
@@ -230,7 +227,7 @@ def assess(root, event_id, session_id):
         if delivery['event_id'] != event_id or delivery['session_id'] != session_id:
             raise ValueError("monitor_delivery_binding_mismatch")
         obsolete = bool(delivery.get("delivered"))
-        enabled = read_binding(paths[0].parent.parent / "binding.json")["enabled"]
+        read_binding(paths[0].parent.parent / "binding.json")
         return {"event_id": event_id, "event": event, "obsolete": obsolete,
-                "admitted": not obsolete and enabled, "reason": "already_delivered" if obsolete else "attention_required" if enabled else "paused",
+                "admitted": not obsolete, "reason": "already_delivered" if obsolete else "attention_required",
                 "delivery_token": digest({"event_id": event_id, "request_id": delivery["request_id"], "delivered": obsolete})}

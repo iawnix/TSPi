@@ -7,6 +7,7 @@ import test from "node:test";
 import { startCoRAgentHost } from "../../../apps/agent/host/server.mjs";
 import { connectHost, HOST_PROTOCOL } from "../../../apps/agent/transport/host-client.mjs";
 import { create_workspace_initializer } from "../../../apps/agent/host/workspace.mjs";
+import { MONITOR_METHODS } from "../../../apps/agent/contracts/monitor.mjs";
 
 const TARGET = { workspace_id: "project-a", session_id: "session-a" };
 
@@ -70,6 +71,7 @@ function createBackend(workspaceRoot) {
     async interrupt() { return { accepted: true }; },
     async selectModel() { return { accepted: true }; },
     async models() { return { models: [{ provider: "test", id: "test-model", name: "Test model" }] }; },
+    async monitor(method, params) { return { method, ...params }; },
     async close() { closed = true; },
     get closed() { return closed; },
   };
@@ -286,7 +288,7 @@ test("Host relays real Job Monitor events and rejects old or mismatched identiti
   t.after(() => bridge.close());
   const notifications = [];
   env.client.on("notification", event => { if (event.method === "monitor/event") notifications.push(event.params.event); });
-  await env.client.request("monitor/list", { workspace_id: "project-a" });
+  await env.client.request("monitor/overview", TARGET);
   const job = await bridge.execute_command("job.start", { job_id: "job_monitor_fixture", session_id: "session-a",
     command: [process.env.CORAGENT_PYTHON, "-c", "print('monitor fixture')"], timeout_seconds: 5 });
   t.after(() => bridge.execute_command("job.cancel", { job_id: job.job_id }).catch(() => {}));
@@ -313,6 +315,7 @@ test("Host relays real Job Monitor events and rejects old or mismatched identiti
     { attempt_id: "attempt_wrong" },
     { job_id: "job_wrong" },
     { node_id: "node_" + "a".repeat(32), node_revision: 1 },
+    { user_task_id: "task_another" },
     { state: "completed" },
   ].entries()) {
     const event_id = `event_${String(index + 1).repeat(32)}`;
@@ -400,4 +403,59 @@ test("fresh attach returns one snapshot and replay is bounded by bytes", async t
   assert.equal(resumed.snapshot.messages.length, 30);
   assert.ok(Buffer.byteLength(JSON.stringify(resumed)) < 8*1024*1024);
   assert.ok(resumed.events.every(event=>event.cursor.epoch===resumed.cursor.epoch));
+});
+
+test("Monitor exposes one session-scoped API and leaves control idempotency to the Worker", async t => {
+  const { client, backend } = await fixture(t);
+  const received = [];
+  backend.monitor = async (method, params) => {
+    received.push({ method, params });
+    return { user_task_id: params.user_task_id, state: "paused", revision: 4 };
+  };
+  assert.deepEqual(client.hello.capabilities.filter(method => method.startsWith("monitor/")), [...MONITOR_METHODS]);
+  for (const method of ["monitor/list", "monitor/status", "monitor/enable", "monitor/disable"]) {
+    await assert.rejects(client.request(method, TARGET), { code: "method_not_found" });
+  }
+  const params = { ...TARGET, user_task_id: "task-1", request_id: "pause-1", expected_revision: 3 };
+  const first = await client.request("monitor/task/pause", params);
+  const duplicate = await client.request("monitor/task/pause", params);
+  assert.deepEqual(first, duplicate);
+  assert.deepEqual(received, Array.from({ length: 2 }, () => ({ method: "monitor/task/pause", params })));
+  await assert.rejects(client.request("monitor/task/pause", { ...params, expected_revision: undefined }), { code: "invalid_params" });
+  await assert.rejects(client.request("monitor/task/read", { ...TARGET, task_id: "task-1" }), { code: "invalid_identifier" });
+  await assert.rejects(client.request("monitor/overview", { workspace_id: TARGET.workspace_id }), { code: "invalid_identifier" });
+  await assert.rejects(client.request("monitor/overview", { ...TARGET, sessionId: "alias" }), { code: "invalid_params" });
+  await assert.rejects(client.request("monitor/task/cancel", params), { code: "invalid_params" });
+  await client.request("monitor/task/cancel", { ...params, jobs: "keep" });
+  assert.equal(received.at(-1).params.jobs, "keep");
+  await client.request("monitor/task/cancel", { ...params, jobs: "cancel" });
+  assert.equal(received.at(-1).params.jobs, "cancel");
+});
+
+test("Monitor forwards queries without input admission and propagates authoritative control conflicts", async t => {
+  const { client, backend, root } = await fixture(t);
+  let inputCalls = 0;
+  backend.sendInput = async () => { inputCalls++; };
+  const received = [];
+  backend.monitor = async (method, params) => {
+    received.push({ method, params });
+    if (method === "monitor/task/resume") throw Object.assign(new Error("Task changed; read its current revision"), { code: "task_revision_conflict" });
+    return { task_controller: { ready: true }, items: [], next_cursor: null };
+  };
+  for (const [method, extra] of [
+    ["monitor/overview", {}], ["monitor/tasks", { limit: 20 }],
+    ["monitor/task/read", { user_task_id: "task-1" }], ["monitor/jobs", { user_task_id: "task-1" }],
+    ["monitor/job/read", { job_id: "job-1" }], ["monitor/runs", { cursor: "next" }],
+    ["monitor/run/read", { run_id: "run-1" }],
+  ]) await client.request(method, { ...TARGET, ...extra });
+  assert.equal(received.length, 7);
+  assert.equal(inputCalls, 0);
+  await assert.rejects(client.request("monitor/tasks", { ...TARGET, limit: 101 }), { code: "invalid_params" });
+  await assert.rejects(client.request("monitor/task/resume", { ...TARGET, user_task_id: "task-1", request_id: "resume-1", expected_revision: 1 }), { code: "task_revision_conflict" });
+  const health = { state: "running" };
+  await writeFile(join(root, "state", "monitor-health.json"), JSON.stringify(health));
+  const result = await client.request("monitor/health", TARGET);
+  assert.deepEqual(result.host_worker_health, health);
+  assert.equal(result.supervisor_health, null);
+  assert.deepEqual(result.task_controller, { ready: true });
 });

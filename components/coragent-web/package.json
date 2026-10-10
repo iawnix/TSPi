@@ -6,7 +6,7 @@
   "description": "Optional read-only CoRAgent Web explorer component",
   "protocols": {
     "provider": "research-memory-provider/1",
-    "snapshot": "research-snapshot/2",
+    "snapshot": "research-snapshot/3",
     "theme": "coragent-theme/1"
   }
 }

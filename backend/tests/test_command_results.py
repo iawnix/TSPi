@@ -75,6 +75,8 @@ def test_all_command_results_match_actual_api_replies(command_workspace):
         call('job.reconcile', job_id=job['job_id'])
         call('job.cancel', job_id=job['job_id'])
         call('job.collect', job_id=job['job_id'])
+        jobs = call('job.list', session_id='fixture', limit=1)
+        assert jobs['jobs'][0]['job_id'] == job['job_id']
         job_monitor.command(root, 'tick', {})
         event = job_monitor.command(root, 'pending', {})['deliveries'][0]['event_id']
         call('job.monitor_assess', event_id=event, session_id='fixture')
@@ -108,6 +110,6 @@ def test_result_schemas_cover_non_success_variants():
 
 
 def test_result_catalog_is_complete_and_schemas_are_well_formed():
-    assert len(COMMAND_DEFINITIONS) == 19
+    assert len(COMMAND_DEFINITIONS) == 20
     for definition in COMMAND_DEFINITIONS.values():
         Draft202012Validator.check_schema(definition['result'])

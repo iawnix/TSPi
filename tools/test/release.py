@@ -67,17 +67,18 @@ def main():
         native=subprocess.run(['node','--import',str(pi_root/'packages/coding-agent/src/experimental/source-resolver.ts'),
                                '--test','--test-concurrency=1','--test-reporter=tap',
                                str(ROOT/'tests/node/native/pi-session-worker-startup.test.mjs'),
-                               str(ROOT/'tests/node/native/worker-research-flow.test.mjs')],
+                               str(ROOT/'tests/node/native/worker-research-flow.test.mjs'),
+                               str(ROOT/'tests/node/native/worker-task-continuation.test.mjs')],
                               cwd=external,env=clean,stdout=log,stderr=subprocess.STDOUT)
     native_text=native_report.read_text()
     counts={name:int(match.group(1)) for name in ('tests','pass','fail','skipped')
             if (match:=re.search(r'^# '+name+r' (\d+)$',native_text,re.M))}
     write_json(run/'report/installed-native.json',{'returncode':native.returncode,'counts':counts})
-    if native.returncode or counts.get('tests',0)<2 or counts.get('skipped',0):
+    if native.returncode or counts.get('tests',0)<3 or counts.get('skipped',0):
         raise RuntimeError('Installed native Worker acceptance failed; see private installed-native report')
     if hashlib.sha256(artifact.read_bytes()).hexdigest()!=before: raise RuntimeError('Release bytes changed during acceptance')
     report={'artifact_sha256':before,'wheel':descriptor,'installer':'passed','external_cwd':'passed',
-            'native_worker':'passed','seven_tools':'passed','native_counts':counts,'phone':'not-run','live_model':'not-authorized','remote_platform':'not-authorized'}
+            'native_worker':'passed','seven_tools':'passed','task_continuation':'passed','native_counts':counts,'phone':'not-run','live_model':'not-authorized','remote_platform':'not-authorized'}
     # Always use the installed uninstaller; the source checkout must not repair
     # omissions in the installation under test.
     uninstaller=package/'scripts/uninstall.py'

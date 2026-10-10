@@ -460,7 +460,7 @@
       "type": "object",
       "properties": {
         "schema_version": {
-          "const": "research-snapshot/2"
+          "const": "research-snapshot/3"
         },
         "workspace_id": {
           "type": "string"
@@ -572,6 +572,9 @@
         },
         "snapshot_id": {
           "type": "string"
+        },
+        "research": {
+          "$ref": "results.json#/definitions/ResearchStructure"
         }
       },
       "required": [
@@ -579,6 +582,7 @@
         "workspace_id",
         "sequence",
         "nodes",
+        "research",
         "tasks",
         "new_records",
         "running_jobs",
@@ -2047,6 +2051,165 @@
         "content_digest"
       ],
       "additionalProperties": false
+    },
+    "ResearchStructure": {
+      "type": "object",
+      "properties": {
+        "entry_node_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "focus_node_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "results.json#/definitions/ResearchStructureNode"
+          }
+        },
+        "relations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "part_of",
+                  "requires",
+                  "alternative_to"
+                ]
+              },
+              "target": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "source",
+              "kind",
+              "target"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "omitted": {
+          "type": "object",
+          "properties": {
+            "entry_node_ids": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "focus_node_ids": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "nodes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "relations": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unexpanded_nodes": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "entry_node_ids",
+            "focus_node_ids",
+            "nodes",
+            "relations",
+            "unexpanded_nodes"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "entry_node_ids",
+        "focus_node_ids",
+        "nodes",
+        "relations",
+        "omitted"
+      ],
+      "additionalProperties": false,
+      "description": "Bounded task neighborhood: two containment levels below entry Nodes and direct focus neighbors. Omission counts describe this discovered neighborhood, not the entire graph; unexpanded_nodes counts discovered Nodes with children outside it."
+    },
+    "ResearchStructureNode": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "paused",
+            "closed"
+          ]
+        },
+        "assessment_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "plan": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "content_omitted": {
+          "type": "boolean"
+        },
+        "read": {
+          "type": "object",
+          "properties": {
+            "ref": {
+              "type": "string"
+            },
+            "field": {
+              "const": "relations"
+            }
+          },
+          "required": [
+            "ref",
+            "field"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "title",
+        "status",
+        "assessment_ref",
+        "plan",
+        "content_omitted",
+        "read"
+      ],
+      "additionalProperties": false
     }
   },
   "commands": {
@@ -2155,6 +2318,62 @@
     },
     "artifact.read": {
       "$ref": "results.json#/definitions/ArtifactRead"
+    },
+    "job.list": {
+      "type": "object",
+      "properties": {
+        "jobs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "job_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "session_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "user_task_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "type": "string",
+                "minLength": 1
+              },
+              "collection_state": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "job_id",
+              "session_id",
+              "user_task_id",
+              "state",
+              "collection_state"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "jobs",
+        "next_cursor"
+      ],
+      "additionalProperties": false
     }
   }
 }

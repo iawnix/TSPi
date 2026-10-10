@@ -39,7 +39,7 @@ export function createMonitorEvents({ listWorkspaces, clients, epoch }) {
             const info = await physicalFileInfo(path);
             if (!info) continue;
             const bindingMarker = [identity.route, identity.canonical, binding.job_id,
-              binding.job_digest, binding.node_id, binding.node_revision, binding.session_id, binding.wake_policy, binding.notify_policy].map((value) => JSON.stringify(value)).join(":");
+              binding.job_digest, binding.node_id, binding.node_revision, binding.user_task_id, binding.session_id, binding.wake_policy, binding.notify_policy].map((value) => JSON.stringify(value)).join(":");
             const marker = `${info.dev}:${info.ino}:${info.size}:${info.mtimeMs}:${bindingMarker}`;
             if (monitorFiles.get(path) === marker) continue;
             let event;
@@ -117,12 +117,13 @@ function validMonitorBinding(binding, monitorId, identity) {
     && binding.workspace_id === identity.canonical
     && typeof binding.job_id === "string" && /^job_[A-Za-z0-9_.:-]+$/u.test(binding.job_id)
     && validResearchBinding(binding)
+    && validTaskBinding(binding)
     && !Object.hasOwn(binding, "intent_id") && !Object.hasOwn(binding, "intent_digest")
     && typeof binding.job_digest === "string" && /^sha256:[0-9a-f]{64}$/u.test(binding.job_digest)
     && (binding.session_id === null || (typeof binding.session_id === "string" && binding.session_id.length > 0))
     && ["none", "next_run"].includes(binding.wake_policy)
     && binding.notify_policy === "none"
-    && typeof binding.enabled === "boolean"
+    && (binding.enabled === undefined || binding.enabled === true)
     && typeof binding.created_at === "string" && binding.created_at.length > 0);
 }
 
@@ -130,7 +131,9 @@ function validMonitorEvent(event, eventId, monitorId, identity, binding) {
   return Boolean(event && typeof event === "object" && !Array.isArray(event)
     && event.schema_version === "coragent-job-monitor-event/2"
     && validResearchBinding(event)
+    && validTaskBinding(event)
     && event.node_id === binding.node_id && event.node_revision === binding.node_revision
+    && event.user_task_id === binding.user_task_id
     && !Object.hasOwn(event, "intent_id") && !Object.hasOwn(event, "intent_digest")
     && event.event_id === eventId
     && event.monitor_id === monitorId
@@ -158,4 +161,9 @@ function validResearchBinding(value) {
   return (value.node_id === null && value.node_revision === null)
     || (typeof value.node_id === "string" && /^node_[A-Za-z0-9_-]+$/u.test(value.node_id)
       && Number.isSafeInteger(value.node_revision) && value.node_revision > 0);
+}
+
+function validTaskBinding(value) {
+  return value.user_task_id === undefined || value.user_task_id === null
+    || (typeof value.user_task_id === "string" && /^task_[A-Za-z0-9_-]+$/u.test(value.user_task_id));
 }

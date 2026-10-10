@@ -8,12 +8,12 @@ CoRAgent 只使用 Pi 原生 Harness 循环。Workspace 是跨会话存在的研
 
 | 组件 | 负责 |
 | --- | --- |
-| Host / Agent Server | 工作区准入、认证输入、会话绑定、请求身份、next_run 调度 |
-| Pi session | 对话、模型请求、原生工具和输入消费 |
+| Agent Server / Host | 整体服务宿主；Host 负责工作区准入、认证、会话路由与 Worker 恢复发现 |
+| Pi SessionWorker / durable Harness | 会话存储的唯一拥有者，负责对话、模型/工具执行、原子输入接纳与恢复 |
 | Research Memory | Workspace 存储合同、原始要求、Node、不可变 Result、显式研究关系 |
 | Job Runtime | 派发、执行、取消、协调和收集回执 |
 | Artifact Store | 不可变文件及来源 manifest |
-| Monitor | 执行事件、outbox、重试和固定投递目标 |
+| Monitor / Task Controller | SessionWorker 内的用户任务意图和推进策略；Job monitoring 观察计算并投递事件 |
 | Email Skill | 已授权报告投递、附件固定和运输回执 |
 | 检索 / Web | 可重建的预算内视图、排序理由和只读导航 |
 
@@ -22,6 +22,8 @@ CoRAgent 只使用 Pi 原生 Harness 循环。Workspace 是跨会话存在的研
 ## 研究模型
 
 Node 承载持续推进的局部问题。goal 是问题，proposal 是当前假设或思路，plan 是调查方案，progress 是进展说明。假设可为空；调参数、换构型、同目标重试通常留在原 Node。独立问题才另建 Node，不要求模型创建 Attempt 对象。
+
+复杂研究以可独立解释的问题及现有 `part_of`、`requires`、`alternative_to` 关系组织。根节点可选，共享问题可以有多个父节点。UserTask `/2` 只保存 `research.entry_node_ids` 与 `research.focus_node_ids`，通过 `task_update` 的 `set_research` 动作一起替换。这些是导航引用，不是所有权、执行顺序或第二份计划。Node 与 Result schema 保持不变。
 
 Node 状态为 open / paused / closed。关闭表示停止主动推进，不表示科学成功，也不取消 Job。内容修订号独立于后台执行观察；并发修改需要重新读取并明确合并，单纯追加笔记不覆盖其他人的判断。
 
@@ -57,9 +59,25 @@ uses / cites 必须来自确证材料输入或明确结果引用。文件名相�
 
 上下文预算先保留原始要求与认证触发原因，再按事件归属、明确焦点、待处理执行事实和研究关系选择 Node，并补充必要的结果及直接依赖。省略内容提供读取/检索入口，不视为完成。普通用户文本不能冒充 Monitor 元数据。
 
-研究 Job 提交时明确绑定 node_id 和已读方案版本；准备与诊断可以没有归属。Monitor 事件跨 Node 修改和会话重启保留提交时关联。
+每次模型请求前，`GenerationTask.beforeRequest` 读取当前 Task，把完整入口/焦点引用传给内部 Memory 读取接口。唯一的 `research-snapshot/3` 投影先为研究结构和局部 plan 摘录预留空间，再接纳执行事实和详细 Node 卡片；展示有界包含邻域及焦点的直接关系，支持共享父节点。截断字段不会获得完整替换回执。Monitor 任务详情复用该投影，只读浏览不写焦点、不唤醒模型。
 
-next_run 是实际调度模式：持久化认证执行事件，会话忙或自动执行暂停时保留；可接收时幂等提交一次 Pi 输入。事件保存、Pi 消费和科学解释是不同事实。回复丢失沿用请求身份；固定批次重试时不吸收新事件。普通笔记、Node 状态和 Memory sequence 不触发或抑制投递；没有新事件就不会因 Node open 自行续跑。
+研究 Job 提交时明确绑定 node_id 和已读方案版本；可信工具适配层同时绑定当前 `user_task_id`，与科学 Node 归属分开。准备与诊断可以没有归属。Monitor 事件跨 Node 修改和会话重启保留提交时关联。
+
+next_run 是实际调度模式：持久化认证执行事件，会话忙或自动执行暂停时保留；可接收时幂等提交一次 Pi 输入。事件保存、Pi 消费和科学解释是不同事实。回复丢失沿用请求身份；固定批次重试时不吸收新事件。普通笔记、Node 状态和 Memory sequence 不触发或抑制投递；Node open 本身不产生自动输入；另行登记的活跃用户任务即使没有新 Job 事件也可以继续推进。
+
+## 持久用户任务与 Monitor
+
+请求阶段的任务投影限制序列化字节，省略的原始要求、条件和证据明确指向 `task_read`；截断不放宽授权。用户任务跨越多个 Pi run 和计算 Job。`task_begin`、`task_read`、`task_update` 保存已授权目标、用户提交来源、交付条件、进展证据和具体等待/阻塞。普通问答不自动建立任务；每个 session 最多一个非终态用户任务。任务控制状态只存在 Pi durable 文档中，Host 不另存任务状态机或控制回执。
+
+Task Controller 位于 SessionWorker 内。普通工具工作继续使用原生 Pi 循环；run 正常结束后，活跃且空闲的任务通过同一输入接纳事务提交 `task_controller` 内部输入。当前实现不安装 `onYield` 延续路径。watch 和 30 秒核对恢复推进责任；等待只查询实际归属 Job，条件未满足时不请求模型。连续三次自动 run 没有新证据时进入明确阻塞。回复结束不代表研究完成：完成提议必须覆盖全部交付条件的证据，并且最终回复成功交付。
+
+暂停只抑制后续自动执行，当前回复和已有 Job 可以收尾；用户打断回复会同时暂停任务。恢复是用户控制操作。取消任务须显式选择保留还是请求取消已有 Job。Monitor 查询不发送模型输入或恢复任务。`CORAGENT_AUTOMATIC_CONTINUATION=0` 关闭自动输入，保留用户输入与状态读取。
+
+自动观察与显式进展更新共用持久身份集合：单项 Result ID、Artifact 内容摘要及归属 Job 的里程碑。改计划、追加 note、新建 Node 和换焦点记录活动但不补充进展额度；复用身份、换引用组合或重启也不补充额度。每项完成条件需要固定 Result 或 Artifact 证据，科学适用性仍由 Agent 判断。这些控制不能判断新产出是否具有科学价值。
+
+Host 重启从 Pi 现有 session catalog 发现会话，最多并行恢复四个 Worker；每个 Worker 核对自身 durable 任务。恢复失败通过 `monitor/health` 展示。只有 SessionWorker 写会话 SQLite；聚合视图来自 Task、Pi、Job 各自事实源，不声称跨系统原子快照。
+
+`/monitor` 统一展示任务、作业和执行详情。Host 与浏览器共用 `apps/agent/contracts/monitor.mjs` 的唯一方法目录，请求与返回见 [Monitor 合同](../contracts/monitor/README.md)。Pi generation/tool Task 位于 run 的诊断详情中，不列入用户任务。任务/作业变化与重连沿用现有通知读取最新快照。
 
 ## Skill 与交付
 

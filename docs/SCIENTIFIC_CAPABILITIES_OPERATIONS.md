@@ -74,3 +74,14 @@ data tables, energy plots, and their evidence requirements.
 ## Validation
 
 Use `tools/test/runner.py` to select the source, Native and package lanes. Real solver and remote acceptance use isolated workspaces and configured bindings. Synthetic Gaussian fixtures verify parsing and evidence linkage; they do not establish that a real transition-state search converges.
+
+A native prerequisite probe resolves and hashes the configured executable; it
+does not run the solver or verify a license, convergence, or a scientific result.
+`environment_executable_missing` means the selected command cannot be executed;
+`environment_activation_missing` identifies its missing activation script;
+`environment_dependency_missing` identifies a required package or module that is
+absent. `environment_import_failed` means importing a present dependency failed
+during initialization. Report the exact observation and selected target; an
+unconfigured binding or absent recipe does not prove the software is absent
+from every environment. Changed binding or executable evidence requires preparing
+a new request before dispatch, not running an old prepared command.

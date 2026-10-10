@@ -67,6 +67,7 @@ export function parseSlashCommand(name, input = "") {
   if (!definition) throw new Error(`unsupported slash command: /${name}`);
   const tokens = String(input).trim().split(/\s+/).filter(Boolean);
   if (name === "research") return parseResearchSlash(tokens, definition.usage);
+  if (name === "monitor") return parseMonitorSlash(tokens, definition.usage);
   if (tokens.length > (name === "resume" ? 1 : 0)) throw usageError(definition.usage);
   return Object.freeze({ command: `client.${name}`, params: Object.freeze(tokens.length ? { sessionId: tokens[0] } : {}) });
 }
@@ -87,6 +88,55 @@ function parseResearchSlash(tokens, usage) {
   if (action === "search") return validateCommandInvocation("research.search", {query: tokens.slice(1).join(" ")});
 
   throw usageError(usage);
+}
+
+function parseMonitorSlash(tokens, usage) {
+  const parts = [...tokens];
+  const action = parts.shift() || "overview";
+  const params = {};
+  let method;
+  if (!tokens.length || ["tasks", "jobs", "runs", "health"].includes(action)) {
+    method = `monitor/${action}`;
+    const allowed = ["tasks", "jobs", "runs"].includes(action)
+      ? new Set(["--limit", "--cursor", ...(["jobs", "runs"].includes(action) ? ["--task"] : [])]) : new Set();
+    const seen = new Set();
+    while (parts.length) {
+      const flag = parts.shift(), value = parts.shift();
+      if (!allowed.has(flag) || seen.has(flag) || !value || value.startsWith("--")) throw usageError(usage);
+      seen.add(flag);
+      if (flag === "--limit") {
+        if (!/^[1-9]\d*$/.test(value) || Number(value) > 100) throw usageError(usage);
+        params.limit = Number(value);
+      } else params[flag === "--task" ? "user_task_id" : "cursor"] = value;
+    }
+  } else if (["task", "job", "run"].includes(action)) {
+    const operation = parts.shift();
+    const controls = action === "task" ? ["pause", "resume", "cancel"] : action === "job" ? ["cancel"] : [];
+    const control = controls.includes(operation);
+    const id = control ? parts.shift() : operation;
+    if (!id || id.startsWith("--")) throw usageError(usage);
+    params[{task:"user_task_id",job:"job_id",run:"run_id"}[action]] = id;
+    method = `monitor/${action}/${control ? operation : "read"}`;
+    if (action === "task" && operation === "cancel") {
+      const jobs = parts.shift();
+      if (!["--keep-jobs", "--cancel-jobs"].includes(jobs)) throw usageError(usage);
+      params.jobs = jobs === "--keep-jobs" ? "keep" : "cancel";
+    }
+    if (action === "run") {
+      const seen = new Set();
+      while (parts.length) {
+        const flag = parts.shift(), value = parts.shift();
+        if (!["--limit", "--cursor"].includes(flag) || seen.has(flag) || !value || value.startsWith("--")) throw usageError(usage);
+        seen.add(flag);
+        if (flag === "--limit") {
+          if (!/^[1-9]\d*$/.test(value) || Number(value) > 100) throw usageError(usage);
+          params.limit = Number(value);
+        } else params.cursor = value;
+      }
+    }
+    if (parts.length) throw usageError(usage);
+  } else throw usageError(usage);
+  return Object.freeze({command:"client.monitor", params:Object.freeze({method, ...params})});
 }
 
 

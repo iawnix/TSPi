@@ -62,6 +62,32 @@ def expected_da(transformation):
     return result
 
 
+def _product_graph_matches(reactant, product, expected_changes):
+    """Compare the declared product constitution without certifying an atom trajectory."""
+    before = bonds(reactant)
+    if any(before.get(pair, 0.) != old for pair, (old, _) in expected_changes.items()):
+        return None
+    candidate = Chem.RWMol(reactant)
+    indexes = {atom.GetAtomMapNum(): atom.GetIdx() for atom in candidate.GetAtoms()}
+    bond_types = {1.: Chem.BondType.SINGLE, 2.: Chem.BondType.DOUBLE}
+    for pair, (old, new) in expected_changes.items():
+        i, j = [indexes[number] for number in pair]
+        if old:
+            candidate.RemoveBond(i, j)
+        if new:
+            candidate.AddBond(i, j, bond_types[new])
+    Chem.SanitizeMol(candidate)
+    graphs = []
+    for molecule in (candidate, product):
+        molecule = Chem.Mol(molecule)
+        for atom in molecule.GetAtoms():
+            atom.SetAtomMapNum(0)
+        # Geometry/stereochemical correspondence is a separate check. Isotopes and charge remain.
+        Chem.RemoveStereochemistry(molecule)
+        graphs.append(Chem.MolToSmiles(molecule, canonical=True, isomericSmiles=True))
+    return graphs[0] == graphs[1]
+
+
 def reaction(smiles, transformation=None):
     sides = molecules(smiles)
     inventories = [Counter((a.GetSymbol(), a.GetIsotope()) for a in Chem.AddHs(m).GetAtoms()) for m in sides]
@@ -93,6 +119,12 @@ def reaction(smiles, transformation=None):
             topology = mapped and balanced and neutral_carbon and actual == expected
             checks['declared_transformation'] = {'verdict': 'pass' if topology else 'fail',
                 'kind': kind, 'expected_bond_changes': [{'atoms': list(p), 'before': v[0], 'after': v[1]} for p, v in sorted(expected.items())]}
+            graph_matches = _product_graph_matches(sides[0], sides[1], expected) if neutral_carbon else None
+            checks['declared_transformation'].update(product_graph_matches=graph_matches,
+                reason='declared_atom_mapping_matches' if topology else
+                    'product_graph_equivalent_but_atom_mapping_differs' if graph_matches else
+                    'product_graph_differs' if graph_matches is False else 'reactant_does_not_match_declared_transformation',
+                comparison_scope='Product connectivity, charge and isotope ignoring atom-map labels and stereochemistry; not proof of atom correspondence')
             checks['atom_hydrogen_changes']['verdict'] = 'pass' if mapped and not hchanges else 'fail'
         elif kind == 'explicit':
             expected = transformation.get('bond_changes')

@@ -7,6 +7,8 @@ description: 用持久问题 Node、显式关系、执行观察与不可变 Resu
 
 先读注入的工作区上下文或 `research_read {}`。上下文在预算内保留原始用户要求、关键 Node、Result 与执行事实；省略不表示不存在或已经完成。按返回引用继续读取。执行回执记录事实，领域 Skill 和 Agent 负责科学解释。
 
+用户任务的目标、交付条件、等待、阻塞和完成由 `task_read`、`task_update` 管理。Node 的 open/paused/closed 不会暂停或完成用户任务。科学解释与证据仍保存在 Memory，任务进展和完成依据引用这些记录。
+
 ## 五种小操作
 
 - `research_read {}` 恢复概览；`{ref}` 读取返回的 Node、Result 或记录，长内容按返回分页继续读取。
@@ -28,6 +30,10 @@ Node 很大时，单独读取准备修改的字段：
 ## 同一个问题可以反复尝试
 
 调参数、换初始构型和同目标下的重试留在同一个 Node。独立问题或需要分别推进的竞争分支才创建新 Node。goal 是问题，proposal 是当前假设或思路，plan 是调查方案。准备材料或报告不必强行提出科学假设。
+
+大研究包含可独立解释的结论、不同路线或共享证据问题时，再分成相应 Node。先建立已有依据、能够调查的问题，随证据展开；根节点可选，参数扫描可以是一个问题加多个 Job。复杂研究或某种方法失败时，参考[规划与重访问题](references/planning.zh-CN.md)。
+
+用 `task_update` 的 `set_research` 动作、当前 `expected_revision` 和 `research: {entry_node_ids: [...], focus_node_ids: [...]}` 关联研究入口与焦点，引用实际返回的 Node ID。入口用于恢复整体结构，焦点决定下一次请求优先呈现什么；这些引用不构成排他所有权。研究关注点实际改变时才更新，只读探索直接读取 Node/relations。改计划、追加 note 或创建空节点不计作新进展。
 
 ```json
 {"goal":"找到连接 A 与 B 的过渡态","proposal":"可能存在协同成键路径"}

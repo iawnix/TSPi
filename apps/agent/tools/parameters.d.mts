@@ -148,4 +148,38 @@ export interface ToolParameters {
     "limit"?: number;
     "root"?: string;
   };
+  taskBegin: {
+    "title": string;
+    "objective": string;
+    "source_submission_ids": Array<string>;
+    "criteria": Array<{
+      "id": string;
+      "description": string;
+    }>;
+  };
+  taskRead: Record<string, never>;
+  taskUpdate: {
+    "expected_revision": number;
+    "action": "refine" | "progress" | "wait" | "block" | "propose_completion" | "set_research";
+    "reason"?: string;
+    "objective"?: string;
+    "criteria"?: Array<{
+      "id": string;
+      "description": string;
+    }>;
+    "source_submission_ids"?: Array<string>;
+    "evidence_refs"?: Array<string>;
+    "wait"?: {
+      "job_ids": Array<string>;
+      "mode": "all" | "any";
+    };
+    "completion"?: Array<{
+      "criterion_id": string;
+      "evidence_refs": Array<string>;
+    }>;
+    "research"?: {
+      "entry_node_ids": Array<string>;
+      "focus_node_ids": Array<string>;
+    };
+  };
 }

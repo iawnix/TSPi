@@ -4,10 +4,11 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { timingSafeEqual } from "node:crypto";
 import { connectHost, HOST_PROTOCOL } from "./host-client.mjs";
+import { MONITOR_METHODS, MONITOR_MUTATIONS } from "../contracts/monitor.mjs";
 import { require_workspace_id } from "../contracts/workspace-id.mjs";
 
-const METHODS = new Set(["session/read", "session/attach", "input/send", "input/status", "turn/interrupt", "monitor/list", "monitor/status", "monitor/enable", "monitor/disable"]);
-const MUTATIONS = new Set(["input/send", "turn/interrupt", "monitor/enable", "monitor/disable"]);
+const METHODS = new Set(["session/read", "session/attach", "input/send", "input/status", "turn/interrupt", ...MONITOR_METHODS]);
+const MUTATIONS = new Set(["input/send", "turn/interrupt", ...MONITOR_MUTATIONS]);
 const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const authority = (host, port) => `${host.includes(":") && !host.startsWith("[") ? `[${host}]` : host}:${port}`;
 

@@ -2,6 +2,9 @@ import shared from "../../../contracts/commands/shared.json" with { type: "json"
 
 const TOOL_ROWS = [
   ["systemPrompt", "system_prompt", "deterministic_runtime"],
+  ["taskBegin", "task_begin", "deterministic_runtime"],
+  ["taskRead", "task_read", "deterministic_runtime"],
+  ["taskUpdate", "task_update", "deterministic_runtime"],
   ["state", "research_read", "deterministic_workspace"],
   ["search", "research_search", "deterministic_workspace"],
   ["create", "research_create", "deterministic_workspace"],
@@ -33,6 +36,9 @@ export const PUBLIC_TOOL_EXECUTION = Object.freeze(Object.fromEntries(
 // audits, and future transports.
 export const PUBLIC_TOOL_METADATA = Object.freeze({
   system_prompt: Object.freeze({ authority: "host_read", effect: "read", replay: "safe", phase: "orient" }),
+  task_begin: Object.freeze({ authority: "task_control", effect: "task_write", replay: "idempotent", phase: "advance" }),
+  task_read: Object.freeze({ authority: "task_control", effect: "read", replay: "safe", phase: "orient" }),
+  task_update: Object.freeze({ authority: "task_control", effect: "task_write", replay: "idempotent", phase: "advance" }),
   research_read: Object.freeze({ authority: "kernel_read", effect: "read", replay: "safe", phase: "orient" }),
   research_search: Object.freeze({ authority: "kernel_read", effect: "read", replay: "safe", phase: "orient" }),
   research_create: Object.freeze({ authority: "kernel_write", effect: "research_write", replay: "idempotent", phase: "advance" }),
@@ -54,11 +60,11 @@ const METADATA_FIELDS = Object.freeze(["authority", "effect", "replay", "phase"]
 const METADATA_VALUES = Object.freeze({
   authority: new Set([
     "host_read", "kernel_read", "kernel_write", "runtime_read", "advisory_runtime",
-    "execution_runtime", "research_write", "artifact_runtime", "external_side_effect",
+    "execution_runtime", "research_write", "artifact_runtime", "external_side_effect", "task_control",
   ]),
   effect: new Set([
     "read", "research_write", "result_collection",
-    "artifact_write", "execution_control", "external_write",
+    "artifact_write", "execution_control", "external_write", "task_write",
   ]),
   replay: new Set(["safe", "idempotent", "never"]),
   phase: new Set(["orient", "advance", "prepare", "execute", "interpret"]),
@@ -107,6 +113,9 @@ export function validateHarnessToolDefinition(tool, { source = "tool", requireCa
 
 export function createPublicToolContracts(Type) {
   const contracts = {
+    taskBegin: contract("taskBegin", "Begin task", "Register a sustained user assignment before beginning its work. Cite actual user submission IDs from the task context, preserve the user's objective, and define concrete delivery criteria. Continue the current task for follow-ups; ordinary questions do not need a task.", Type.Unsafe(shared.tools.taskBegin)),
+    taskRead: contract("taskRead", "Read task", "Read the current user task, its original request, delivery criteria, progress and waiting or stopping reason. This is separate from scientific Nodes and compute Jobs.", Type.Unsafe(shared.tools.taskRead)),
+    taskUpdate: contract("taskUpdate", "Update task", "Record progress, wait on Jobs, identify a blocker, refine the user objective from its sources, or propose completion with fixed Result/Artifact evidence. set_research replaces the entry_node_ids and focus_node_ids in research with returned Node references. Use the current expected_revision. Plans, notes and Node creation record activity without resetting the no-progress allowance. A failed candidate does not automatically block the whole project. Every delivery criterion needs evidence; a partial reply does not complete the task. Only the user may resume a paused task.", Type.Unsafe(shared.tools.taskUpdate)),
     systemPrompt: contract("systemPrompt", "System Prompt", "Read the effective system prompt and its provenance.", Type.Unsafe(shared.tools.systemPrompt), {
       promptSnippet: "Inspect the effective system prompt and its provenance",
     }),

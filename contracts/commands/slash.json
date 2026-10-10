@@ -30,9 +30,9 @@
     },
     "monitor": {
       "name": "monitor",
-      "description": "Inspect this session's jobs and monitor deliveries.",
-      "usage": "/monitor",
-      "completions": []
+      "description": "Inspect and control user tasks, compute jobs, and execution records.",
+      "usage": "/monitor [tasks | task <id> | task pause|resume <id> | task cancel <id> --keep-jobs|--cancel-jobs | jobs [--task <id>] | job <id> | job cancel <id> | runs [--task <id>] | run <id> | health] [--limit <1–100> --cursor <cursor>]",
+      "completions": ["tasks", "task", "task pause", "task resume", "task cancel", "jobs", "jobs --task", "job", "job cancel", "runs", "runs --task", "run", "health"]
     },
     "usage": {
       "name": "usage",

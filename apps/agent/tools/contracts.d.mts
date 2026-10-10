@@ -36,6 +36,9 @@ type ToolContract<P, N extends string = string> = {
 
 export interface PublicToolContracts {
   readonly systemPrompt: ToolContract<Record<string, never>, "system_prompt"> & { readonly promptSnippet: string };
+  readonly taskBegin: ToolContract<ToolParameters["taskBegin"]>;
+  readonly taskRead: ToolContract<ToolParameters["taskRead"]>;
+  readonly taskUpdate: ToolContract<ToolParameters["taskUpdate"]>;
   readonly state: ToolContract<StateToolParams>;
   readonly search: ToolContract<ToolParameters["search"]>;
   readonly create: ToolContract<ToolParameters["create"]>;

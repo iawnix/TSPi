@@ -81,7 +81,7 @@ convergence, a complete frequency table and same-sign forming-bond displacement.
 The IRC validator rechecks that saddle, completed directional paths, starting
 geometry RMSD ≤ 0.05 Å, and distinct mapped reactant/product endpoint connectivity.
 Ambiguous covalent distances or missing fields do not pass. Endpoint checks cover
-explicit atom stereocenters, not a general stereochemical mechanism proof or bond-order recovery.
+explicit tetrahedral and E/Z stereochemistry, not a general stereochemical mechanism proof or bond-order recovery.
 
 Gaussian parsing currently requires ordinary Cartesian orientation tables,
 `Atom AN X Y Z` harmonic modes and coordinate-bearing IRC `CURRENT STRUCTURE`

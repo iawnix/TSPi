@@ -1,5 +1,5 @@
 /** A presentation-owned event connection; snapshots recover events missed during reconnect. */
-export function subscribeMonitor({ connect, workspaceId, onChange, onError, retryMs = 5000 }) {
+export function subscribeMonitor({ connect, workspaceId, sessionId, onChange, onError, retryMs = 5000 }) {
   let stopped = false, peer, timer;
   async function open() {
     try {
@@ -13,7 +13,7 @@ export function subscribeMonitor({ connect, workspaceId, onChange, onError, retr
         if (peer !== connection || stopped) return;
         peer = undefined; onError(); timer = setTimeout(open,retryMs); timer.unref?.();
       });
-      await connection.request('monitor/status',{workspace_id:workspaceId});
+      await connection.request('monitor/overview',{workspace_id:workspaceId,session_id:sessionId});
       if (!stopped) onChange();
     } catch {
       if (stopped) return;

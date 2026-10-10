@@ -29,3 +29,10 @@
 
 保留未满足的要求，并报告具体缺失的绑定。维护者可通过 `scripts/install_job_environment.py`
 从随包锁文件安装版本化前缀；研究任务不应修改共享环境。维护后，已有 Job 仍保留原身份。
+
+原生程序的前置探测只解析并固定所配置可执行文件的摘要，不运行求解器，也不证明许可、
+收敛或科学结论成立。`environment_executable_missing` 表示所选命令无法执行；
+`environment_activation_missing` 表示激活脚本缺失；`environment_dependency_missing`
+表示要求的包或模块缺失；`environment_import_failed` 表示已有依赖导入初始化失败。
+报告实际观测与所选目标：未配置绑定或没有预设入口不等于所有环境都未安装软件。
+绑定或程序字节发生变化后须重新准备请求，不能继续派发旧准备命令。

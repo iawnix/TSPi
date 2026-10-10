@@ -23,6 +23,7 @@ results.json declares JSON response DTOs, including read variants and unsuccessf
 | `job.prepare` | `request_file` | write |
 | `job.resolve_prepared` | `prepared_ref` | read |
 | `job.monitor_assess` | `event_id`, `session_id` | read |
+| `job.list` |  | read |
 | `artifact.register` |  |  |
 | `artifact.create` |  |  |
 | `artifact.read` |  |  |

@@ -28,50 +28,41 @@ test('usage ledger survives compacted entries and model switch invalidates conte
  assert.equal(contextMatches({...view,docs:{...view.docs,'pi.agent':{model:{provider:'fixture',modelId:'b'}}}},telemetry),false);
 });
 
-test('compact monitor is session-scoped and distinguishes delivery from agent inbox',()=>{
- const now=Date.now();
- const monitor={monitors:[{session_id:'s',enabled:true,last_state:'running'},{session_id:'other',last_state:'running'}],
- host_worker_health:{last_successful_poll:new Date(now).toISOString(),last_error:null},supervisor_health:{state:'running'}};
- const state={monitor,sessionId:'s',now};
- assert.equal(activityStatus(state).text,'Monitor ✓ · ⚙1');
- const pending={...monitor,pending_deliveries:[{session_id:'s'},{session_id:'other'}]};
- assert.equal(activityStatus({...state,monitor:pending}).text,'Monitor ✓ · ⚙1 · ↑1');
- assert.equal(activityStatus({...state,monitor:pending}).color,'muted');
- assert.equal(activityStatus({...state,view:{docs:{'pi.inbox':{items:[{mode:'followUp',content:'A compute monitor event requires attention.'}]}}}}).text,'Monitor ✓ · ⚙1');
- assert.equal(activityStatus({...state,sessionId:'absent'}).text,'Monitor ✓ · ⚙0');
- assert.equal(activityStatus({...state,monitor:{...monitor,monitors:[{session_id:'s',last_state:'succeeded'}]}}).text,'Monitor ✓ · ⚙0');
- assert.equal(activityStatus({...state,now:now+31000}).text,'Monitor ! · ⚙1');
- assert.equal(activityStatus({...state,monitorError:'offline',monitorErrorSince:now}).text,'Monitor … · ⚙1');
- assert.equal(activityStatus({...state,monitorError:'offline',monitorErrorSince:now-30000}).text,'Monitor × · ⚙1');
- for (const last_state of ['running','queued','held','pending','submitted']) {
-   assert.equal(activityStatus({...state,monitor:{...monitor,monitors:[{session_id:'s',last_state,enabled:false}]}}).text,`Monitor ! · ⚙${last_state === 'running' ? 1 : 0}`);
- }
- assert.equal(activityStatus({...state,monitor:{...monitor,host_worker_health:null}}).text,'Monitor … · ⚙1');
- assert.equal(activityStatus({...state,monitor:{...monitor,supervisor_health:null}}).text,'Monitor … · ⚙1');
- assert.equal(activityStatus({...state,monitor:{...monitor,host_worker_health:{...monitor.host_worker_health,last_error:'poll failed'}}}).text,'Monitor × · ⚙1');
- assert.equal(activityStatus({...state,monitor:{...monitor,supervisor_health:{state:'stopped'}}}).text,'Monitor × · ⚙1');
- assert.equal(activityStatus({...state,monitor:{...pending,pending_deliveries:[{session_id:'s',error:'wake failed'}]}}).text,'Monitor × · ⚙1 · ↑1');
- assert.equal(activityStatus({...state,monitor:{...monitor,monitors:[]},telemetry:{research:{running_jobs:['job']}}}).text,'Monitor ! · ⚙0');
- assert.equal(activityStatus({...state,monitor:undefined,telemetry:{research:{running_jobs:['job']}}}).text,'Monitor … · ⚙—');
+const task = {user_task_id:'t1',title:'Research',objective:'Compare paths',state:'active',reason:null,criteria:[{id:'c1',description:'Final report'}],wait:null,progress:null,continuation:{reservation:null},updated_at:new Date().toISOString()};
+const snapshot = (changes={}) => ({session_id:'s',workspace_id:'w',task, jobs:{items:[{job_id:'j1',state:'running'}],counts:{running:1,queued:0},next_cursor:null},execution:{state:'running'},task_controller:{error:null,last_checked_at:new Date().toISOString(),checking:false,check_interval_ms:1000},automatic_continuation_enabled:true,updated_at:new Date().toISOString(),...changes});
+
+test('task status distinguishes execution, waits and control state, with stale data taking priority',()=>{
+ const monitor=snapshot();
+ const state={monitor,sessionId:'s'};
+ assert.match(activityStatus(state).text,/Researching · 1 jobs running/);
+ assert.match(activityStatus({...state,monitor:snapshot({task:{...task,state:'waiting',wait:{job_ids:['j1'],mode:'all'}}})}).text,/Waiting for compute.*Continues when ready/);
+ assert.match(activityStatus({...state,monitor:snapshot({task:{...task,state:'paused'}})}).text,/Paused/);
+ assert.match(activityStatus({...state,monitor:snapshot({task:{...task,state:'blocked',reason:'Budget exhausted'}})}).text,/Needs attention: Budget exhausted/);
+ assert.match(activityStatus({...state,monitor:snapshot({execution:{state:'idle'}})}).text,/Checking continuation/);
+ assert.match(activityStatus({...state,monitor:snapshot({execution:{state:'idle'},task:{...task,continuation:{reservation:'r1'}}})}).text,/Preparing continuation/);
+ assert.match(activityStatus({...state,monitor:snapshot({execution:{state:'idle'},automatic_continuation_enabled:false})}).text,/Automatic continuation off/);
+ assert.match(activityStatus({...state,monitor:snapshot({task:null})}).text,/No current task/);
+ assert.match(activityStatus({...state,monitorError:'offline'}).text,/Connection lost/);
+ assert.match(activityStatus({...state,monitor:snapshot({task_controller:{error:{code:'task_reconcile_failed'},last_checked_at:new Date().toISOString(),check_interval_ms:1000}})}).text,/Continuation error: task_reconcile_failed/);
+ assert.match(activityStatus({...state,monitor:snapshot({task_controller:{error:null,last_checked_at:null,checking:true,check_interval_ms:1000}})}).text,/Checking recovery/);
+ assert.match(activityStatus({...state,monitor:snapshot({task_controller:{error:null,last_checked_at:new Date(Date.now()-31000).toISOString(),check_interval_ms:1000}})}).text,/Continuation check overdue/);
+ assert.match(activityStatus({...state,now:Date.now()+31000}).text,/Status is stale/);
+ assert.match(activityStatus({...state,sessionId:'other'}).text,/Checking status · — jobs running/);
+ assert.match(activityStatus({...state,monitor:snapshot({jobs:{items:[],next_cursor:null}})}).text,/— jobs running/);
 });
 
-test('monitor colors only the symbol, fits narrow terminals and explains details',()=>{
- const now=Date.now();
+test('monitor symbol colors and narrow width do not hide state in the normal layout',()=>{
  const colors=[];
  const status=createStatusPresentation({session:{workspaceId:'w',sessionId:'s'},monochrome:false,theme:{fg:(color,text)=>{colors.push([color,text]);return text;}},...tui});
- status.update({monitor:{monitors:[{session_id:'s',last_state:'running',enabled:false}],pending_deliveries:[{session_id:'s'}],
- host_worker_health:{last_successful_poll:new Date(now).toISOString()},supervisor_health:{state:'running'}}});
- assert.equal(status.activity.render(80).join(''),' Monitor ! · ⚙1 · ↑1');
- assert.deepEqual(colors,[['muted','Monitor '],['warning','!'],['muted',' · ⚙1 · ↑1']]);
- for (const width of [0,1,2,8,12,20,80]) for (const line of status.activity.render(width)) assert.ok(tui.visibleWidth(line)<=width);
- assert.match(status.monitorDetails(),/1 active job monitor\(s\) paused/);
- assert.match(status.monitorDetails(),/Running: 1 · Queued: 0\nPending delivery: 1/);
- assert.doesNotMatch(status.monitorDetails(),/worker.*\{|poll_interval_ms/);
- status.update({monitor:undefined,telemetry:null});
- assert.deepEqual(status.activity.render(80),[' Monitor … · ⚙—']);
+ status.update({monitor:snapshot({task:{...task,state:'paused'}})});
+ assert.match(status.activity.render(80).join(''),/Monitor Ⅱ · Paused · 1 jobs running/);
+ assert.deepEqual(colors.map(([color])=>color),['muted','muted','muted']);
+ for(const width of [0,1,2,8,12,20,80]) for(const line of status.activity.render(width)) assert.ok(tui.visibleWidth(line)<=width);
+ assert.match(status.monitorDetails(),/Task: Research · Paused/);
+ assert.match(status.monitorDetails(),/Goal: Compare paths/);
+ assert.doesNotMatch(status.monitorDetails(),/control_epoch|producer|generation/);
  const plain=createStatusPresentation({session:{sessionId:'s'},monochrome:true,theme:{fg(){throw new Error('monochrome must not color activity');}},...tui});
- plain.update({monitor:{monitors:[{session_id:'s',last_state:'running'}]}});
- assert.deepEqual(plain.activity.render(80),[' Monitor … · ⚙1']);
+ assert.match(plain.activity.render(80).join(''),/Checking status · — jobs running/);
 });
 
 test('document pages resize without overflowing or losing their logical anchor',()=>{
@@ -129,36 +120,24 @@ test('widening a wrapped line retains the same logical line',()=>{
  assert.match(doc.render(120)[2],/entry-1 /);
 });
 
-test('usage and monitor details stay separate with unknown counters and session scope',()=>{
+test('usage and monitor details stay separate while disconnection overrides cached progress',()=>{
  const status=createStatusPresentation({session:{workspaceId:'w',sessionId:'s'},theme,...tui});
- status.update({view,telemetry,monitor:{monitors:[{session_id:'s',last_state:'queued'},{session_id:'other',last_state:'running'}],
- pending_deliveries:[{session_id:'s'}],host_worker_health:{last_successful_poll:new Date().toISOString()},supervisor_health:{state:'running'}}});
- assert.match(status.activity.render(80).join(''),/Monitor ✓ · ⚙0 · ↑1/);
- const usage=status.usageDetails();
- assert.match(usage,/Total tokens: 60/);assert.match(usage,/Reasoning: —/);assert.match(usage,/Context: 48,000 \/ 200,000/);
- assert.doesNotMatch(usage,/Monitor|Pending|provider-reported|compaction-aware|Tool usage|do not add/);
- assert.match(status.monitorDetails(),/Running: 0 · Queued: 1/);
+ status.update({view,telemetry,monitor:snapshot()});
+ assert.match(status.usageDetails(),/Total tokens: 60/);
+ assert.match(status.usageDetails(),/Reasoning: —/);
+ assert.doesNotMatch(status.usageDetails(),/Monitor|Task:/);
  assert.doesNotMatch(status.monitorDetails(),/tokens|Context/);
- status.update({monitor:{monitors:[],pending_deliveries:[],host_worker_health:{last_error:'offline'}}});
- assert.match(status.monitorDetails(),/Shared monitor worker: offline/);
-});
-
-test('idle monitor keeps its row through startup, disconnects and completed jobs',()=>{
- const status=createStatusPresentation({session:{sessionId:'s'},theme,...tui,monochrome:true});
- assert.deepEqual(status.activity.render(80),[' Monitor … · ⚙—']);
- status.update({monitor:{monitors:[],pending_deliveries:[],host_worker_health:{last_successful_poll:new Date().toISOString()},supervisor_health:{state:'running'}}});
- assert.deepEqual(status.activity.render(80),[' Monitor ✓ · ⚙0']);
  status.update({monitorError:'offline'});
- assert.deepEqual(status.activity.render(80),[' Monitor … · ⚙0']);
- status.update({monitorError:null,monitor:{monitors:[{session_id:'s',last_state:'succeeded'}],pending_deliveries:[{session_id:'s'}],
-   host_worker_health:{last_successful_poll:new Date().toISOString()},supervisor_health:{state:'running'}}});
- assert.deepEqual(status.activity.render(80),[' Monitor ✓ · ⚙0 · ↑1']);
+ assert.match(status.activity.render(80).join(''),/Connection lost/);
+ assert.match(status.monitorDetails(),/Connection: offline/);
+ status.update({monitorError:null,monitor:snapshot({task:{...task,state:'completed'}})});
+ assert.match(status.activity.render(80).join(''),/Completed/);
 });
 
 test('monitor subscription refreshes on reconnect and cleans up its connection',async()=>{
  const peers=[];let updates=0,errors=0;
- const connect=async()=>{const p=new EventEmitter();p.request=async()=>({});p.close=()=>{p.closed=true;p.emit('close')};peers.push(p);return p;};
- const dispose=subscribeMonitor({connect,workspaceId:'w',onChange:()=>updates++,onError:()=>errors++,retryMs:5});
+ const connect=async()=>{const p=new EventEmitter();p.request=async(method,params)=>{assert.equal(method,'monitor/overview');assert.deepEqual(params,{workspace_id:'w',session_id:'s'});return {};};p.close=()=>{p.closed=true;p.emit('close')};peers.push(p);return p;};
+ const dispose=subscribeMonitor({connect,workspaceId:'w',sessionId:'s',onChange:()=>updates++,onError:()=>errors++,retryMs:5});
  try{
  await new Promise(r=>setTimeout(r,10));assert.equal(updates,1);
  peers[0].emit('notification',{method:'monitor/event',params:{workspace_id:'other'}});assert.equal(updates,1);

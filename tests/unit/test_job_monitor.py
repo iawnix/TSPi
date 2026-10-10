@@ -1,4 +1,5 @@
 import json
+import pytest
 import sys
 import time
 from pathlib import Path
@@ -29,9 +30,10 @@ def test_terminal_job_wakes_once_and_reclaims_failed_delivery(tmp_path):
     assert view['last_observed_at']
     assert view['last_error'] == 'host offline'
     assert {p: p.read_bytes() for p in before} == before
-    assert command(tmp_path, 'disable', {'monitor_id': view['monitor_id']})['updated'] == 1
-    assert command(tmp_path, 'status', {'monitor_id': view['monitor_id']})['monitors'][0]['enabled'] is False
-    command(tmp_path, 'enable', {'monitor_id': view['monitor_id']})
+    assert 'enabled' not in view
+    for action in ('enable', 'disable'):
+        with pytest.raises(ValueError):
+            command(tmp_path, action, {'monitor_id': view['monitor_id']})
     second=command(tmp_path,'claim',{'event_id':event_id,'channel':'wake'})
     assert second['request_id']==first['request_id']
     command(tmp_path,'complete',{'event_id':event_id,'channel':'wake','claim_token':second['claim_token'],'delivered':True})
@@ -161,25 +163,15 @@ def test_delivery_retry_identity_is_independent_of_research_notes(tmp_path):
     assert command(tmp_path, 'pending', {})['deliveries'][0] == retry
 
 
-def test_disabled_monitor_observes_events_and_resumes_same_pending_batch(tmp_path):
-    workspace(tmp_path)
-    dispatch('start', {'root':str(tmp_path), 'job_id':'job_pause', 'session_id':'session_pause',
-        'command':[sys.executable, '-c', 'import time; time.sleep(.1)']})
-    command(tmp_path, 'disable', {})
-    for _ in range(100):
-        command(tmp_path, 'tick', {})
-        if list((tmp_path/'operations/monitors').glob('*/events/*.json')):
-            break
-        time.sleep(.02)
-    events = list((tmp_path/'operations/monitors').glob('*/events/*.json'))
-    assert len(events) == 1
-    assert command(tmp_path, 'pending', {})['deliveries'] == []
-    delivery_path = events[0].parent.parent/'deliveries'/events[0].name
-    batch = json.loads(delivery_path.read_text())
-    assert not batch['delivered']
-    assert command(tmp_path, 'claim', {'event_id':batch['event_id'], 'channel':'wake'}) == {'claimed':False}
-    from research_agent.application.job_monitor import assess
-    assert assess(tmp_path, batch['event_id'], 'session_pause')['reason'] == 'paused'
-    command(tmp_path, 'enable', {})
-    assert command(tmp_path, 'pending', {})['deliveries'] == [batch]
-    assert assess(tmp_path, batch['event_id'], 'session_pause')['admitted']
+def test_legacy_paused_binding_requires_explicit_migration(tmp_path):
+    from research_agent.application.job_monitor import read_binding
+    path = tmp_path/'binding.json'
+    binding = {'schema_version':'coragent-job-monitor/2', 'node_id':None, 'node_revision':None,
+               'job_id':'job_fixture', 'job_digest':'sha256:'+'a'*64, 'enabled':False}
+    path.write_text(json.dumps(binding))
+    with pytest.raises(ValueError, match='monitor_pause_migration_required'):
+        read_binding(path)
+    assert json.loads(path.read_text()) == binding
+    binding['enabled'] = True
+    path.write_text(json.dumps(binding))
+    assert read_binding(path) == binding

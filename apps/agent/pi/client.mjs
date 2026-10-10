@@ -36,8 +36,8 @@ function createHostRequest() {
     try { return await peer.request(method, params); }
     finally { peer.close(); }
   };
-  request.subscribeMonitor = (workspaceId, onChange, onError) => subscribeMonitor({
-    connect: () => connectHost({ socketPath, expectedReleaseId }), workspaceId, onChange, onError,
+  request.subscribeMonitor = (workspaceId, sessionId, onChange, onError) => subscribeMonitor({
+    connect: () => connectHost({ socketPath, expectedReleaseId }), workspaceId, sessionId, onChange, onError,
   });
   return request;
 }

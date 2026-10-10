@@ -38,8 +38,15 @@ def test_workspace_cli_roundtrip_uses_canonical_research_workspace(tmp_path):
     result=_run(API,"research.update","--root",str(workspace),"--params-file",str(request))
     assert result["accepted"]
     shown=_run(API,"research.read","--root",str(workspace))
-    assert shown["schema_version"]=="research-snapshot/2"
+    assert shown["schema_version"]=="research-snapshot/3"
     assert any(node["id"]==node_id for node in shown["nodes"])
+    assert shown["research"]["nodes"] == []
+    request = tmp_path / "scope.json"
+    request.write_text(json.dumps({"entry_node_ids": [node_id], "focus_node_ids": [node_id]}))
+    scoped = _run(API, "research.read", "--root", str(workspace), "--params-file", str(request))
+    assert scoped["research"]["entry_node_ids"] == [node_id]
+    assert scoped["research"]["focus_node_ids"] == [node_id]
+    assert scoped["research"]["nodes"][0]["id"] == node_id
     found=_run(API,"research.search","--root",str(workspace),"--query","frequency")
     assert found["total"]==1 and found["records"][0]["node_id"]==node_id
     assert not (workspace/"research/progress.json").exists()

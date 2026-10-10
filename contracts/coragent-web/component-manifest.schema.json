@@ -23,7 +23,7 @@
       "required": ["provider", "snapshot", "theme"],
       "properties": {
         "provider": { "const": "research-memory-provider/1" },
-        "snapshot": { "const": "research-snapshot/2" },
+        "snapshot": { "const": "research-snapshot/3" },
         "theme": { "const": "coragent-theme/1" }
       }
     },

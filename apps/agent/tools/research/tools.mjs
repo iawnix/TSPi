@@ -21,7 +21,7 @@ export function createResearchTools({ commandBridge }) {
       if (operation !== "search") request.session_id = api.coragent?.session_id;
       if (writing) {
         requireNativeWrites(`research_${operation}`, api.coragent);
-        request.request_id = `${api.coragent?.session_id}:${api.callId}`;
+        request.request_id = `${api.coragent.session_id}:${api.coragent.operation_id}:${api.callId}`;
       }
       const result = await commands.execute(`research.${operation}`, root, request, context?.abortSignal);
       const visible = researchToolView(result, operation, params);

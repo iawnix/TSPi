@@ -74,13 +74,24 @@
 
 ## 5. Monitor 与模型请求的跨端合同
 
-`monitor/list`、`monitor/status` 的 `monitors` 元素为平铺视图，手机直接读取
-`last_state`、`pending_count`、`last_observed_at` 和 `last_error`，不再读取旧的
-`state`、`delivery` 嵌套对象。后面三个字段由已有事件及投递记录派生，不另存状态。
+Monitor 使用唯一的 `coragent-host/2` 接口；客户端按 initialize 的 capabilities 展示功能。
+旧 `monitor/list`、`monitor/status`、`monitor/enable`、`monitor/disable` 已移除，不提供别名或回退。
 
-`monitor/enable`、`monitor/disable` 返回 `{workspace_id, updated}`。手机确认
-`updated == 1` 后使用相同 `monitor_id` 调用 `monitor/status`，将返回的视图用于界面；
-`updated == 0` 表示目标不存在。不能把更新回执解析为 Monitor。
+- 概览与用户任务：`monitor/overview`、`monitor/tasks`、`monitor/task/read`。
+- 用户任务控制：`monitor/task/pause`、`monitor/task/resume`、`monitor/task/cancel`。
+- 计算作业：`monitor/jobs`、`monitor/job/read`、`monitor/job/cancel`。
+- 执行诊断与健康：`monitor/runs`、`monitor/run/read`、`monitor/health`。
+
+所有请求包含 `workspace_id`、`session_id`；目标身份使用 `user_task_id`、`job_id` 或 `run_id`。
+列表支持 `limit`（1–100）和不透明 `cursor`；作业和执行列表可按 `user_task_id` 过滤。
+写请求必须携带稳定 `request_id`，用户任务控制还需要当前 `expected_revision`。
+取消用户任务必须显式选择 `jobs: "keep"` 或 `jobs: "cancel"`。
+状态与控制回执由 SessionWorker 在 Pi durable 中保存，Host 与手机不维护第二份状态机。
+
+概览区分用户任务 `task`、作业 `jobs.items` 和 Pi 执行 `execution`。
+内部 generation/tool 执行在用户任务的执行详情中展开，不混入用户任务列表。
+查询不会提交模型输入。读取成功后订阅既有 `monitor/event` 作业更新提示；任务执行变化沿用
+`session/event`。客户端重连或 epoch 改变时重新读取概览，不另建一套事件重放协议。
 
 `model/select` 使用 `model: {provider, id}`，不发送旧的顶层 `provider/model_id`。
 跨仓库 fixture 使用 `apps/agent/host/server.mjs`、`apps/agent/pi/backend.mjs`、

@@ -111,7 +111,7 @@ def test_web_component_protocol_schemas_validate_envelopes() -> None:
             "component": {"name": "coragent-web", "version": "0.18.0"},
             "protocols": {
                 "provider": "research-memory-provider/1",
-                "snapshot": "research-snapshot/2",
+                "snapshot": "research-snapshot/3",
                 "theme": "coragent-theme/1",
             },
             "entrypoint": {"path": "bin/coragent-web"},

@@ -149,7 +149,7 @@ def test_missing_recipe_binding_and_failed_probe_are_distinct(tmp_path, monkeypa
     assert environment_check.check_target(settings, 'unknown', backend='shell')['error'] == 'execution_environment_not_configured'
     settings['environments']['local']['backends']['shell']['command'] = '/missing/scientific-program'
     failed = environment_check.check_target(settings, 'local', executor='external.copy', version='3')
-    assert failed['status'] == 'check_failed' and failed['error'] == 'environment_probe_failed'
+    assert failed['status'] == 'check_failed' and failed['error'] == 'environment_executable_missing'
 
 
 def test_generic_bindings_can_be_checked_without_loading_recipes(monkeypatch):

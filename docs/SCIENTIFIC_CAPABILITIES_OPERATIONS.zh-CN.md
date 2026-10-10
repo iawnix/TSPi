@@ -63,3 +63,10 @@ xTB 的便捷封装接受 `sp/opt/opt-sp`；频率、扫描和动力学使用原
 ## 验证
 
 用 `tools/test/runner.py` 选择源码、Native 与发行检查。真实求解器和远端验收使用隔离工作区及明确绑定。合成 Gaussian 测试验证解析与证据关联，不能证明真实过渡态搜索一定收敛。
+
+原生程序的前置探测只解析并固定所配置可执行文件的摘要，不运行求解器，也不证明许可、
+收敛或科学结论成立。`environment_executable_missing` 表示所选命令无法执行；
+`environment_activation_missing` 表示激活脚本缺失；`environment_dependency_missing`
+表示要求的包或模块缺失；`environment_import_failed` 表示已有依赖导入初始化失败。
+报告实际观测与所选目标：未配置绑定或没有预设入口不等于所有环境都未安装软件。
+绑定或程序字节发生变化后须重新准备请求，不能继续派发旧准备命令。

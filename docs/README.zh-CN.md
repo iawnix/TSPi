@@ -14,7 +14,10 @@
 | 研究存储、工具与证据 | [Research Memory Skill](../skills/research-memory/SKILL.zh-CN.md)、[证据架构](RESEARCH_EVIDENCE_ARCHITECTURE.zh-CN.md) |
 | 执行职责与材料来源 | [执行边界（英文）](ARCHITECTURE_BOUNDARIES.md)、[Artifact Store 与视图（英文）](ARTIFACT_PROVIDERS.md) |
 | 科学计算方法与执行 | [科学能力运维](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md) |
+| 几何、Gaussian 与证据流的固定样例回归 | [领域科学回归](SCIENTIFIC_REGRESSIONS.zh-CN.md) |
 | 终端、Phone、浏览器 | [终端](TERMINAL.zh-CN.md)、[CoRAgent Link](CORAGENT_LINK.zh-CN.md) |
+| Monitor、用户任务持续推进与执行诊断 | [Task Controller 实施记录](MONITOR_TASK_CONTROLLER_PLAN.zh-CN.md) |
+| Node 划分、研究规划、回溯与持续推进 | [研究问题图与实施方案](RESEARCH_NODE_PLANNING_PLAN.zh-CN.md) |
 | 维护、测试、打包 | [维护指南](MAINTAINER_GUIDE.zh-CN.md)、[贡献指南](../CONTRIBUTING.md) |
 | 测试环境、选择与清理 | [测试运行器（英文）](../tools/test/README.md) |
 | 固定 Pi 运行时的维护 | [Pi 补丁（英文）](PI_RUNTIME_PATCHES.md) |

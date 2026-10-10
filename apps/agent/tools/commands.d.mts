@@ -10,6 +10,7 @@ export interface CommandParameters {
     "event_ids"?: Array<string>;
     "focus_node_ids"?: Array<string>;
     "field"?: "goal" | "title" | "proposal" | "plan" | "progress" | "status" | "assessment_ref" | "relations" | null;
+    "entry_node_ids"?: Array<string>;
   };
   "research.search": {
     "query"?: string;
@@ -106,6 +107,7 @@ export interface CommandParameters {
     "request_file"?: string;
     "request_sha256"?: string | null;
     "node_id"?: string;
+    "user_task_id"?: string | null;
   };
   "job.status": {
     "job_id"?: string;
@@ -155,6 +157,12 @@ export interface CommandParameters {
     "event_id": string;
     "session_id": string | null;
   };
+  "job.list": {
+    "session_id"?: string;
+    "user_task_id"?: string;
+    "limit"?: number;
+    "cursor"?: string;
+  };
   "artifact.register": {
     "artifact_id"?: string;
     "path"?: string;
@@ -180,7 +188,7 @@ export interface CommandParameters {
 
 export interface CommandResults {
   "research.read": {
-    "schema_version": "research-snapshot/2";
+    "schema_version": "research-snapshot/3";
     "workspace_id": string;
     "sequence": number;
     "nodes": Array<{
@@ -242,6 +250,36 @@ export interface CommandResults {
     "guidance": string;
     "read_basis": string;
     "snapshot_id": string;
+    "research": {
+      "entry_node_ids": Array<string>;
+      "focus_node_ids": Array<string>;
+      "nodes": Array<{
+        "id": string;
+        "revision": number;
+        "title": string;
+        "status": "open" | "paused" | "closed";
+        "assessment_ref": string | null;
+        "plan": string | null;
+        "content_omitted": boolean;
+        "read": {
+          "ref": string;
+          "field": "relations";
+        };
+      }>;
+      "relations": Array<{
+        "id": string;
+        "source": string;
+        "kind": "part_of" | "requires" | "alternative_to";
+        "target": string;
+      }>;
+      "omitted": {
+        "entry_node_ids": number;
+        "focus_node_ids": number;
+        "nodes": number;
+        "relations": number;
+        "unexpanded_nodes": number;
+      };
+    };
   } | {
     "schema_version": "research-read/2";
     "ref": string;
@@ -739,6 +777,17 @@ export interface CommandResults {
     "admitted": boolean;
     "reason": "already_delivered" | "attention_required" | "paused";
     "delivery_token": string;
+  };
+  "job.list": {
+    "jobs": Array<{
+      "job_id": string;
+      "session_id": string | null;
+      "user_task_id": string | null;
+      "state": string;
+      "collection_state": string;
+      [key: string]: unknown;
+    }>;
+    "next_cursor": string | null;
   };
   "artifact.register": {
     "artifact_id": string;

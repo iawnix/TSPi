@@ -16,7 +16,7 @@ export async function checkCommandResultTypes(bridge: RuntimeBridge) {
   // @ts-expect-error Research creation does not return a Job receipt.
   created.job_id;
   const read = await bridge.execute_command("research.read");
-  if (read.schema_version === "research-snapshot/2") {
+  if (read.schema_version === "research-snapshot/3") {
     const sequence: number = read.sequence;
     void sequence;
   } else {

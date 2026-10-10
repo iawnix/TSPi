@@ -4,6 +4,7 @@ import { CLIENT_QUERIES_SERVICE_ID } from "../../pi/services/queries.mjs";
 import { createStatusPresentation } from "../status/presentation.mjs";
 import { createDocumentView } from "../renderers/document.mjs";
 import { createCommandPresentation } from "./panel.mjs";
+import { formatMonitor } from "./monitor.mjs";
 
 /** Presentation-only commands; all scientific reads execute in the worker. */
 export async function createCoRAgentNativeClientFacet({ sourceRoot, session } = {}) {
@@ -37,7 +38,7 @@ export async function createCoRAgentNativeClientFacet({ sourceRoot, session } = 
           if (stopped || session.signal?.aborted) return;
           if (refreshing) { dirty = true; return; }
           refreshing = true; dirty = false;
-          const results = await Promise.allSettled([queries.telemetry(queryContext), session.monitorStatus?.()]);
+          const results = await Promise.allSettled([queries.telemetry(queryContext), session.monitor()]);
           if (!stopped && !session.signal?.aborted) {
             const [usage, monitor] = results;
             if (usage.status === "fulfilled" && usage.value.session_id === session.sessionId && usage.value.workspace_id === session.workspaceId) status.update({telemetry:usage.value.result});
@@ -64,7 +65,10 @@ export async function createCoRAgentNativeClientFacet({ sourceRoot, session } = 
         env.own(() => { stopped = true; lifetime.abort(); clearTimeout(timer); ui.setFooter(undefined); ui.setActivity(undefined); ui.setCommandPresentation(undefined); });
         const show = (title, body, context, command, scope, mode) => ui.showDocument(createDocumentView({ title, body, command, scope, mode,
           ...components, wrapText: components.wrapTextWithAnsi }), context);
-        for (const command of createTerminalCommands({ ui, queries, session, show, usage: () => status.usageDetails(), monitor: () => status.monitorDetails() })) {
+        for (const command of createTerminalCommands({ ui, queries, session, show, usage: () => status.usageDetails(), monitor: (value) => {
+          if (value) status.update({monitor:value, monitorError:null});
+          return status.monitorDetails();
+        } })) {
           env.own(commands.replace(command));
         }
       });
@@ -76,7 +80,7 @@ export function createTerminalCommands({ ui, queries, session, show, usage, moni
   return Object.values(SLASH_COMMAND_DEFINITIONS).map((definition) => ({
     name: definition.name,
     description: definition.description,
-    argumentHint: definition.usage.replace(`/${definition.name}`, "").trim(),
+    argumentHint: definition.name === "monitor" ? "[command]" : definition.usage.replace(`/${definition.name}`, "").trim(),
     getArgumentCompletions(prefix) { return slashCompletions(definition.name, prefix) || []; },
     async run(args, context) {
       try {
@@ -87,7 +91,12 @@ export function createTerminalCommands({ ui, queries, session, show, usage, moni
           return;
         }
         if (definition.name === "monitor") {
-          await show("Monitor", monitor, context, 'monitor', 'Session', 'panel');
+          const { method, ...params } = invocation.params;
+          const response = await session.monitor(method, params);
+          if (session.signal?.aborted) return;
+          if (method === "monitor/overview" && monitor) monitor(response);
+          const body = method === "monitor/overview" && monitor ? monitor : formatMonitor(method, response, params);
+          await show("Monitor", body, context, `monitor${args ? ` ${args}` : ''}`, 'Session', 'panel');
           return;
         }
         if (definition.name === "resume") {

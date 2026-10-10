@@ -9,6 +9,8 @@ The [Gaussian runner](../../gaussian/SKILL.md) writes `parsed.json` using
 stationary markers, frequencies, geometry and Cartesian normal-mode vectors
 from the final harmonic table. Its `section_index` argument is zero based. Select the relevant section
 and compare the output route, charge, multiplicity, method and basis with the input.
+Later incomplete optimization or harmonic sections do not inherit earlier passing
+evidence. Convergence requires all four rows from the final optimization table.
 
 For a classical first-order saddle, require optimization convergence and one
 imaginary mode that represents the proposed elementary step. Numerical noise,
@@ -22,7 +24,8 @@ Compare geometries displaced in both signs of the mode and changes in relevant
 internal coordinates; the overall sign of an eigenvector has no physical meaning.
 
 Check a helper's scope before selecting it. `chemical.gaussian_frequency@1`
-checks only normal termination and one negative frequency and cannot certify a
+checks normal termination without an error marker and one negative frequency in
+a finite numeric table, and cannot certify a
 transition state. The [specialized path validators](../../candidate-generation/references/gaussian_path.md)
 have additional topology and input constraints and apply only to the systems
 specified there. For other systems, use primary outputs and analysis scripts

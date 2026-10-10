@@ -58,7 +58,7 @@ def test_actual_python_environment_matches_receipt_and_declared_dependencies():
     assert observed['packages']['rdkit']
     with pytest.raises(ValueError, match='dependency_version_mismatch'):
         probe_binding(settings, selected, {'packages': {'rdkit': '>=9999'}})
-    with pytest.raises(ValueError, match='environment_import_failed'):
+    with pytest.raises(ValueError, match='environment_dependency_missing'):
         probe_binding(settings, selected, {'imports': ['research_agent_nonexistent_dependency']})
 
 

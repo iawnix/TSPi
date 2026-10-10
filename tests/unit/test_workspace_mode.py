@@ -10,7 +10,7 @@ def test_workspace_admission_and_identity(tmp_path):
     with pytest.raises(WorkspaceModeError): read(tmp_path)
     admit_research_workspace(tmp_path)
     assert read(tmp_path)["nodes"] == []
-    assert read(tmp_path)["schema_version"] == "research-snapshot/2"
+    assert read(tmp_path)["schema_version"] == "research-snapshot/3"
     assert inspect_workspace(tmp_path)["valid"]
     with pytest.raises(WorkspaceModeError): initialize_workspace(tmp_path, "different", "research")
     with pytest.raises(WorkspaceModeError): initialize_workspace(tmp_path, "workspace_test", "invalid")

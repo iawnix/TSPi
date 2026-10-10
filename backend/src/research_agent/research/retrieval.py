@@ -6,8 +6,37 @@ from research_agent.foundation.transactions import TransactionCoordinator, read_
 from research_agent.foundation.path_safety import path_has_symlink
 from .records import workspace, journal, record, digest
 from .nodes import get_node
-from .results import get_result
+from .results import get_result, publication_order
 from . import relations, basis
+
+
+def research_neighborhood(graph, entry_node_ids=(), focus_node_ids=()):
+    """Navigation only: two containment levels and the focus's direct neighbors."""
+    entries, focus = list(dict.fromkeys(entry_node_ids)), list(dict.fromkeys(focus_node_ids))
+    for ref in entries + focus:
+        if ref not in graph['nodes']:
+            raise ValueError('research_scope_node_not_found: ' + str(ref))
+    edges = sorted((edge for edge in graph['relations'].values()
+                    if edge['active'] and edge['kind'] in relations.DECLARED), key=lambda edge: edge['id'])
+    children = {}
+    for edge in edges:
+        if edge['kind'] == 'part_of':
+            children.setdefault(edge['target'], set()).add(edge['source'])
+    ordered = list(dict.fromkeys(entries[:1] + focus + entries[1:]))
+    selected = set(ordered)
+    def include(refs):
+        additions = sorted(set(refs) - selected)
+        ordered.extend(additions)
+        selected.update(additions)
+    include(edge['target'] if edge['source'] in focus else edge['source']
+            for edge in edges if edge['source'] in focus or edge['target'] in focus)
+    frontier = set(entries)
+    for _ in range(2):
+        frontier = {child for parent in frontier for child in children.get(parent, ())}
+        include(frontier)
+    return {'entry_node_ids': entries, 'focus_node_ids': focus, 'node_ids': ordered,
+            'relations': [edge for edge in edges if edge['source'] in selected and edge['target'] in selected],
+            'unexpanded_nodes': sum(bool(set(children.get(ref, ())) - selected) for ref in selected)}
 
 
 def _index(root):
@@ -77,7 +106,7 @@ def search(root, *, query='', origin=None, node_id=None, kind=None, after_sequen
 def node_detail(root, node_id, *, jobs=()):
     node = get_node(root, node_id)
     graph = relations.graph(root)
-    results = [item for item in graph['results'].values() if item['node_id'] == node_id]
+    results = [item for item in publication_order(root, graph) if item['node_id'] == node_id]
     assessment = None
     if node['assessment_ref']:
         ref = node['assessment_ref']
