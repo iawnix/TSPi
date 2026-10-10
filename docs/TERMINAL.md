@@ -105,21 +105,25 @@ a message clears completed command feedback. With a selector or document open, E
 returns to chat. In ordinary chat, Esc interrupts the running turn even when command
 feedback is visible.
 
-Usage and monitor panels stay near the input; model, thinking and resume selectors
-show a bounded list. The system prompt and long research results use the main screen
-with a fixed heading and Back/scroll hints. Arrow keys scroll content without changing
-the panel height; short documents only show Back. Closing restores the draft, cursor
-and transcript reading position. Background task cancellation hints are hidden while
-a command surface owns Esc.
+Usage and monitor panels, model/thinking/resume selectors, and slash completions
+open above the Monitor row. The system prompt and long research results replace the
+main reading area, with a fixed heading and Back/scroll hints. Every screen retains
+Monitor, the input and the model/context footer. The input preserves its draft and
+cursor but cannot be edited or focused while a panel or reading page is open.
+Arrow keys scroll content without changing the panel height; short documents only
+show Back. Closing restores editing and the transcript reading position. Background
+task cancellation hints are hidden while a command surface owns Esc.
 
-While this session has background jobs or pending deliveries, a compact line above
-the input shows `Monitor ✓` (healthy), `Monitor …` (checking or briefly reconnecting),
+A permanent row immediately above the input shows `Monitor ✓` (healthy),
+`Monitor …` (checking or briefly reconnecting),
 `Monitor !` (warning), or `Monitor ×` (error). `· ⚙2` means two jobs are running in this
 session; queued jobs are counted separately in `/monitor`. `⚙0` means none are running
 and `⚙—` means the count is unavailable. An optional `· ↑N` counts monitor events
-awaiting delivery; ordinary pending delivery is not a warning. The line hides when
-irrelevant or while a selector/document is open, and restores the latest state on
-return. Background refreshes preserve selection, reading position and input focus.
+awaiting delivery; ordinary pending delivery is not a warning. The row remains
+visible when idle and during command use. Completion lists retain Pi's keyboard and
+mouse behavior in their own area above it. Background refreshes preserve selection,
+reading position and input focus. Terminal resizing and multiline drafts move the
+row with the input; opening a command does not move it away from the input.
 `/monitor` shows job counts, warning reasons and the last
 successful poll. Counts belong to this session; worker health is shared across workspaces.
 

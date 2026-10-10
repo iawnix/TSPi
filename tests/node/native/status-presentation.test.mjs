@@ -38,8 +38,8 @@ test('compact monitor is session-scoped and distinguishes delivery from agent in
  assert.equal(activityStatus({...state,monitor:pending}).text,'Monitor ✓ · ⚙1 · ↑1');
  assert.equal(activityStatus({...state,monitor:pending}).color,'muted');
  assert.equal(activityStatus({...state,view:{docs:{'pi.inbox':{items:[{mode:'followUp',content:'A compute monitor event requires attention.'}]}}}}).text,'Monitor ✓ · ⚙1');
- assert.equal(activityStatus({...state,sessionId:'absent'}).text,'');
- assert.equal(activityStatus({...state,monitor:{...monitor,monitors:[{session_id:'s',last_state:'succeeded'}]}}).text,'');
+ assert.equal(activityStatus({...state,sessionId:'absent'}).text,'Monitor ✓ · ⚙0');
+ assert.equal(activityStatus({...state,monitor:{...monitor,monitors:[{session_id:'s',last_state:'succeeded'}]}}).text,'Monitor ✓ · ⚙0');
  assert.equal(activityStatus({...state,now:now+31000}).text,'Monitor ! · ⚙1');
  assert.equal(activityStatus({...state,monitorError:'offline',monitorErrorSince:now}).text,'Monitor … · ⚙1');
  assert.equal(activityStatus({...state,monitorError:'offline',monitorErrorSince:now-30000}).text,'Monitor × · ⚙1');
@@ -68,7 +68,7 @@ test('monitor colors only the symbol, fits narrow terminals and explains details
  assert.match(status.monitorDetails(),/Running: 1 · Queued: 0\nPending delivery: 1/);
  assert.doesNotMatch(status.monitorDetails(),/worker.*\{|poll_interval_ms/);
  status.update({monitor:undefined,telemetry:null});
- assert.deepEqual(status.activity.render(80),[]);
+ assert.deepEqual(status.activity.render(80),[' Monitor … · ⚙—']);
  const plain=createStatusPresentation({session:{sessionId:'s'},monochrome:true,theme:{fg(){throw new Error('monochrome must not color activity');}},...tui});
  plain.update({monitor:{monitors:[{session_id:'s',last_state:'running'}]}});
  assert.deepEqual(plain.activity.render(80),[' Monitor … · ⚙1']);
@@ -141,6 +141,18 @@ test('usage and monitor details stay separate with unknown counters and session 
  assert.doesNotMatch(status.monitorDetails(),/tokens|Context/);
  status.update({monitor:{monitors:[],pending_deliveries:[],host_worker_health:{last_error:'offline'}}});
  assert.match(status.monitorDetails(),/Shared monitor worker: offline/);
+});
+
+test('idle monitor keeps its row through startup, disconnects and completed jobs',()=>{
+ const status=createStatusPresentation({session:{sessionId:'s'},theme,...tui,monochrome:true});
+ assert.deepEqual(status.activity.render(80),[' Monitor … · ⚙—']);
+ status.update({monitor:{monitors:[],pending_deliveries:[],host_worker_health:{last_successful_poll:new Date().toISOString()},supervisor_health:{state:'running'}}});
+ assert.deepEqual(status.activity.render(80),[' Monitor ✓ · ⚙0']);
+ status.update({monitorError:'offline'});
+ assert.deepEqual(status.activity.render(80),[' Monitor … · ⚙0']);
+ status.update({monitorError:null,monitor:{monitors:[{session_id:'s',last_state:'succeeded'}],pending_deliveries:[{session_id:'s'}],
+   host_worker_health:{last_successful_poll:new Date().toISOString()},supervisor_health:{state:'running'}}});
+ assert.deepEqual(status.activity.render(80),[' Monitor ✓ · ⚙0 · ↑1']);
 });
 
 test('monitor subscription refreshes on reconnect and cleans up its connection',async()=>{

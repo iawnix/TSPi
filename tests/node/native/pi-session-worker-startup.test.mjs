@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { stripVTControlCharacters } from "node:util";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -160,6 +161,15 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         assert.fail(component.render(100).join("\n"));
       };
       const submit = (text) => { terminal.sendInput(text); terminal.sendInput("\r"); };
+      const frameAt = (width=100,height=24) => renderLayoutFrame(component.layoutRoot,width,height,()=>{});
+      const monitorRow = frame => frame.lines.findIndex(line=>stripVTControlCharacters(line).trim().startsWith('Monitor '));
+      const assertDock = (frame,height=24,inputRows=1) => {
+        const index=monitorRow(frame);
+        assert.equal(index,height-5-inputRows,frame.lines.map(stripVTControlCharacters).join('\n'));
+        assert.match(stripVTControlCharacters(frame.lines[index+1]),/^─/);
+        assert.match(stripVTControlCharacters(frame.lines[index+2+inputRows]),/^─/);
+      };
+      const withoutMonitor = text => text.split('\n').filter(line=>!stripVTControlCharacters(line).trim().startsWith('Monitor ')).join('\n');
       try {
         ui.addChild(component); ui.setLayoutRoot(component.layoutRoot); ui.setFocus(component); ui.start();
         const clickEditor = async () => {
@@ -175,20 +185,53 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         };
         await waitFor(() => !component.render(100).join("\n").includes("Context Unknown"));
         assert.doesNotMatch(component.render(100).join("\n"), /Server:| entries|\/model ·/);
+        assertDock(frameAt());
+        terminal.sendInput('/mo');
+        await waitFor(()=>component.render(100).some(line=>line.includes("Inspect this session's jobs")));
+        for(const [width,height] of [[100,24],[32,12],[20,10]]) {
+          const frame=frameAt(width,height);assertDock(frame,height);
+          assert.ok(frame.lines.slice(0,monitorRow(frame)).some(line=>stripVTControlCharacters(line).includes('monitor')));
+        }
+        terminal.sendInput('\x1b[B');
+        const completion=withoutMonitor(component.render(100).join('\n'));
+        const completionFocus=ui.getFocusedComponent();
+        testUI.setActivity({render:()=>['Monitor ✓ · ⚙9'],invalidate(){}});
+        assert.equal(withoutMonitor(component.render(100).join('\n')),completion);
+        assert.equal(ui.getFocusedComponent(),completionFocus);assertDock(frameAt());
+        terminal.sendInput('\x1b');terminal.sendInput('\x15');
+        terminal.sendInput('/mon');
+        await waitFor(()=>component.render(100).some(line=>line.includes("Inspect this session's jobs")));
+        terminal.sendInput('\t');
+        assert.match(stripVTControlCharacters(frameAt().lines[20]),/\/monitor/);
+        assert.doesNotMatch(frameAt().lines.slice(0,18).join('\n'),/Inspect this session's jobs/);
+        terminal.sendInput('\x15');
+        // A completion click still applies native completion and leaves keyboard routing usable.
+        terminal.sendInput('/us');
+        await waitFor(()=>component.render(100).some(line=>line.includes('Inspect session token usage.')));
+        const candidate=frameAt().lines.findIndex(line=>line.includes('Inspect session token usage.'));
+        terminal.sendInput(`\x1b[<0;4;${candidate+1}M`);
+        terminal.sendInput(`\x1b[<0;4;${candidate+1}m`);
+        await new Promise(resolve=>setTimeout(resolve,50));
+        assert.match(stripVTControlCharacters(frameAt().lines[20]),/\/usage/);
+        terminal.sendInput('\x15');
         await clickEditor();
         testUI.setActivity({render:()=>['Monitor ✓ · ↑1'],invalidate(){}});
-        submit("/usage");
+        terminal.sendInput('/us');
+        await waitFor(()=>component.render(100).some(line=>line.includes('Inspect session token usage.')));
+        terminal.sendInput('\r');
         await waitFor(() => component.render(100).join("\n").includes("Session usage"));
         const usageFrame=renderLayoutFrame(component.layoutRoot,100,24,()=>{});
         assert.ok(usageFrame.lines.findIndex(line=>line.includes('/usage'))>0);
-        assert.doesNotMatch(usageFrame.lines.join('\n'),/Scroll|provider-reported|Monitor|compaction-aware/);
+        assertDock(usageFrame);
+        assert.doesNotMatch(usageFrame.lines.slice(0,monitorRow(usageFrame)).join('\n'),/Scroll|provider-reported|Monitor|compaction-aware/);
         for(let i=0;i<20;i++) terminal.sendInput('\x1b[B');
         assert.deepEqual(renderLayoutFrame(component.layoutRoot,100,24,()=>{}).lines,usageFrame.lines);
-        assert.doesNotMatch(component.render(100).join('\n'),/Monitor ✓ · ↑1/);
+        assert.match(component.render(100).join('\n'),/Monitor ✓ · ↑1/);
         const beforeRefresh=component.render(100).join('\n');
         const documentFocus=ui.getFocusedComponent();
         testUI.setActivity({render:()=>['Monitor ✓ · ↑2'],invalidate(){}});
-        assert.equal(component.render(100).join('\n'),beforeRefresh);
+        assert.equal(withoutMonitor(component.render(100).join('\n')),withoutMonitor(beforeRefresh));
+        assertDock(frameAt());
         assert.equal(ui.getFocusedComponent(),documentFocus);
         terminal.sendInput("\u001b");
         await waitFor(()=>component.render(100).join('\n').includes('Monitor ✓ · ↑2'));
@@ -200,7 +243,8 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         await waitFor(()=>component.render(100).join('\n').includes('Running: 2'));
         assert.equal(ui.getFocusedComponent(),monitorFocus);
         assert.match(component.render(100).join('\n'),/Pending delivery: 1/);
-        assert.doesNotMatch(component.render(100).join('\n'),/Total tokens:.*\n.*Status:|Monitor ✓ · ⚙/);
+        assertDock(frameAt());
+        assert.match(component.render(100).join('\n'),/Monitor ✓ · ⚙2 · ↑1/);
         terminal.sendInput('\x1b');
         await waitFor(()=>component.render(100).join('\n').includes('Monitor ✓ · ⚙2 · ↑1'));
         await new Promise(resolve=>setImmediate(resolve));
@@ -213,13 +257,15 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         terminal.sendInput('\x1b[C');
         const scrolledDocument=component.render(100).join('\n');
         testUI.setActivity({render:()=>['Monitor !'],invalidate(){}});
-        assert.equal(component.render(100).join('\n'),scrolledDocument);
+        assert.equal(withoutMonitor(component.render(100).join('\n')),withoutMonitor(scrolledDocument));
+        assertDock(frameAt());
         terminal.sendInput('\x1b[H');
         for (const [width,height] of [[80,24],[120,30],[32,12],[20,10]]) {
           const frame=renderLayoutFrame(component.layoutRoot,width,height,()=>{});
           assert.equal(frame.lines.length,height);
           assert.match(frame.lines[0],/\/sys-prompt/);
-          assert.match(frame.lines[height-3],/Esc Back/);
+          assertDock(frame,height);
+          assert.match(frame.lines[height-7],/Esc Back/);
           assert.equal(frame.primaryScrollView,undefined);
           component.handleInput('\x1b[F');
           const end=renderLayoutFrame(component.layoutRoot,width,height,()=>{});
@@ -235,7 +281,8 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         const selectorFocus=ui.getFocusedComponent();
         testUI.setActivity({render:()=>['Monitor ✓ · ↑3'],invalidate(){}});
         assert.equal(ui.getFocusedComponent(),selectorFocus);
-        assert.doesNotMatch(component.render(100).join('\n'),/Monitor ✓ · ↑3/);
+        assert.match(component.render(100).join('\n'),/Monitor ✓ · ↑3/);
+        assertDock(frameAt());
         assert.match(component.render(100).join('\n'),/› another-session/);
         assert.match(component.render(100).join('\n'),/\[current\]/);
         terminal.sendInput("\u001b");
@@ -245,11 +292,31 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         terminal.sendInput('\x1b[D');
         terminal.sendInput('\x0c'); // Ctrl+L model selector must retain draft and cursor.
         await waitFor(()=>component.render(100).join('\n').includes('Select model'));
+        const retained=frameAt();assertDock(retained);
+        assert.match(stripVTControlCharacters(retained.lines[monitorRow(retained)+2]),/draft text/);
+        assert.doesNotMatch(retained.lines[monitorRow(retained)+2],/\x1b\[7m|\x1b_pi:c/);
+        terminal.sendInput('ignored');
+        await clickEditor(); // The retained input cannot steal command focus or move its cursor.
         terminal.sendInput('\x1b');
         await new Promise(resolve=>setImmediate(resolve));
         terminal.sendInput('!');
         assert.match(component.render(100).join('\n').replace(/\x1b\[[0-9;]*m|\x1b_pi:c\x07/g,''),/draft tex!t/);
         terminal.sendInput('\x05'); terminal.sendInput('\x15'); // End, clear draft.
+        terminal.sendInput('\x1b[200~first line\nsecond line\nlast line\x1b[201~');
+        const multiline=frameAt(),multiMonitor=monitorRow(multiline);
+        assert.equal(multiMonitor,16);
+        terminal.sendInput('\x0c');
+        await waitFor(()=>component.render(100).join('\n').includes('Select model'));
+        assert.equal(monitorRow(frameAt()),multiMonitor);
+        for(const [width,height] of [[32,12],[20,10]]) {
+          const frame=frameAt(width,height);assertDock(frame,height,height===12 ? 3 : 1);
+          assert.match(frame.lines.slice(0,monitorRow(frame)).join('\n'),/Esc/);
+        }
+        terminal.sendInput('\x1b');
+        await new Promise(resolve=>setImmediate(resolve));
+        terminal.sendInput('!');
+        assert.match(stripVTControlCharacters(component.render(100).join('\n')),/last line!/);
+        terminal.sendInput('\x15');terminal.sendInput('\x7f');terminal.sendInput('\x15');terminal.sendInput('\x7f');terminal.sendInput('\x15');
         submit('/slow');
         await waitFor(()=>typeof finishSlow === 'function');
         assert.match(component.render(100).join('\n'),/\/slow · … Running/);

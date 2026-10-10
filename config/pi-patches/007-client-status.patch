@@ -1,6 +1,6 @@
 --- a/packages/coding-agent/src/experimental/client-tui.ts
 +++ b/packages/coding-agent/src/experimental/client-tui.ts
-@@ -10,8 +10,9 @@
+@@ -10,15 +10,18 @@
  	type LoadedFacets,
  } from "@earendil-works/chord";
 -import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -11,12 +11,21 @@
 +	matchesKey,
  	type Component,
  	Container,
-@@ -21,4 +22,5 @@
+ 	type SelectItem,
+ 	SelectList,
++	ScrollView,
+ 	setKeybindings,
  	Text,
  	type TUI,
 +	VStack,
  } from "@earendil-works/pi-tui";
  import type { ClientCommand } from "../cli/experimental/commands/client.ts";
+@@ -27,5 +30,4 @@
+ import { DefaultResourceLoader } from "../core/resource-loader.ts";
+ import { SettingsManager } from "../core/settings-manager.ts";
+-import { createChatViewport } from "../modes/interactive/chat-viewport.ts";
+ import { CustomEditor } from "../modes/interactive/components/custom-editor.ts";
+ import { getEditorTheme, setRegisteredThemes, stopThemeWatcher, theme } from "../modes/interactive/theme/theme.ts";
 @@ -43,5 +45,5 @@
  } from "./services/connection.ts";
  import { PresentationPlugins } from "./services/plugins.ts";
@@ -35,10 +44,31 @@
 +const COMMAND_RUN = createContextKey<CommandRun>("pi.command-presentation");
  
  interface PendingSelection {
-@@ -104,6 +112,25 @@
+@@ -103,7 +111,45 @@
+ 	readonly #pendingMessagesContainer = new Container();
  	readonly #statusContainer = new Container();
- 	readonly #editorContainer = new Container();
+-	readonly #editorContainer = new Container();
 -	readonly #footerComponent = new Text("", 1, 0);
++	#inputLinesBudget = 1;
++	#commandHeight = 4;
++	#documentPage = false;
++	readonly #inputComponent: Component = {
++		render: (width) => this.#chatInput.render(width, { autocomplete: false,
++			cursor: !this.#customDocument && !this.#selection, maxVisibleLines: this.#inputLinesBudget }),
++		invalidate: () => this.#chatInput.invalidate(),
++		handleInput: (data) => this.handleInput(data),
++		handleMouse: (event) => this.#customDocument || this.#selection
++			? { handled: true } : this.#chatInput.handleMouse(event),
++	};
++	readonly #commandComponent: Component = {
++		render: (width) => (this.#customDocument ?? this.#selectList)?.render(width)
++			?? this.#chatInput.renderAutocomplete(width, this.#commandHeight),
++		invalidate: () => { this.#customDocument?.invalidate(); this.#selectList?.invalidate(); },
++		handleInput: (data) => this.handleInput(data),
++		handleMouse: (event) => this.#customDocument || this.#selection
++			? (this.#customDocument ?? this.#selectList)?.handleMouse?.(event)
++			: this.#chatInput.handleAutocompleteMouse(event),
++	};
 +	readonly #defaultFooter = new Text("", 1, 0);
 +	#customFooter: Component | undefined;
 +	#customActivity: Component | undefined;
@@ -49,7 +79,7 @@
 +	#commandFeedbackKind: CommandFeedbackKind | undefined;
 +	#commandFeedbackTimer: ReturnType<typeof setTimeout> | undefined;
 +	readonly #activityComponent: Component = {
-+		render: (width) => this.#customDocument || this.#selection ? [] : this.#customActivity?.render(width) ?? [],
++		render: (width) => this.#customActivity?.render(width) ?? [],
 +		invalidate: () => this.#customActivity?.invalidate(),
 +	};
 +	#resolveDocument: (() => void) | undefined;
@@ -58,93 +88,93 @@
 +		invalidate: () => (this.#customFooter ?? this.#defaultFooter).invalidate(),
 +	};
  	readonly #layoutRoot: Component;
-+	readonly #chatViewport: ReturnType<typeof createChatViewport>;
++	readonly #transcript: ScrollView;
 +	#savedTranscript: { top: number; following: boolean } | undefined;
  	readonly #sharedFacets: LoadedFacets;
  	readonly #keybindings = KeybindingsManager.create();
-@@ -115,5 +142,5 @@
+@@ -115,5 +161,5 @@
  	#controller: AgentController | undefined;
  	readonly #chatInput: CustomEditor;
 -	#selectList: SelectList | undefined;
 +	#selectList: PresentationSurface | undefined;
  	#selection: PendingSelection | undefined;
  	#screen: "select" | "chat" = "chat";
-@@ -148,8 +175,16 @@
+@@ -148,14 +194,22 @@
  			void this.#queueFollowUp(text);
  		});
-+		// Mouse clicks may focus a nested editor. Keep its delegating container
-+		// in charge of keyboard routing when a command replaces that editor.
-+		Object.assign(this.#editorContainer, {
-+			handleInput: (data: string) => this.handleInput(data),
-+		});
- 		this.#editorContainer.addChild(this.#chatInput);
+-		this.#editorContainer.addChild(this.#chatInput);
 -		this.#layoutRoot = createChatViewport({
-+		this.#chatViewport = createChatViewport({
- 			document: this.#documentContainer,
+-			document: this.#documentContainer,
 -			pendingMessages: this.#pendingMessagesContainer,
-+			pendingMessages: {
-+				render: (width) => this.#customDocument || this.#selection ? [] : this.#pendingMessagesContainer.render(width),
-+				invalidate: () => this.#pendingMessagesContainer.invalidate(),
-+			},
- 			status: this.#statusContainer,
- 			editor: this.#editorContainer,
-@@ -157,5 +192,15 @@
+-			status: this.#statusContainer,
+-			editor: this.#editorContainer,
+-			footer: this.#footerComponent,
++		this.#transcript = new ScrollView(this.#documentContainer, {
++			follow: "end", primary: true, overscroll: "chain", scrollbar: "auto",
  			scrollbarTrackStyle: (text) => theme.fg("scrollbarTrack", text),
  			scrollbarThumbStyle: (text) => theme.fg("scrollbarThumb", text),
 -		}).root;
 +		});
-+		const reader = new VStack([
-+			{ component: this.#editorContainer, basis: 0, grow: 1, shrink: 1, minSize: 1 },
-+			{ component: this.#footerComponent, shrink: 0 },
-+		]);
 +		this.#layoutRoot = new VStack([
-+			{ component: this.#chatViewport.root, basis: 0, grow: 1,
++			{ component: this.#transcript, basis: 0, grow: 1,
 +				visible: ({ width, height }) => !this.#sizeCommandSurface(width, height) },
-+			{ component: reader, basis: 0, grow: 1,
-+				visible: ({ width, height }) => this.#sizeCommandSurface(width, height) },
++			{ component: this.#commandComponent, basis: 0, grow: 1,
++				visible: () => this.#documentPage },
++			{ component: this.#pendingMessagesContainer, visible: () => !this.#customDocument && !this.#selection },
++			{ component: this.#statusContainer },
++			{ component: this.#commandComponent, visible: () => !this.#documentPage },
++			// These rows belong to every screen and never compete with command content for height.
++			{ component: this.#activityComponent, shrink: 0 },
++			{ component: this.#inputComponent, shrink: 0 },
++			{ component: this.#footerComponent, shrink: 0 },
 +		]);
  		this.#rebuild();
  	}
-@@ -194,7 +239,10 @@
+@@ -194,14 +248,52 @@
  
  	render(width: number): string[] {
-+		if (this.#sizeCommandSurface(width, this.#ui.terminal.rows)) {
-+			return [...this.#editorContainer.render(width), ...this.#footerComponent.render(width)];
-+		}
++		this.#sizeCommandSurface(width, this.#ui.terminal.rows);
  		return [
- 			...this.#documentContainer.render(width),
+-			...this.#documentContainer.render(width),
 -			...this.#pendingMessagesContainer.render(width),
++			...(this.#documentPage ? [] : this.#documentContainer.render(width)),
 +			...(this.#customDocument || this.#selection ? [] : this.#pendingMessagesContainer.render(width)),
  			...this.#statusContainer.render(width),
- 			...this.#editorContainer.render(width),
-@@ -203,5 +251,38 @@
+-			...this.#editorContainer.render(width),
++			...this.#commandComponent.render(width),
++			...this.#activityComponent.render(width),
++			...this.#inputComponent.render(width),
+ 			...this.#footerComponent.render(width),
+ 		];
  	}
  
 +	#sizeCommandSurface(width: number, height: number): boolean {
-+		// Stack measurement may use an unbounded height; actual frames supply terminal dimensions.
 +		if (height === Number.MAX_SAFE_INTEGER) height = this.#ui.terminal.rows;
-+		const available = Math.max(4, height - this.#footerComponent.render(width).length);
-+		const panelHeight = Math.max(4, Math.min(15, Math.floor(available * 0.65)));
++		const fixedHeight = this.#footerComponent.render(width).length + this.#activityComponent.render(width).length;
++		// Use the same draft viewport with and without a panel, reserving room for its header/content/Back.
++		this.#inputLinesBudget = Math.max(1, Math.min(Math.floor(height * 0.3), height - fixedHeight - 6));
++		const available = Math.max(4, height - fixedHeight - this.#inputComponent.render(width).length);
++		const panelHeight = Math.min(available, Math.max(4, Math.min(15, Math.floor(available * 0.65))));
 +		const document = this.#customDocument;
-+		const page = document?.mode === "page" || (document?.mode === "auto"
++		this.#documentPage = document?.mode === "page" || (document?.mode === "auto"
 +			&& (document.preferredHeight?.(width) ?? 0) > panelHeight);
-+		document?.setViewport?.(page ? available : panelHeight, page);
++		document?.setViewport?.(this.#documentPage ? available : panelHeight, this.#documentPage);
 +		this.#selectList?.setViewport?.(panelHeight);
++		this.#commandHeight = panelHeight;
 +		if (!document && !this.#selection && this.#savedTranscript) {
 +			const saved = this.#savedTranscript;
 +			this.#savedTranscript = undefined;
-+			const transcript = this.#chatViewport.transcript;
 +			const dockHeight = this.#pendingMessagesContainer.render(width).length
-+				+ this.#statusContainer.render(width).length + this.#editorContainer.render(width).length;
-+			transcript.updateLayout(this.#documentContainer.render(width).length, Math.max(1, available - dockHeight), this.#requestRender);
-+			if (saved.following) transcript.scrollToEnd();
-+			else transcript.scrollTo(saved.top, { disableFollow: true });
++				+ this.#statusContainer.render(width).length + this.#commandComponent.render(width).length;
++			this.#transcript.updateLayout(this.#documentContainer.render(width).length, Math.max(0, available - dockHeight), this.#requestRender);
++			if (saved.following) this.#transcript.scrollToEnd();
++			else this.#transcript.scrollTo(saved.top, { disableFollow: true });
 +		}
-+		return page;
++		return this.#documentPage;
 +	}
 +
 +	#saveTranscriptPosition(): void {
-+		const transcript = this.#chatViewport.transcript;
++		const transcript = this.#transcript;
 +		this.#savedTranscript ??= { top: transcript.scrollTop, following: transcript.isFollowingEnd };
 +	}
 +
@@ -156,7 +186,7 @@
 +		}
  		if (this.#busy) {
  			if (
-@@ -218,5 +299,6 @@
+@@ -218,5 +310,6 @@
  			return;
  		}
 -		this.#selectList?.handleInput(data);
@@ -164,7 +194,7 @@
 +		this.#requestRender();
  	}
  
-@@ -277,13 +359,68 @@
+@@ -277,13 +370,68 @@
  			setup: (env) => {
  				env.provide(PresentationUI, {
 -					select: (title, items, selectedValue) =>
@@ -241,13 +271,13 @@
 +						}
  					},
  				});
-@@ -346,4 +483,5 @@
+@@ -346,4 +494,5 @@
  	async #close(): Promise<void> {
  		this.#closed = true;
 +		this.#dismissCommand();
  		this.#completeSelection(undefined);
  		const errors: unknown[] = [];
-@@ -375,27 +513,31 @@
+@@ -375,43 +524,115 @@
  	#rebuild(): void {
  		this.#sessionHeading.setText(
 -			this.#sessionId === undefined || this.#selectedServerId === undefined
@@ -261,25 +291,9 @@
 -		}
 -		if (this.#chatView !== undefined) this.#statusContainer.addChild(this.#chatView.status);
 -		this.#footerComponent.setText(theme.fg("dim", this.#footer()));
-+		// A command owns the key hints while open; background updates must not reintroduce Esc to abort.
-+		if (!this.#customDocument && !this.#selection) {
-+			if (this.#status.length > 0) {
-+				this.#statusContainer.addChild(new Text(theme.fg("dim", this.#status), 1, 0));
-+			}
-+			if (this.#chatView !== undefined) this.#statusContainer.addChild(this.#chatView.status);
-+		}
-+		this.#defaultFooter.setText(theme.fg("dim", this.#footer()));
- 		this.#editorContainer.clear();
+-		this.#editorContainer.clear();
 -		if (this.#screen === "select" && this.#selection !== undefined) {
-+		if (this.#commandFeedback && !this.#customDocument && !this.#selection) {
-+			this.#statusContainer.addChild(this.#commandFeedback);
-+		}
-+		// Background activity has no focus or command lifecycle of its own.
-+		this.#statusContainer.addChild(this.#activityComponent);
-+		// Focus is owned by the command router, never a detached child editor.
-+		this.#ui.setFocus(this);
-+		if (this.#customDocument) {
- 			this.#chatInput.focused = false;
+-			this.#chatInput.focused = false;
 -			const selector = new Container();
 -			selector.addChild(new Text(theme.bold(this.#selection.title), 1, 1));
 -			const items = [...this.#selection.items];
@@ -290,13 +304,28 @@
 -			this.#selectList.onCancel = () => this.#completeSelection(undefined);
 -			selector.addChild(this.#selectList);
 -			this.#editorContainer.addChild(selector);
-+			this.#editorContainer.addChild(this.#customDocument);
-+		} else if (this.#screen === "select" && this.#selection !== undefined) {
-+			this.#chatInput.focused = false;
-+			if (this.#selectList) this.#editorContainer.addChild(this.#selectList);
- 		} else {
- 			this.#selectList = undefined;
-@@ -407,11 +549,91 @@
+-		} else {
+-			this.#selectList = undefined;
+-			this.#chatInput.focused = !this.#busy;
+-			this.#editorContainer.addChild(this.#chatInput);
+-		}
++		// A command owns the key hints while open; background updates must not reintroduce Esc to abort.
++		if (!this.#customDocument && !this.#selection) {
++			if (this.#status.length > 0) {
++				this.#statusContainer.addChild(new Text(theme.fg("dim", this.#status), 1, 0));
++			}
++			if (this.#chatView !== undefined) this.#statusContainer.addChild(this.#chatView.status);
++		}
++		this.#defaultFooter.setText(theme.fg("dim", this.#footer()));
++		if (this.#commandFeedback && !this.#customDocument && !this.#selection) {
++			this.#statusContainer.addChild(this.#commandFeedback);
++		}
++		// Keyboard and mouse input always pass through the command router, including the retained draft.
++		this.#ui.setFocus(this);
++		this.#chatInput.focused = !this.#busy && !this.#customDocument && !this.#selection;
++		if (!this.#selection) this.#selectList = undefined;
+ 		this.#layoutRoot.invalidate();
+ 		this.#requestRender();
  	}
  
 -	#select(title: string, items: readonly SelectItem[], selectedValue?: string): Promise<string | undefined> {
@@ -391,25 +420,25 @@
 +		if (!this.#closed) this.#rebuild();
  	}
  
-@@ -464,4 +686,5 @@
+@@ -464,4 +685,5 @@
  		this.#busy = true;
  		this.#status = state.status === "connecting" ? "Reconnecting to Radius…" : "Radius disconnected; retrying…";
 +		this.#dismissCommand();
  		this.#queueRecovery(() => this.#closeLane());
  		this.#rebuild();
-@@ -531,4 +754,5 @@
+@@ -531,4 +753,5 @@
  
  	async #closeLane(): Promise<void> {
 +		this.#dismissCommand();
  		this.#laneUnsubscribe?.();
  		this.#laneUnsubscribe = undefined;
-@@ -547,4 +771,5 @@
+@@ -547,4 +770,5 @@
  			const name = prompt.slice(1, separator === -1 ? undefined : separator);
  			const args = separator === -1 ? "" : prompt.slice(separator + 1).trim();
 +			this.#chatInput.setText("");
  			await this.#executeSlashCommand(name, args);
  			return;
-@@ -560,26 +785,51 @@
+@@ -560,26 +784,51 @@
  
  	async #executeSlashCommand(name: string, args: string): Promise<void> {
 +		this.#dismissCommand();
@@ -470,13 +499,13 @@
 +		if (this.#commandFeedbackKind !== "running") this.#dismissCommand();
  		const controller = this.#selectedController();
  		if (controller === undefined) throw new Error("No Session AgentController service is available");
-@@ -594,4 +844,5 @@
+@@ -594,4 +843,5 @@
  
  	async #queueFollowUp(text: string): Promise<void> {
 +		if (this.#commandFeedbackKind !== "running") this.#dismissCommand();
  		const controller = this.#selectedController();
  		if (controller === undefined) return;
-@@ -617,4 +868,5 @@
+@@ -617,4 +867,5 @@
  
  	#interrupt(): void {
 +		if (this.#commandFeedback) this.#dismissCommand();
@@ -685,3 +714,97 @@
 +			this.#addText(theme.fg("muted", "[Context compacted]"));
  		} else if (entry.kind === "pi.reset") {
  			this.#addText(theme.fg("muted", "[new context]"));
+--- a/packages/tui/src/components/editor.ts
++++ b/packages/tui/src/components/editor.ts
+@@ -518,5 +518,5 @@
+ 	}
+ 
+-	render(width: number): string[] {
++	render(width: number, options: { autocomplete?: boolean; cursor?: boolean; maxVisibleLines?: number } = {}): string[] {
+ 		const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
+ 		const paddingX = Math.min(this.paddingX, maxPadding);
+@@ -535,5 +535,5 @@
+ 		// Calculate max visible lines: 30% of terminal height, minimum 5 lines
+ 		const terminalRows = this.tui.terminal.rows;
+-		const maxVisibleLines = Math.max(5, Math.floor(terminalRows * 0.3));
++		const maxVisibleLines = Math.max(1, options.maxVisibleLines ?? Math.max(5, Math.floor(terminalRows * 0.3)));
+ 
+ 		// Find the cursor line index in layoutLines
+@@ -575,5 +575,5 @@
+ 
+ 			// Add cursor if this line has it
+-			if (layoutLine.hasCursor && layoutLine.cursorPos !== undefined) {
++			if (options.cursor !== false && layoutLine.hasCursor && layoutLine.cursorPos !== undefined) {
+ 				const before = displayText.slice(0, layoutLine.cursorPos);
+ 				const after = displayText.slice(layoutLine.cursorPos);
+@@ -615,17 +615,30 @@
+ 		result.push(this.renderBottomBorder(width, linesBelow));
+ 
+-		// Add autocomplete list if active
+ 		this.renderedAutocompleteHeight = 0;
+-		if (this.autocompleteState && this.autocompleteList) {
+-			const autocompleteResult = this.autocompleteList.render(contentWidth);
+-			this.renderedAutocompleteHeight = autocompleteResult.length;
+-			for (const line of autocompleteResult) {
+-				const lineWidth = visibleWidth(line);
+-				const linePadding = " ".repeat(Math.max(0, contentWidth - lineWidth));
+-				result.push(`${leftPadding}${line}${linePadding}${rightPadding}`);
+-			}
+-		}
+-
++		if (options.autocomplete !== false) {
++			const autocomplete = this.renderAutocomplete(width);
++			this.renderedAutocompleteHeight = autocomplete.length;
++			result.push(...autocomplete);
++		}
+ 		return result;
++	}
++
++	/** Render the existing completion list in a separate layout region. Selection stays in the editor. */
++	renderAutocomplete(width: number, maxHeight = this.autocompleteMaxVisible + 1): string[] {
++		if (!this.autocompleteState || !this.autocompleteList || maxHeight < 1) return [];
++		const paddingX = Math.min(this.paddingX, Math.max(0, Math.floor((width - 1) / 2)));
++		const contentWidth = Math.max(1, width - paddingX * 2);
++		this.autocompleteList.setMaxVisible(Math.min(this.autocompleteMaxVisible, Math.max(1, maxHeight - 1)));
++		return this.autocompleteList.render(contentWidth).slice(0, maxHeight).map(line =>
++			" ".repeat(paddingX) + line + " ".repeat(Math.max(0, contentWidth - visibleWidth(line)) + paddingX));
++	}
++
++	handleAutocompleteMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
++		if (!this.autocompleteState || !this.autocompleteList) return undefined;
++		const paddingX = Math.min(this.paddingX, Math.max(0, Math.floor((event.width - 1) / 2)));
++		const result = this.autocompleteList.handleMouse?.({
++			...event, x: event.x - paddingX, width: Math.max(1, event.width - paddingX * 2),
++		});
++		return result ? { ...result, focus: true } : undefined;
+ 	}
+ 
+@@ -638,15 +651,6 @@
+ 			event.y < autocompleteStartRow + this.renderedAutocompleteHeight
+ 		) {
+-			const maxPadding = Math.max(0, Math.floor((event.width - 1) / 2));
+-			const paddingX = Math.min(this.paddingX, maxPadding);
+-			const contentWidth = Math.max(1, event.width - paddingX * 2);
+-			const result = this.autocompleteList.handleMouse?.({
+-				...event,
+-				x: event.x - paddingX,
+-				y: event.y - autocompleteStartRow,
+-				width: contentWidth,
+-				height: this.renderedAutocompleteHeight,
+-			});
+-			return result ? { ...result, focus: true } : undefined;
++			return this.handleAutocompleteMouse({ ...event, y: event.y - autocompleteStartRow,
++				height: this.renderedAutocompleteHeight });
+ 		}
+ 
+--- a/packages/tui/src/components/select-list.ts
++++ b/packages/tui/src/components/select-list.ts
+@@ -57,4 +57,8 @@
+ 		this.theme = theme;
+ 		this.layout = layout;
++	}
++
++	setMaxVisible(maxVisible: number): void {
++		this.maxVisible = Math.max(1, Math.floor(maxVisible));
+ 	}
+ 

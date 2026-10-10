@@ -47,7 +47,7 @@ export function activityStatus({ monitor, monitorError, monitorErrorSince, telem
   } else if (monitorError || !health || !supervisor?.state) {
     symbol = '…'; reason = monitorError ? 'Reconnecting to monitor' : 'Checking monitor health';
   }
-  return { text: relevant ? `Monitor ${symbol} · ⚙${running ?? '—'}${pending.length ? ` · ↑${pending.length}` : ''}` : '',
+  return { text: `Monitor ${symbol} · ⚙${running ?? '—'}${pending.length ? ` · ↑${pending.length}` : ''}`,
     symbol, color, reason, running, queued, pending: pending.length };
 }
 
@@ -89,7 +89,6 @@ export function createStatusPresentation({ session, theme, truncateToWidth, visi
   };
   const activity = { invalidate() {}, render(width) {
     const state = activityStatus({telemetry,monitor,monitorError,monitorErrorSince,sessionId:session.sessionId});
-    if (!state.text) return [];
     const text = monochrome ? state.text
       : `${theme.fg('muted','Monitor ')}${theme.fg(state.color,state.symbol)}${theme.fg('muted',` · ⚙${state.running ?? '—'}${state.pending ? ` · ↑${state.pending}` : ''}`)}`;
     return width > 0 ? [truncateToWidth(` ${text}`,width)] : [];

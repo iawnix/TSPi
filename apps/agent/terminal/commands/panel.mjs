@@ -24,12 +24,14 @@ export function createCommandPresentation(options) {
         setViewport(height) { viewport = height; },
         invalidate() {},
         render(width) {
-          size = Math.max(1, Math.min(6, Math.floor(((viewport ?? Math.min(15, rows() - 5)) - 3) / 2)));
+          const height = viewport ?? Math.min(15, rows() - 5);
+          const descriptions = height >= 5;
+          size = Math.max(1, Math.min(6, Math.floor((height - 3) / (descriptions ? 2 : 1))));
           const start = Math.max(0, Math.min(index - Math.floor(size / 2), items.length - size));
           const body = items.slice(start, start + size).flatMap((item, i) => {
             const focused = start + i === index;
             return [paint(` ${focused ? '›' : ' '} ${item.value === selectedValue ? '[current] ' : ''}${item.label}`, width, focused),
-              paint(`    ${item.description || item.value}`, width, focused)];
+              ...(descriptions ? [paint(`    ${item.description || item.value}`, width, focused)] : [])];
           });
           return [paint(` /${command} · ${title}`, width), paint(` ── Select · ${command === 'resume' ? 'Workspace' : scope} · ${items.length ? index + 1 : 0}/${items.length}`, width),
             ...(body.length ? body : [paint(' No options available', width)]),
