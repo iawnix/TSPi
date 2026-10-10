@@ -28,10 +28,6 @@ cd coragent
 ./install.sh
 ```
 
-To upgrade an existing deployment to 0.19, install in a new directory, update to
-the matching CoRHub client, and pair your devices again. Follow the
-[cutover guide](docs/CORAGENT_CUTOVER.md) for backup and migration steps.
-
 For non-interactive installation, prepare private files using the templates in `config/`, then run:
 
 ```bash

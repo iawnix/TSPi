@@ -1,6 +1,6 @@
 # CoRAgent：Phone 协议改名交接说明
 
-状态：本次更名同步更新服务端和 CoRHub 源码。测试结果以实际验收报告为准；尚未发布或进行实机验收。部署步骤见[切换指南](CORAGENT_CUTOVER.zh-CN.md)。
+状态：本次更名同步更新服务端和 CoRHub 源码。测试结果以实际验收报告为准；尚未发布或进行实机验收。
 
 本说明定义 CoRAgent 0.19 与 CoRHub 0.20 的配套协议。服务端直接采用新名称，不接受旧协议和旧令牌前缀；手机端同步切换，不提供旧协议回退。现有 Pi SDK、Server、Durable 和原生终端继续使用。
 
@@ -55,7 +55,7 @@
 | `lib/data/host_rpc_client.dart` | Host protocol 常量、Link 子协议、initialize 返回校验和相关错误说明 |
 | `lib/data/link_pairing.dart` | 配对响应 protocol 校验；文件名和类名可随客户端重构整理 |
 | `lib/models/connection_settings.dart` | 设备 token 正则与旧保存配置的显式失效处理 |
-| `lib/data/settings_store.dart` 及设置界面 | 提示旧连接需要重新配对；不伪造新 token、不静默删除用户其他设置 |
+| `lib/data/settings_store.dart` 及设置界面 | 保存服务端签发的连接信息，校验协议与 token 格式 |
 | 配对、Host RPC、interop 等测试和 fixtures | 统一新协议/令牌，增加拒绝旧值的场景 |
 
 以上文件位置来自当前源码；后续实际修改前应核对客户端的新基线。品牌文案和文件名称可以单独调整，不能漏掉真正参与握手和校验的常量。
@@ -68,9 +68,7 @@
 4. 验证新建/附着会话、发送消息、断线重连、重复请求身份、Monitor 显示和设备撤销。
 5. 明确拒绝旧协议、旧 token 和错误 Host；不自动降级到旧值。
 
-旧手机无法连接新服务端属于预期切换边界。服务端与客户端需要协调部署。验收应区分确定性测试客户端、真实 Dart 客户端联调与手机实机测试，不互相替代。
-
-协议切换需要重新配对，不能给旧令牌替换前缀来转换身份。
+验收应区分确定性测试客户端、真实 Dart 客户端联调与手机实机测试，不互相替代。
 
 ## 5. Monitor 与模型请求的跨端合同
 

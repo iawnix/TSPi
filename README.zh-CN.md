@@ -26,9 +26,6 @@ cd coragent
 ./install.sh
 ```
 
-已有部署升级至 0.19 时，需要在新目录安装、更新配套 CoRHub 客户端并重新配对设备。
-备份与迁移步骤见[切换指南](docs/CORAGENT_CUTOVER.zh-CN.md)。
-
 需要非交互安装时，参考 `config/` 中的示例准备本机私有配置，然后执行：
 
 ```bash

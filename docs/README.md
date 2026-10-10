@@ -10,7 +10,6 @@ validation reports are available in Git history.
 | --- | --- |
 | Skill catalog, loading language, and execution declarations | [Skills](../skills/README.md), [Execution catalog](EXTENSIONS.md) |
 | Install, configure, upgrade and recover | [Installation and Operations](INSTALLATION.md) |
-| Move an existing deployment to CoRAgent 0.19 | [Identity cutover](CORAGENT_CUTOVER.md) |
 | Installation directories, state and managed environments | [Installation layout](APP_LAYOUT.md) |
 | Workspace, Node, Result, Agent Server and Monitor ownership | [Architecture](ARCHITECTURE.md) |
 | Research storage, tools and evidence | [Research Memory Skill](../skills/research-memory/SKILL.md), [Evidence architecture (Chinese)](RESEARCH_EVIDENCE_ARCHITECTURE.zh-CN.md) |

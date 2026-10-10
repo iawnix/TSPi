@@ -8,7 +8,6 @@
 | --- | --- |
 | Skill 目录、加载语言与执行声明 | [Skill 目录](../skills/README.zh-CN.md)、[执行目录说明](EXTENSIONS.zh-CN.md) |
 | 安装、配置、升级与恢复 | [安装与运维](INSTALLATION.zh-CN.md) |
-| 已有部署切换至 CoRAgent 0.19 | [身份切换指南](CORAGENT_CUTOVER.zh-CN.md) |
 | 安装目录、状态与受管环境 | [安装布局](APP_LAYOUT.zh-CN.md) |
 | Workspace、Node、Result、Agent Server 与 Monitor | [架构](ARCHITECTURE.zh-CN.md) |
 | 研究存储、工具与证据 | [Research Memory Skill](../skills/research-memory/SKILL.zh-CN.md)、[证据架构](RESEARCH_EVIDENCE_ARCHITECTURE.zh-CN.md) |
