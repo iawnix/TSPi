@@ -3,8 +3,8 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 CoRAgent (Computational Research Agent) is an AI research assistant that helps plan studies, run calculations,
-analyze results, and write reports with traceable evidence. Its current skills focus
-on computational chemistry: molecular structures, transition-state searches,
+analyze results, and write reports with traceable evidence. Its skills cover
+computational chemistry: molecular structures, transition-state searches,
 reaction paths, and energy comparisons. Research notes and results stay in a
 workspace so you can return to a study and continue where you left off.
 
@@ -12,17 +12,13 @@ workspace so you can return to a study and continue where you left off.
 
 - Select methods, prepare inputs, and run tasks locally or on configured remote compute platforms.
 - Analyze structures, frequencies, and reaction paths; record conclusions, evidence, and open questions.
-- Assemble reports with molecular images, data tables, and energy plots from available calculation evidence.
+- Turn calculation results into reports with molecular images, data tables, and energy plots.
 - Work in the terminal, connect to the same workspace with CoRHub, or browse research records with optional CoRAgent Web.
 
-The project is under active development. Calculations require the relevant scientific
-software and configured environments; see [Scientific operations](docs/SCIENTIFIC_CAPABILITIES_OPERATIONS.md).
+Set up the scientific software and execution environments for your calculations
+with the [Scientific operations guide](docs/SCIENTIFIC_CAPABILITIES_OPERATIONS.md).
 
 ## Install
-
-Version 0.19 introduces a breaking identity cutover. Existing deployments must
-follow the [cutover guide](docs/CORAGENT_CUTOVER.md); old clients and credentials
-cannot connect to the new services.
 
 Prepare Git, Python 3.11+, Node.js 22.19+, Conda/Mamba, and model credentials, then run:
 
@@ -31,6 +27,10 @@ git clone https://github.com/iawnix/coragent.git
 cd coragent
 ./install.sh
 ```
+
+To upgrade an existing deployment to 0.19, install in a new directory, update to
+the matching CoRHub client, and pair your devices again. Follow the
+[cutover guide](docs/CORAGENT_CUTOVER.md) for backup and migration steps.
 
 For non-interactive installation, prepare private files using the templates in `config/`, then run:
 
@@ -79,8 +79,8 @@ npm run lint:public
 npm run lint:skills
 ```
 
-Test environments, caches, and evidence belong in the private local `local_debug/`
-directory and must not be committed or packaged. See the [Maintainer guide](docs/MAINTAINER_GUIDE.md)
+Keep test environments, caches, and evidence in the private local `local_debug/`
+directory, excluded from commits and packages. See the [Maintainer guide](docs/MAINTAINER_GUIDE.md)
 for test preparation and complete checks.
 
 ## Uninstall
@@ -98,5 +98,5 @@ The uninstaller asks whether to retain workspaces, sessions, configuration, and 
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Changelog](CHANGELOG.md)
 
-Project source is licensed under [Apache License 2.0](LICENSE). Third-party
-dependencies, Pi source, scientific software, and bundled assets may have separate licenses.
+Project source is licensed under [Apache License 2.0](LICENSE). Consult the licenses
+provided with third-party dependencies, Pi source, scientific software, and bundled assets for their terms.

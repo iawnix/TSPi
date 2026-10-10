@@ -1,23 +1,20 @@
 # CoRAgent
 
-CoRAgent 全称 Computational Research Agent（计算科研智能体）。
-
-0.19 版本进行不兼容的身份切换。已有部署请先阅读[切换指南](docs/CORAGENT_CUTOVER.zh-CN.md)；旧客户端和旧令牌不能连接新服务。
-
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-CoRAgent 是一个 AI 科研助手：帮助你制定研究方案、运行计算、分析结果，并整理成可追溯的研究报告。
-目前主要提供计算化学技能，涵盖分子结构、过渡态搜索、反应路径分析和能量比较。
+CoRAgent（Computational Research Agent，计算科研智能体）是一个 AI 科研助手：
+帮助你制定研究方案、运行计算、分析结果，并整理成可追溯的研究报告。
+计算化学技能涵盖分子结构、过渡态搜索、反应路径分析和能量比较。
 研究记录与计算结果保存在工作区中，可以随时继续研究。
 
 ## 可以做什么
 
 - 根据研究问题选择方法、准备输入，在本机或配置好的远程计算平台运行任务。
 - 分析结构、频率和反应路径，记录结论、依据与尚未解决的问题。
-- 整理包含分子图、数据表和能量曲线的报告；具体内容取决于已有计算证据。
+- 将计算结果整理成包含分子图、数据表和能量曲线的报告。
 - 在终端中交互，通过 CoRHub 连接同一工作区，或用可选的 CoRAgent Web 浏览研究记录。
 
-项目仍在积极开发。计算需要相应的科学软件及环境配置，详见[科学计算指南](docs/SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。
+按[科学计算指南](docs/SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)配置计算所需的科学软件与运行环境。
 
 ## 安装
 
@@ -28,6 +25,9 @@ git clone https://github.com/iawnix/coragent.git
 cd coragent
 ./install.sh
 ```
+
+已有部署升级至 0.19 时，需要在新目录安装、更新配套 CoRHub 客户端并重新配对设备。
+备份与迁移步骤见[切换指南](docs/CORAGENT_CUTOVER.zh-CN.md)。
 
 需要非交互安装时，参考 `config/` 中的示例准备本机私有配置，然后执行：
 
@@ -74,7 +74,7 @@ npm run lint:public
 npm run lint:skills
 ```
 
-测试环境、缓存和证据统一放在本机私有的 `local_debug/`，不得提交或打包。
+测试环境、缓存和证据统一保存在本机私有的 `local_debug/`，并从版本提交和发行包中排除。
 测试准备与完整检查见[维护者指南](docs/MAINTAINER_GUIDE.zh-CN.md)。
 
 ## 卸载
@@ -92,4 +92,4 @@ npm run lint:skills
 - [行为准则](CODE_OF_CONDUCT.zh-CN.md)
 - [变更日志](CHANGELOG.zh-CN.md)
 
-项目源码采用 [Apache License 2.0](LICENSE)。第三方依赖、Pi 源码、科学软件及随附资源可能适用各自的许可证。
+项目源码采用 [Apache License 2.0](LICENSE)。第三方依赖、Pi 源码、科学软件及随附资源的使用条款见各自附带的许可证。
