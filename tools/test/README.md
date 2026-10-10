@@ -3,8 +3,9 @@
 Use `python3 tools/test/runner.py` for all suites. Dependencies, snapshots,
 installations, caches and evidence stay under repository `local_debug/`.
 Nothing under that directory may be uploaded or included in a product artifact.
-Runner output contains only run IDs, result counts and status. Detailed failures
-remain in each run's local report and log files.
+Runner output contains only run IDs, result counts, status and failed test file
+names and valid line numbers matched against the public source inventory. Case names, parameters,
+assertions and detailed failures remain in each run's local report and log files.
 
 `prepare` also caches the public `structure` and `wrapper` Conda locks for the complete public
 installer acceptance. `--job-profiles` selects these preparation profiles; it
@@ -66,7 +67,9 @@ verified processes belonging to interrupted runs. `gc` respects live processes,
 retained-run dependency references, current environments and `KEEP` markers.
 
 `source` builds a content-addressed wheel once, verifies its digest, creates a
-fresh overlay and proves first-party imports come from that wheel. It retains
+fresh overlay and proves first-party imports come from that wheel. It explicitly
+binds catalog and Skill resources to the captured package, independently of the
+overlay's parent directories. It retains
 the overlay after failure. `release` accepts only the complete package archive
 with its adjacent `coragent-package-release.json`, invokes the real
 installer, verifies external-cwd startup and installed Python origins, and
@@ -82,7 +85,9 @@ and remote-platform acceptance unverified. Those require separately authorized
 non-private data; the normal runner does not send test data externally.
 
 CI uses these same commands, with an ephemeral root under `runner.temp`, and
-never uploads the test root, logs, databases or cache. The manifest discovers
+installs `ripgrep` and `fd-find` before entering the offline test namespace.
+Ubuntu's `fdfind` is exposed as `fd` on the test PATH for Pi's native coding tools.
+CI never uploads the test root, logs, databases or cache. The manifest discovers
 files automatically; all primary test suites must own disjoint sets of tests.
 
 The optional `phone` suite captures both repositories, runs Flutter with the

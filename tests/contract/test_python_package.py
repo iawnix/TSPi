@@ -22,6 +22,14 @@ from research_agent.foundation.env import python_payload_sha256
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_runtime_resources_resolve_to_the_captured_package() -> None:
+    from research_agent.foundation.env import resolve_package_root
+
+    # Installed Python lives in a separate wheel overlay. Resource discovery
+    # must still use this snapshot, not a coincidental ancestor checkout.
+    assert resolve_package_root() == ROOT
+
+
 def test_python_distribution_metadata_matches_pi_release() -> None:
     project = tomllib.loads((ROOT / "backend/pyproject.toml").read_text(encoding="utf-8"))
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
