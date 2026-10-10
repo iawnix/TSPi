@@ -75,10 +75,36 @@ export function parseSlashCommand(name, input = "") {
 export function slashCompletions(name, prefix = "") {
   const definition = SLASH_COMMAND_DEFINITIONS[name];
   if (!definition) return null;
-  const candidate = String(prefix).trim().toLowerCase();
-  const matches = definition.completions
-    .filter((value) => value.startsWith(candidate))
-    .map((value) => ({ value, label: value }));
+  const text = String(prefix);
+  if (/[\r\n]/.test(text)) return null;
+  const parts = text.trimStart().split(/\s+/);
+  const fragment = parts.pop() || '';
+  const base = parts.join(' ');
+  const parent = base ? `${base} ` : '';
+  let values = [...new Set(definition.completions.filter(value => value.startsWith(parent))
+    .map(value => value.slice(parent.length).split(' ')[0]))];
+  if (name === 'monitor') {
+    const [action, operation, id] = parts;
+    if (action === 'task' && operation === 'cancel' && id && parts.length === 3) {
+      values = ['--keep-jobs', '--cancel-jobs'];
+    } else if (['tasks', 'jobs', 'runs'].includes(action) || (action === 'run' && operation)) {
+      const flags = parts.slice(action === 'run' ? 2 : 1);
+      // A flag's value is user input, not another flag or a placeholder candidate.
+      if (flags.length % 2 === 0) values = ['--limit', '--cursor', ...(['jobs', 'runs'].includes(action) ? ['--task'] : [])]
+        .filter(flag => !flags.includes(flag));
+      else values = [];
+    }
+  }
+  const descriptions = {
+    tasks: 'List research tasks', task: 'Inspect or control a task', jobs: 'List compute jobs',
+    job: 'Inspect or cancel a job', runs: 'List execution records', run: 'Read execution details',
+    health: 'Inspect service health', pause: 'Pause automatic continuation', resume: 'Resume automatic continuation',
+    cancel: 'Cancel the selected task or job', read: 'Read research records', search: 'Search research records',
+    '--keep-jobs': 'Keep compute jobs running', '--cancel-jobs': 'Request cancellation of compute jobs',
+    '--limit': 'Page size: 1–100', '--cursor': 'Next-page cursor', '--task': 'Filter by task ID',
+  };
+  const matches = values.filter(value => value.toLowerCase().startsWith(fragment.toLowerCase()))
+    .map(value => ({ value: parent + value + ' ', label: value, description: descriptions[value] }));
   return matches.length ? matches : null;
 }
 
@@ -102,10 +128,12 @@ function parseMonitorSlash(tokens, usage) {
     const seen = new Set();
     while (parts.length) {
       const flag = parts.shift(), value = parts.shift();
-      if (!allowed.has(flag) || seen.has(flag) || !value || value.startsWith("--")) throw usageError(usage);
+      if (!allowed.has(flag)) throw usageError(usage, `Unknown option: ${flag}`);
+      if (seen.has(flag)) throw usageError(usage, `Duplicate option: ${flag}`);
+      if (!value || value.startsWith("--")) throw usageError(usage, `Missing value for ${flag}`);
       seen.add(flag);
       if (flag === "--limit") {
-        if (!/^[1-9]\d*$/.test(value) || Number(value) > 100) throw usageError(usage);
+        if (!/^[1-9]\d*$/.test(value) || Number(value) > 100) throw usageError(usage, '--limit must be an integer from 1 to 100');
         params.limit = Number(value);
       } else params[flag === "--task" ? "user_task_id" : "cursor"] = value;
     }
@@ -114,22 +142,24 @@ function parseMonitorSlash(tokens, usage) {
     const controls = action === "task" ? ["pause", "resume", "cancel"] : action === "job" ? ["cancel"] : [];
     const control = controls.includes(operation);
     const id = control ? parts.shift() : operation;
-    if (!id || id.startsWith("--")) throw usageError(usage);
+    if (!id || id.startsWith("--")) throw usageError(usage, `Missing ${action} ID`);
     params[{task:"user_task_id",job:"job_id",run:"run_id"}[action]] = id;
     method = `monitor/${action}/${control ? operation : "read"}`;
     if (action === "task" && operation === "cancel") {
       const jobs = parts.shift();
-      if (!["--keep-jobs", "--cancel-jobs"].includes(jobs)) throw usageError(usage);
+      if (!["--keep-jobs", "--cancel-jobs"].includes(jobs)) throw usageError(usage, 'Choose --keep-jobs or --cancel-jobs');
       params.jobs = jobs === "--keep-jobs" ? "keep" : "cancel";
     }
     if (action === "run") {
       const seen = new Set();
       while (parts.length) {
         const flag = parts.shift(), value = parts.shift();
-        if (!["--limit", "--cursor"].includes(flag) || seen.has(flag) || !value || value.startsWith("--")) throw usageError(usage);
+        if (!["--limit", "--cursor"].includes(flag)) throw usageError(usage, `Unknown option: ${flag}`);
+        if (seen.has(flag)) throw usageError(usage, `Duplicate option: ${flag}`);
+        if (!value || value.startsWith("--")) throw usageError(usage, `Missing value for ${flag}`);
         seen.add(flag);
         if (flag === "--limit") {
-          if (!/^[1-9]\d*$/.test(value) || Number(value) > 100) throw usageError(usage);
+          if (!/^[1-9]\d*$/.test(value) || Number(value) > 100) throw usageError(usage, '--limit must be an integer from 1 to 100');
           params.limit = Number(value);
         } else params.cursor = value;
       }
@@ -140,8 +170,8 @@ function parseMonitorSlash(tokens, usage) {
 }
 
 
-function usageError(usage) {
-  const error = new Error(`Usage: ${usage}`);
+function usageError(usage, reason) {
+  const error = new Error(`${reason ? `${reason}\n` : ''}Usage: ${usage}`);
   error.name = "CommandUsageError";
   return error;
 }

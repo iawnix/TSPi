@@ -1,6 +1,6 @@
 --- a/packages/coding-agent/src/experimental/client-tui.ts
 +++ b/packages/coding-agent/src/experimental/client-tui.ts
-@@ -10,15 +10,18 @@
+@@ -9,15 +9,18 @@
  	type LoadedFacets,
  } from "@earendil-works/chord";
 -import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -20,31 +20,33 @@
 +	VStack,
  } from "@earendil-works/pi-tui";
  import type { ClientCommand } from "../cli/experimental/commands/client.ts";
-@@ -27,5 +30,4 @@
+@@ -26,5 +29,4 @@
  import { DefaultResourceLoader } from "../core/resource-loader.ts";
  import { SettingsManager } from "../core/settings-manager.ts";
 -import { createChatViewport } from "../modes/interactive/chat-viewport.ts";
  import { CustomEditor } from "../modes/interactive/components/custom-editor.ts";
  import { getEditorTheme, setRegisteredThemes, stopThemeWatcher, theme } from "../modes/interactive/theme/theme.ts";
-@@ -43,5 +45,5 @@
+@@ -42,5 +44,5 @@
  } from "./services/connection.ts";
  import { PresentationPlugins } from "./services/plugins.ts";
 -import { PresentationUI } from "./services/presentation-ui.ts";
 +import { PresentationUI, type CommandPresentation, type CommandFeedbackKind, type PresentationDocument, type PresentationSurface } from "./services/presentation-ui.ts";
  import { SessionDirectory, SessionManagement, type SessionSummary } from "./services/sessions.ts";
  import { SlashCommands } from "./services/slash-commands.ts";
-@@ -78,4 +80,10 @@
+@@ -73,4 +75,12 @@
  	readonly presentationPlugins: JsonValue;
  }
 +
 +interface CommandRun {
 +	readonly command: string;
++	readonly input?: string;
++	readonly inputVersion: number;
 +	dismissed: boolean;
 +}
 +const COMMAND_RUN = createContextKey<CommandRun>("pi.command-presentation");
  
  interface PendingSelection {
-@@ -103,7 +111,45 @@
+@@ -98,7 +108,46 @@
  	readonly #pendingMessagesContainer = new Container();
  	readonly #statusContainer = new Container();
 -	readonly #editorContainer = new Container();
@@ -75,7 +77,8 @@
 +	#customDocument: PresentationDocument | undefined;
 +	#commandPresentation: CommandPresentation | undefined;
 +	#commandRun: CommandRun | undefined;
-+	#commandFeedback: Component | undefined;
++	#commandFeedback: ReturnType<CommandPresentation["feedback"]> | undefined;
++	#draftVersion = 0;
 +	#commandFeedbackKind: CommandFeedbackKind | undefined;
 +	#commandFeedbackTimer: ReturnType<typeof setTimeout> | undefined;
 +	readonly #activityComponent: Component = {
@@ -92,14 +95,30 @@
 +	#savedTranscript: { top: number; following: boolean } | undefined;
  	readonly #sharedFacets: LoadedFacets;
  	readonly #keybindings = KeybindingsManager.create();
-@@ -115,5 +161,5 @@
+@@ -110,5 +159,5 @@
  	#controller: AgentController | undefined;
  	readonly #chatInput: CustomEditor;
 -	#selectList: SelectList | undefined;
 +	#selectList: PresentationSurface | undefined;
  	#selection: PendingSelection | undefined;
  	#screen: "select" | "chat" = "chat";
-@@ -148,14 +194,22 @@
+@@ -129,5 +178,14 @@
+ 		this.#sharedFacets = loadedFacets;
+ 		setKeybindings(this.#keybindings);
+-		this.#chatInput = new CustomEditor(ui, getEditorTheme(), this.#keybindings, { paddingX: 1 });
++		const editorTheme = getEditorTheme();
++		this.#chatInput = new CustomEditor(ui, {
++			...editorTheme,
++			selectList: {
++				...editorTheme.selectList,
++				selectedText: (text) => process.env.TERM === "dumb" || "NO_COLOR" in process.env
++					? text : theme.style(text, { fg: "text", bg: "selectedBg" }),
++			},
++		}, this.#keybindings, { paddingX: 1 });
++		this.#chatInput.onChange = () => { this.#draftVersion++; };
+ 		this.#chatInput.onSubmit = (message) => void this.#runPrompt(message);
+ 		this.#chatInput.onEscape = () => this.#interrupt();
+@@ -141,14 +199,22 @@
  			void this.#queueFollowUp(text);
  		});
 -		this.#editorContainer.addChild(this.#chatInput);
@@ -130,7 +149,7 @@
 +		]);
  		this.#rebuild();
  	}
-@@ -194,14 +248,52 @@
+@@ -186,14 +252,71 @@
  
  	render(width: number): string[] {
 +		this.#sizeCommandSurface(width, this.#ui.terminal.rows);
@@ -184,9 +203,28 @@
 +			this.#requestRender();
 +			return;
 +		}
++		if (!this.#selection && matchesKey(data, "f2") && this.#commandFeedback?.details) {
++			this.#saveTranscriptPosition();
++			const document = this.#commandFeedback.details();
++			const close = () => {
++				this.#customDocument = undefined;
++				this.#resolveDocument = undefined;
++				this.#rebuild();
++			};
++			this.#resolveDocument = close;
++			this.#customDocument = {
++				...document,
++				handleInput: (key) => {
++					if (matchesKey(key, "escape") || key === "q") close();
++					else document.handleInput?.(key);
++				},
++			};
++			this.#rebuild();
++			return;
++		}
  		if (this.#busy) {
  			if (
-@@ -218,5 +310,6 @@
+@@ -210,5 +333,6 @@
  			return;
  		}
 -		this.#selectList?.handleInput(data);
@@ -194,7 +232,7 @@
 +		this.#requestRender();
  	}
  
-@@ -277,13 +370,68 @@
+@@ -269,13 +393,68 @@
  			setup: (env) => {
  				env.provide(PresentationUI, {
 -					select: (title, items, selectedValue) =>
@@ -271,13 +309,13 @@
 +						}
  					},
  				});
-@@ -346,4 +494,5 @@
+@@ -340,4 +519,5 @@
  	async #close(): Promise<void> {
  		this.#closed = true;
 +		this.#dismissCommand();
  		this.#completeSelection(undefined);
  		const errors: unknown[] = [];
-@@ -375,43 +524,115 @@
+@@ -369,43 +549,118 @@
  	#rebuild(): void {
  		this.#sessionHeading.setText(
 -			this.#sessionId === undefined || this.#selectedServerId === undefined
@@ -391,6 +429,9 @@
 +	#feedback(run: CommandRun, messageText: string, kind: CommandFeedbackKind): void {
 +		if (run.dismissed || this.#closed || this.#commandRun !== run) return;
 +		clearTimeout(this.#commandFeedbackTimer);
++		if (kind === "error" && run.input && this.#draftVersion === run.inputVersion && !this.#chatInput.getText()) {
++			this.#chatInput.setText(run.input);
++		}
 +		this.#commandFeedbackKind = kind;
 +		this.#commandFeedback =
 +			this.#commandPresentation?.feedback({
@@ -420,29 +461,38 @@
 +		if (!this.#closed) this.#rebuild();
  	}
  
-@@ -464,4 +685,5 @@
+@@ -458,4 +713,5 @@
  		this.#busy = true;
  		this.#status = state.status === "connecting" ? "Reconnecting to Radius…" : "Radius disconnected; retrying…";
 +		this.#dismissCommand();
  		this.#queueRecovery(() => this.#closeLane());
  		this.#rebuild();
-@@ -531,4 +753,5 @@
+@@ -511,4 +767,5 @@
  
  	async #closeLane(): Promise<void> {
 +		this.#dismissCommand();
  		this.#laneUnsubscribe?.();
  		this.#laneUnsubscribe = undefined;
-@@ -547,4 +770,5 @@
+@@ -523,9 +780,10 @@
+ 		const prompt = messageText.trim();
+ 		if (prompt.length === 0) return;
+-		if (prompt.startsWith("/")) {
++		if (/^\/[a-z][\w-]*(?:\s|$)/i.test(prompt) && !prompt.includes("\n")) {
+ 			const separator = prompt.indexOf(" ");
  			const name = prompt.slice(1, separator === -1 ? undefined : separator);
  			const args = separator === -1 ? "" : prompt.slice(separator + 1).trim();
+-			await this.#executeSlashCommand(name, args);
 +			this.#chatInput.setText("");
- 			await this.#executeSlashCommand(name, args);
++			await this.#executeSlashCommand(name, args, prompt);
  			return;
-@@ -560,26 +784,51 @@
+ 		}
+@@ -539,27 +797,57 @@
+ 	}
  
- 	async #executeSlashCommand(name: string, args: string): Promise<void> {
+-	async #executeSlashCommand(name: string, args: string): Promise<void> {
++	async #executeSlashCommand(name: string, args: string, input?: string): Promise<void> {
 +		this.#dismissCommand();
-+		const run: CommandRun = { command: name, dismissed: false };
++		const run: CommandRun = { command: name, input, inputVersion: this.#draftVersion, dismissed: false };
 +		this.#commandRun = run;
 +		const context = withContextValue(COMMAND_RUN, run, BACKGROUND_CONTEXT);
  		const command = this.#selectedSlashCommands()
@@ -468,6 +518,11 @@
 +		if (name !== "quit") this.#feedback(run, "Loading…", "running");
  		try {
 -			const result = await command.run(args, BACKGROUND_CONTEXT);
++			const validationError = command.validate?.(args);
++			if (validationError) {
++				this.#feedback(run, validationError, "error");
++				return;
++			}
 +			const result = await command.run(args, context);
  			if (result !== undefined) {
 -				if ("entryId" in result) this.#reportQueue(result);
@@ -499,13 +554,13 @@
 +		if (this.#commandFeedbackKind !== "running") this.#dismissCommand();
  		const controller = this.#selectedController();
  		if (controller === undefined) throw new Error("No Session AgentController service is available");
-@@ -594,4 +843,5 @@
+@@ -573,4 +861,5 @@
  
  	async #queueFollowUp(text: string): Promise<void> {
 +		if (this.#commandFeedbackKind !== "running") this.#dismissCommand();
  		const controller = this.#selectedController();
  		if (controller === undefined) return;
-@@ -617,4 +867,5 @@
+@@ -596,4 +885,5 @@
  
  	#interrupt(): void {
 +		if (this.#commandFeedback) this.#dismissCommand();
@@ -543,7 +598,7 @@
 +		onSelect(value: string): void;
 +		onCancel(): void;
 +	}): PresentationSurface;
-+	feedback(options: { command: string; message: string; kind: CommandFeedbackKind }): Component;
++	feedback(options: { command: string; message: string; kind: CommandFeedbackKind }): Component & { details?(): PresentationDocument };
  }
  
 @@ -15,5 +40,9 @@
@@ -706,7 +761,7 @@
  			const id = parseSubmissionId(operationId);
 --- a/packages/coding-agent/src/experimental/client-tui-chat.ts
 +++ b/packages/coding-agent/src/experimental/client-tui-chat.ts
-@@ -194,6 +194,5 @@
+@@ -180,6 +180,5 @@
  			this.#tool(result.toolName, result.toolCallId).updateResult(result);
  		} else if (entry.kind === "pi.compaction") {
 -			this.#addText(theme.fg("muted", "[compaction]"));
@@ -716,28 +771,39 @@
  			this.#addText(theme.fg("muted", "[new context]"));
 --- a/packages/tui/src/components/editor.ts
 +++ b/packages/tui/src/components/editor.ts
-@@ -518,5 +518,5 @@
+@@ -1,2 +1,4 @@
++import { stripVTControlCharacters } from "node:util";
++import { truncateToWidth } from "../utils.ts";
+ import type { AutocompleteProvider, AutocompleteSuggestions } from "../autocomplete.ts";
+ import { getKeybindings } from "../keybindings.ts";
+@@ -327,4 +328,5 @@
+ 	private autocompleteState: "regular" | "force" | null = null;
+ 	private autocompletePrefix: string = "";
++	private dismissedAutocompleteText: string | undefined;
+ 	private autocompleteMaxVisible: number = 5;
+ 	private autocompleteAbort?: AbortController;
+@@ -518,5 +520,5 @@
  	}
  
 -	render(width: number): string[] {
 +	render(width: number, options: { autocomplete?: boolean; cursor?: boolean; maxVisibleLines?: number } = {}): string[] {
  		const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
  		const paddingX = Math.min(this.paddingX, maxPadding);
-@@ -535,5 +535,5 @@
+@@ -535,5 +537,5 @@
  		// Calculate max visible lines: 30% of terminal height, minimum 5 lines
  		const terminalRows = this.tui.terminal.rows;
 -		const maxVisibleLines = Math.max(5, Math.floor(terminalRows * 0.3));
 +		const maxVisibleLines = Math.max(1, options.maxVisibleLines ?? Math.max(5, Math.floor(terminalRows * 0.3)));
  
  		// Find the cursor line index in layoutLines
-@@ -575,5 +575,5 @@
+@@ -575,5 +577,5 @@
  
  			// Add cursor if this line has it
 -			if (layoutLine.hasCursor && layoutLine.cursorPos !== undefined) {
 +			if (options.cursor !== false && layoutLine.hasCursor && layoutLine.cursorPos !== undefined) {
  				const before = displayText.slice(0, layoutLine.cursorPos);
  				const after = displayText.slice(layoutLine.cursorPos);
-@@ -615,17 +615,30 @@
+@@ -615,17 +617,40 @@
  		result.push(this.renderBottomBorder(width, linesBelow));
  
 -		// Add autocomplete list if active
@@ -765,9 +831,19 @@
 +		if (!this.autocompleteState || !this.autocompleteList || maxHeight < 1) return [];
 +		const paddingX = Math.min(this.paddingX, Math.max(0, Math.floor((width - 1) / 2)));
 +		const contentWidth = Math.max(1, width - paddingX * 2);
-+		this.autocompleteList.setMaxVisible(Math.min(this.autocompleteMaxVisible, Math.max(1, maxHeight - 1)));
-+		return this.autocompleteList.render(contentWidth).slice(0, maxHeight).map(line =>
-+			" ".repeat(paddingX) + line + " ".repeat(Math.max(0, contentWidth - visibleWidth(line)) + paddingX));
++		const height = Math.min(maxHeight, this.autocompleteMaxVisible + 2);
++		this.autocompleteList.setMaxVisible(Math.max(1, height - 2));
++		const lines = this.autocompleteList.render(contentWidth).slice(0, Math.max(1, height - 1));
++		while (lines.length < height - 1) lines.push("");
++		if (height > 1) {
++			const hint = this.autocompletePrefix.startsWith("/")
++				? "Tab Complete · Enter Open · Esc Back" : "Tab/Enter Complete · Esc Back";
++			lines.push(this.theme.selectList.scrollInfo(truncateToWidth(hint, contentWidth)));
++		}
++		return lines.map(line => {
++			const padded = " ".repeat(paddingX) + line + " ".repeat(Math.max(0, contentWidth - visibleWidth(line)) + paddingX);
++			return process.env.TERM === "dumb" || "NO_COLOR" in process.env ? stripVTControlCharacters(padded) : padded;
++		});
 +	}
 +
 +	handleAutocompleteMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
@@ -779,7 +855,7 @@
 +		return result ? { ...result, focus: true } : undefined;
  	}
  
-@@ -638,15 +651,6 @@
+@@ -638,15 +663,6 @@
  			event.y < autocompleteStartRow + this.renderedAutocompleteHeight
  		) {
 -			const maxPadding = Math.max(0, Math.floor((event.width - 1) / 2));
@@ -797,6 +873,26 @@
 +				height: this.renderedAutocompleteHeight });
  		}
  
+@@ -757,4 +773,5 @@
+ 		if (this.autocompleteState && this.autocompleteList) {
+ 			if (kb.matches(data, "tui.select.cancel")) {
++				this.dismissedAutocompleteText = this.getText();
+ 				this.cancelAutocomplete();
+ 				return;
+@@ -2269,5 +2286,5 @@
+ 		const beforeCursor = currentLine.slice(0, this.state.cursorCol);
+ 
+-		if (this.isInSlashCommandContext(beforeCursor) && !beforeCursor.trimStart().includes(" ")) {
++		if (this.isInSlashCommandContext(beforeCursor)) {
+ 			this.handleSlashCommandCompletion();
+ 		} else {
+@@ -2286,4 +2303,6 @@
+ 	private requestAutocomplete(options: { force: boolean; explicitTab: boolean }): void {
+ 		if (!this.autocompleteProvider) return;
++		if (!options.explicitTab && this.dismissedAutocompleteText === this.getText()) return;
++		this.dismissedAutocompleteText = undefined;
+ 
+ 		if (options.force) {
 --- a/packages/tui/src/components/select-list.ts
 +++ b/packages/tui/src/components/select-list.ts
 @@ -57,4 +57,8 @@
@@ -808,3 +904,12 @@
 +		this.maxVisible = Math.max(1, Math.floor(maxVisible));
  	}
  
+--- a/packages/coding-agent/src/experimental/services/slash-commands.ts
++++ b/packages/coding-agent/src/experimental/services/slash-commands.ts
+@@ -14,4 +14,6 @@
+ 	readonly description?: string;
+ 	readonly argumentHint?: string;
++	/** Synchronous input validation; must not execute an operation. */
++	validate?(args: string): string | undefined;
+ 	getArgumentCompletions?(
+ 		argumentPrefix: string,

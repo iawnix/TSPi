@@ -3,9 +3,35 @@ import test from "node:test";
 import { createTerminalCommands } from "../../../apps/agent/terminal/commands/facet.mjs";
 import { createClientQueries } from "../../../apps/agent/pi/services/queries.mjs";
 import { createTerminalSession, runTerminalSessions } from "../../../apps/agent/terminal/session.mjs";
-import { parseSlashCommand, SLASH_COMMAND_NAMES } from "../../../apps/agent/tools/commands.mjs";
+import { parseSlashCommand, slashCompletions, SLASH_COMMAND_NAMES } from "../../../apps/agent/tools/commands.mjs";
 
 const row = (id, workspace = "remote") => ({ session_id: id, workspace_id: workspace });
+
+test('slash completion follows argument positions and preserves case-sensitive IDs', () => {
+  const values = prefix => (slashCompletions('monitor', prefix) || []).map(item => item.value);
+  assert.deepEqual(values('ta'), ['tasks ', 'task ']);
+  assert.deepEqual(values('task '), ['task pause ', 'task resume ', 'task cancel ']);
+  assert.deepEqual(values('task pause '), []);
+  assert.deepEqual(values('task cancel TaskABC '), ['task cancel TaskABC --keep-jobs ', 'task cancel TaskABC --cancel-jobs ']);
+  assert.deepEqual(values('jobs --task '), []);
+  assert.deepEqual(values('jobs --task TaskABC '), ['jobs --task TaskABC --limit ', 'jobs --task TaskABC --cursor ']);
+  assert.deepEqual(values('run RunABC --limit 5 '), ['run RunABC --limit 5 --cursor ']);
+  assert.deepEqual(values('health '), []);
+  assert.deepEqual(values('jobs\n'), []);
+  assert.equal(slashCompletions('research', 'search some text'), null);
+  assert.ok(slashCompletions('monitor', 'jobs')[0].description);
+});
+
+test('command validation explains incomplete input without invoking any operation', () => {
+  const commands = createTerminalCommands({});
+  const monitor = commands.find(command => command.name === 'monitor');
+  assert.equal(monitor.validate(''), undefined);
+  assert.match(monitor.validate('task pause'), /Missing task ID/);
+  assert.match(monitor.validate('task cancel TaskABC'), /Choose --keep-jobs or --cancel-jobs/);
+  assert.match(monitor.validate('jobs --limit'), /Missing value for --limit/);
+  assert.match(monitor.validate('jobs --limit 200'), /integer from 1 to 100/);
+  assert.equal(monitor.validate('task pause TaskABC'), undefined);
+});
 
 test("worker queries bind identity and admit only read-only research arguments", async () => {
   const calls = [];

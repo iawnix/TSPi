@@ -1,4 +1,5 @@
 import { formatMonitor, taskStateLabel } from '../commands/monitor.mjs';
+import { stripVTControlCharacters } from 'node:util';
 
 /** Pure presentation of durable usage, current context and operational observations. */
 export const formatTokens = value => Number.isFinite(value)
@@ -90,7 +91,8 @@ export function createStatusPresentation({ session, theme, truncateToWidth, visi
       const second = `${context} · Total tokens: ${total}`;
       const short = `${icon}Ctx ${percent === null ? '?' : `${percent.toFixed(0)}%`} · Tokens: ${total}`;
       const color = percent >= 90 ? 'error' : percent >= 70 ? 'warning' : 'muted';
-      return [` ${theme.fg('muted',fit(first,w))}`, ` ${theme.fg(color,fit(visibleWidth(second) <= w ? second : short,w))}`];
+      const lines = [fit(first,w), fit(visibleWidth(second) <= w ? second : short,w)];
+      return lines.map((line, index) => ` ${monochrome ? stripVTControlCharacters(line) : theme.fg(index ? color : 'muted', line)}`);
     },
   };
   const activity = { invalidate() {}, render(width) {

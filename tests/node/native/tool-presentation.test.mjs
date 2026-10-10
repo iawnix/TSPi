@@ -23,9 +23,14 @@ test("tool summaries stay bounded while full arguments and output remain availab
   assert.ok(renderer.renderResult(result, { expanded: true }, theme, {}).render(60).length > 100);
 });
 
-test("job submission and running are distinct from completed and failed states", () => {
+test("job submission and running are distinct from completed and failed states", t => {
+  const previous = {TERM:process.env.TERM,NO_COLOR:process.env.NO_COLOR};
+  process.env.TERM='xterm-256color'; delete process.env.NO_COLOR;
+  t.after(()=>{for(const [key,value] of Object.entries(previous)) {
+    if(value===undefined) delete process.env[key]; else process.env[key]=value;
+  }});
   const renderer = createCoRAgentToolRenderers(tui, ["job_start"]).job_start;
-  for (const [state, color] of [["running", "warning"], ["succeeded", "success"], ["failed", "error"]]) {
+  for (const [state, color] of [["running", "accent"], ["queued", "accent"], ["succeeded", "success"], ["failed", "error"], ["cancelled", "muted"], ["blocked", "warning"]]) {
     colors.length = 0;
     const result = renderer.renderResult({ content: [], details: { result: { state } } }, {}, theme, {});
     assert.match(result.render(60).join("\n"), new RegExp(state));
@@ -40,6 +45,15 @@ test("job submission and running are distinct from completed and failed states",
   }
   assert.doesNotMatch(renderer.renderResult({ content: [] }, { isPartial: true }, theme,
     { durationMs: 1200 }).render(60).join("\n"), /1\.2s/);
+});
+
+test('monochrome tool summaries retain state without calling color functions',t=>{
+  const previous=process.env.NO_COLOR;process.env.NO_COLOR='1';
+  t.after(()=>{if(previous===undefined) delete process.env.NO_COLOR;else process.env.NO_COLOR=previous;});
+  const renderer=createCoRAgentToolRenderers(tui,['job_start']).job_start;
+  const noColor={fg(){throw Error('unexpected color');},bold(){throw Error('unexpected emphasis');}};
+  assert.match(renderer.renderCall({},noColor,{}).render(60).join('\n'),/job_start/);
+  assert.match(renderer.renderResult({content:[],details:{result:{state:'queued'}}},{},noColor,{}).render(60).join('\n'),/queued/);
 });
 
 test("native chat applies registered renderers and expands cards without losing their transcript", async () => {

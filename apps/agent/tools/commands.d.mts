@@ -870,4 +870,4 @@ export function parseSlashCommand(name: string, input?: string): CommandInvocati
   readonly command: "client.sys-prompt" | "client.resume" | "client.quit" | "client.usage" | "client.monitor";
   readonly params: Readonly<Record<string, unknown>>;
 };
-export function slashCompletions(name: string, prefix?: string): Array<{ value: string; label: string }> | null;
+export function slashCompletions(name: string, prefix?: string): Array<{ value: string; label: string; description?: string }> | null;

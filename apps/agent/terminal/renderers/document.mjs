@@ -1,8 +1,8 @@
 import { createPanelPainter } from '../commands/panel.mjs';
 
 /** A document with a fixed viewport and logical anchors across refreshes and resizing. */
-export function createDocumentView({ title, command, scope = 'Session', body, mode = 'auto', wrapText, truncateToWidth, visibleWidth, monochrome, matchesKey = () => false, rows = () => process.stdout.rows || 24 }) {
-  const paint = createPanelPainter({ truncateToWidth, visibleWidth, monochrome });
+export function createDocumentView({ title, command, scope = 'Session', body, mode = 'auto', wrapText, truncateToWidth, visibleWidth, monochrome, theme, matchesKey = () => false, rows = () => process.stdout.rows || 24 }) {
+  const paint = createPanelPainter({ truncateToWidth, visibleWidth, monochrome, theme });
   let offset = 0, pageSize = 1, viewport, fullPage = false, lastWidth = 0, lastBody, lines = [], positions = [];
   function layout(width) {
     const text = typeof body === 'function' ? body() : body;

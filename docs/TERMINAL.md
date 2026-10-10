@@ -88,6 +88,25 @@ status line and leave the editor usable; no panel needs to be dismissed.
 that it was skipped, cancelled, or failed. The transcript shows a compacted
 context marker; it does not print the internal summary as an ordinary reply.
 
+Slash completion uses a stable viewport above the editor. Arrow keys select a
+candidate; Tab and clicks only complete it. Enter opens a command entry. Enter on
+an argument candidate only completes it; a subsequent Enter submits the command.
+Esc dismisses completion without clearing the input, and Tab reopens it. Monitor
+suggestions follow the current argument position and preserve case-sensitive IDs.
+Incomplete commands report the missing argument without executing an operation.
+
+Failed commands return to an untouched editor for correction; late failures never
+overwrite a newer draft. Press F2 on an error to read its complete message and
+usage, then Esc to return. Paths and multiline text starting with a slash remain
+ordinary messages. Pasting alone never executes a command.
+
+Command surfaces follow the active Pi theme. `›` marks keyboard focus and
+`[current]` marks the applied value; selectors support clicks and wheel navigation.
+Running and queued tools use the activity color, blocked tools use warning,
+failures use error, and cancellation uses secondary text. With `NO_COLOR` or
+`TERM=dumb`, command surfaces, completion, status and tool summaries keep text and
+symbol cues.
+
 CoRAgent command names, arguments, and completions share one catalogue:
 
 - `/research`: read-only queries in the attached worker, for Memory context and records, including a remote workspace over SSH. Use the command help for supported selectors. Long results open a separate reading page.
