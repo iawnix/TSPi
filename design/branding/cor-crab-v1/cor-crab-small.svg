@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 512 512" color="#122E43" role="img" aria-labelledby="title desc">
+<title id="title">CoR crab — proposed shared brand mark</title>
+<desc id="desc">A symmetric teal and blue crab with raised claws, a triangular folded body, two eyes and a golden ring above its head.</desc>
+<defs>
+  <linearGradient id="teal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#24D4CA"/><stop offset="1" stop-color="#06A6AD"/></linearGradient>
+  <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#28B9F0"/><stop offset="1" stop-color="#0865E8"/></linearGradient>
+  <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFD34D"/><stop offset="1" stop-color="#F5AB17"/></linearGradient>
+</defs><g><g fill="none" stroke-width="23" stroke-linecap="round"><path d="M111 274 Q107 307 155 322" stroke="#079DA7"/><path d="M401 274 Q405 307 357 322" stroke="#0965D9"/></g>
+<path d="M117 356 L96 398 Q94 404 101 404 L120 404 L151 371 Z" fill="#079DA7"/>
+<path d="M395 356 L416 398 Q418 404 411 404 L392 404 L361 371 Z" fill="#0965D9"/>
+<path d="M 144,171 C 105,164 66,193 65,232 C 64,265 85,286 112,286 C 145,286 165,254 151,218 C 139,237 124,239 117,228 C 108,214 126,188 144,171 Z" fill="url(#teal)"/>
+<path d="M 144,171 C 105,164 66,193 65,232 C 64,265 85,286 112,286 C 145,286 165,254 151,218 C 139,237 124,239 117,228 C 108,214 126,188 144,171 Z" transform="translate(512 0) scale(-1 1)" fill="url(#blue)"/>
+<path fill-rule="evenodd" d="M256 150 C237 150 226 196 205 243 C180 299 147 324 91 344 L130 385 L181 415 L256 387 L331 415 L382 385 L421 344 C365 324 332 299 307 243 C286 196 275 150 256 150 Z " fill="url(#teal)"/>
+<path d="M256 150 C275 150 286 196 307 243 C332 299 365 324 421 344 L382 385 L331 415 L256 387 Z" fill="url(#blue)"/>
+<circle cx="256" cy="119" r="33" fill="none" stroke="url(#gold)" stroke-width="17"/>
+<circle cx="222" cy="307" r="13" fill="#092A40"/>
+<circle cx="290" cy="307" r="13" fill="#092A40"/></g></svg>
