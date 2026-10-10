@@ -24,8 +24,9 @@ TS Phone 是独立的 Flutter 应用。Relay 仍然是独立服务和独立安�
 ## 安装或选择版本
 
 运行 `./install.sh`，确认安装目录、ResearchAgent revision、workspace root、Conda root、
-可选 TS Web 组件和服务策略。Core Agent 和控制运行时始终安装；科学计算、验证和渲染
-依赖单独配置的执行环境。
+可选 TS Web 组件和服务策略。Core Agent 和控制运行时始终安装；首次安装没有提供
+job.toml 时，还会自动准备本地 structure/validation 环境。其他科研环境显式选择，
+已有绑定保持不变。
 
 根目录只提供 `install.sh` 和 `uninstall.sh` 两个入口。`install.sh` 默认从 GitHub
 选择版本；`--source local` 使用当前 checkout，`--source-root /绝对路径` 可选择另一个
@@ -120,20 +121,59 @@ scripts/prepare_pi_source.py --install <root>
 `<install>/etc/job.toml`。SSH 凭据仍保留在 SSH 配置中。ResearchAgent 不安装站点管理的
 Gaussian 或 xTB 原生程序。
 
-化学扩展随包提供 wrapper、结构/验证、CF22D 和渲染环境锁。在安装或更新 Host 前，
-通过 `scripts/install_job_environment.py` 准备所需目标，具体步骤见
-[目标环境安装说明](../domains/chemical/environments/README.zh-CN.md)。示例路径需要
-按实际安装修改；远端锁须匹配远端系统与 CPU。原生执行入口不强制要求 Python。
+主安装器根据 domain 的 `environments/manifest.json` 自动准备科研环境。首次安装没有
+`job.toml` 时，默认建立本地 `structure`（RDKit/NumPy，与 validation 共用）环境。
+已有绑定保持有效；可显式选择 `pyscf`、`render`，或为已有 Gaussian/xTB 绑定准备 `wrapper`。
+原生 Gaussian/xTB 软件需在目标机器上预先安装。
 
-安装器检查统一配置契约，再到实际目标核验每个已配置执行入口。维护时可运行：
+```bash
+./install.sh --source local --install-root "$HOME/ResearchAgent" \
+  --job-profile local:structure --job-profile local:pyscf \
+  --job-software-root local=/home/iaw/soft/research-agent/job-envs/my-install \
+  --non-interactive --yes
+```
+
+本地环境默认位于 `~/soft/research-agent/job-envs/<installation-id>`。
+`--without-default-job-environment` 可创建仅含控制服务的新安装。
+`--job-offline` 使用预先准备的 Conda/pip 缓存。相同依赖直接复用，锁文件更新时创建新前缀。
+用户修改过的绑定仅核验，不覆盖；锁文件和回执保存在目标的持久目录。
+
+配置了名为 cluster 的 SSH 目标后，可增加：
+
+```bash
+--job-config /absolute/job.toml --job-profile cluster:structure \
+--job-software-root cluster=/remote/shared/research-agent/envs \
+--job-conda cluster=/remote/conda/bin/conda
+```
+
+远端目录必须能被计算节点访问。SSH 主机需要 Python 3.11+、Conda 和 timeout，
+Job 使用已配置的 PBS/Torque 队列。仅传输安装 helper、锁及所选目标绑定，不传输
+Host 的模型或邮件凭据；生成的解析缓存使用远端路径。当前锁支持 Linux x86_64：
+科研/渲染环境要求 glibc >=2.28，wrapper >=2.17。离线目标需要预先准备依赖缓存。
+
+本地目标自动验收；选择远端 profile 会准备并验收该目标。
+`--verify-job-target cluster` 可验收已有远端绑定。其余远端保留配置，报告为
+`not_verified`，不发起 SSH。`--job-check-timeout` 限制每个验收 Job 的总等待时间，
+包括排队，默认 180 秒。验收通过普通 Job 执行结构检查、XYZ 生成及相应后端的小型
+计算/渲染，收集结果；远端目录只在终止或确认取消后清理。取消未完成会使验收失败，
+保留 Job 回执供后续处理。
+
+结果分别记录配置、环境和执行检查。PubChem/OPSIN 的联网状态记为 `not_checked`；
+安装的离线验收不调用名称服务、模型或发送邮件。默认在本地准备结构，再送到远端计算。
+运行绑定仍在 `etc/job.toml`，归属与验收记录保存在
+`var/state/installation/job-environments.json` 和 `job-readiness.json`。
+维护时仍可运行模块导入和版本探测：
 
 ```bash
 "$RESEARCH_AGENT_PYTHON" -m research_agent.application.environment_check --config "$RESEARCH_AGENT_JOB_CONFIG"
 ```
 
-结果区分已核验与未配置入口；配置了却不可用的目标会使核验失败。探针成功不代表科学
-验证通过，还须执行有时限的 Job 来验证方法。资源、scratch、取消和恢复行为见
-[科学执行运维说明](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。
+完整发布包也使用相同流程，无需下载源码：
+
+```bash
+./install.sh --source package --package-manifest /absolute/research-agent-package-release.json \
+  --install-root "$HOME/ResearchAgent" --non-interactive --yes
+```
 
 ## 安装日志
 
@@ -400,8 +440,17 @@ systemctl status ts-app-server-research-agent.service         # system scope
 
 ## 科学计算绑定就绪检查
 
-安装配置位于 `<install>/etc/job.toml`。维护绑定后同步重装配置源，避免重装导入旧格式。安装前使用统一契约检查配置；安装控制环境和扩展后，按扩展声明的执行入口和验证器检查所有已配置的本地及 SSH 目标，包括 explicit 锁、安装回执、包版本、实际导入模块、激活文件和程序摘要。环境级 Python 可被后端覆盖；原生程序可使用不依赖 Python 的入口。
+安装器分别记录 `configuration_validated`、`environment_verified`、
+`execution_verified` 和 `not_verified`，同时保留具体检查范围、目标和配置摘要。
+本次选中的目标验收失败会在发布前停止安装；未选择的远端保留未验证状态，旧结果不冒充
+本次通过。底层逐执行入口的依赖版本与导入结果仍包含在详细报告中。
 
-摘要区分配置导入与 `configuration_validated`、`verified`、`not_configured`。缺少能力绑定不阻止登记研究要求；已配置目标核验失败则安装失败。`var/state/installation/job-readiness.json` 保存逐目标、逐入口的实际就绪结果及配置摘要。探针不提交计算，实际执行仍需有界科学 Job 验证。Host 安装成功不代表分子渲染或任一求解器可用。
+安装先准备候选版本、Python 环境、Pi 和验收 Job，再进入短暂维护窗口停止服务并发布。
+准备失败不改变活动版本；服务启动后的失败使用原有维护恢复机制，不回滚研究数据。
+
+`--purge-runtime` 只删除本安装拥有且没有未完成 Job 或活动进程引用的本地科研环境。
+外部、远端及无归属记录的环境保留，并在卸载结果中列出。
+准备失败时也会保留环境目录的所有权记录，供重试和清理。`--purge-all` 即使移除
+安装目录，也会保留这些外部目录，并在结果中列出路径。
 
 报告整理和邮件 check/prepare/send/status 通过原生 bash 执行；job_* 用于科学计算。邮件继续使用安装凭据和持久化投递回执。

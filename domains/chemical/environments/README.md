@@ -19,28 +19,51 @@ Text reports use the Host's standard library and do not need `render.lock`.
 Rendering's notebook dependencies are upstream xyzrender requirements; they
 are confined to the rendering target. No environment includes the ResearchAgent wheel.
 
-Copy the required lock files to a persistent directory on the target, keeping
-`render.requirements.txt` beside `render.lock`. Configure absolute target paths
-in installation-owned `job.toml`: `conda_executable`, a new versioned `prefix`
-and `lock_ref`. The example at `config/job.example.toml` uses editable
-`/opt` paths. Local software can live under the operator's `~/soft` directory.
-
-Run the installer on the target host (also for SSH targets):
+The public `install.sh` entry prepares these profiles using `manifest.json`.
+A fresh installation without supplied `job.toml` selects `structure` locally;
+existing bindings are preserved. Select other profiles explicitly:
 
 ```bash
-python3 scripts/install_job_environment.py --config /absolute/job.toml --environment local --backend structure
-python3 scripts/install_job_environment.py --config /absolute/job.toml --environment local --backend pyscf
-python3 scripts/install_job_environment.py --config /absolute/job.toml --environment local --backend render
+./install.sh --source local --job-profile local:pyscf --job-profile local:render
+./install.sh --job-config /absolute/job.toml --job-profile cluster:pyscf \
+  --job-software-root cluster=/absolute/managed-science \
+  --job-conda cluster=/absolute/conda/bin/conda
 ```
 
-Choose either wrapper-backed solver's backend to install the common wrapper
-prefix. Structure and validation may reference the same prefix and lock. The
-CF22D lock needs no custom activation script or `LD_PRELOAD` workaround.
+Configure the remote target, queue and native solver paths in `job.toml` first.
+Remote paths belong to that target. Provisioning uses SSH and requires Python
+3.11+, Conda, `timeout`, Linux x86_64 and the declared glibc; execution uses the
+configured PBS/Torque scheduler and rsync. No controller Python path is copied
+to the target. `wrapper` prepares Python for already configured Gaussian/xTB
+backends; their native binaries remain operator-provided.
+
+The installer stores pinned locks and immutable, versioned prefixes in a
+dedicated owned directory (locally `~/soft/research-agent/job-envs/<installation-id>`).
+It writes their absolute bindings to `etc/job.toml`. PubChem/OPSIN service
+settings live in `etc/name-resolver.toml`; local preparation can feed a remote
+calculation without installing name services on every compute target.
+
+Preparation and ordinary bounded acceptance Jobs complete before the current
+release is switched or services stopped. The structure profile checks RDKit,
+the resolver configuration path inside a Job, and ethanol geometry generation.
+Optional profiles execute their declared minimal calculation/render. Reports
+separate environment verification, tested backends, and unverified targets.
+External name services are not contacted during this offline acceptance.
+An existing remote target is only tested when selected for provisioning or with
+`--verify-job-target cluster`.
+
+For administrator maintenance, the lower-level target-local helper is still
+available as `python3 scripts/install_job_environment.py --config /absolute/job.toml
+--environment local --backend structure`. It requires existing explicit bindings
+and does not perform the public installer's release activation or Job acceptance.
+Structure and validation may share a prefix. CF22D needs no activation script
+or `LD_PRELOAD` workaround.
 
 Installation never solves dependencies again. Pinned pip artifacts download
 to a cache below the environment parent and install with `--require-hashes`
-and `--no-deps`; `pip check` verifies dependency completeness. `--package-cache`
-selects another artifact directory. `--offline` uses only that directory and
+and `--no-deps`; `pip check` verifies dependency completeness. The public
+`--job-offline` flag uses only prepared caches; the lower-level helper's `--package-cache`
+selects another artifact directory and `--offline` uses only that directory and
 the Conda cache (`CONDA_PKGS_DIRS`). Locks and release files remain read-only.
 An interrupted new prefix is removed; an existing prefix is never updated in
 place. `--adopt` explicitly verifies a previously seeded environment against

@@ -125,6 +125,36 @@ def test_package_install_does_not_mutate_existing_research_workspace(tmp_path: P
     assert not (workspace / ".pi").exists()
 
 
+def test_preparing_a_release_does_not_publish_runtime_config_or_current(tmp_path, monkeypatch):
+    from scripts import _bootstrap
+    from research_agent.bootstrap.session_guard import acquire_directory_guard
+    import os
+    root = tmp_path/'install'
+    manifests = []
+    for marker in ('old', 'new'):
+        agent, _ = _synthetic_release(tmp_path/marker, marker=marker)
+        built = build_package(output_dir=tmp_path/(marker+'-package'),agent_manifest_path=agent,
+                              allow_dirty=True,include_web=False)
+        manifests.append(Path(built['manifest']))
+    original = install_package(manifests[0], None, root, allow_dirty=True)
+    current = (root/'current').readlink()
+    runtime = (root/'var/state/installation/python/env.json').read_bytes()
+    resolver = (root/'etc/name-resolver.toml').read_bytes()
+    guard = acquire_directory_guard(root, root)
+    try:
+        candidate = install_package(manifests[1], None, root, allow_dirty=True, activate=False)
+        assert candidate['prepared']
+        assert (root/'current').readlink() == current
+        assert (root/'var/state/installation/python/env.json').read_bytes() == runtime
+        assert (root/'etc/name-resolver.toml').read_bytes() == resolver
+    finally:
+        os.close(guard)
+    monkeypatch.setattr(_bootstrap, 'load_runtime_environment', lambda _:SimpleNamespace(_manifest_matches_spec=lambda *_:True))
+    installed = install_package_module.activate_prepared_package(root, candidate)
+    assert (root/'current').resolve() == Path(installed['package_root'])
+    assert installed['release_id'] != original['release_id']
+
+
 def test_optional_web_launcher_is_removed_when_rolling_back_to_core_only(
     tmp_path: Path,
 ) -> None:

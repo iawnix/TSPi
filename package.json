@@ -116,6 +116,9 @@
   "researchAgent": {
     "execution": [
       "domains/chemical/execution.json"
+    ],
+    "environments": [
+      "domains/chemical/environments/manifest.json"
     ]
   }
 }

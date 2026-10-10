@@ -379,6 +379,7 @@ def main(argv=None):
     parser.add_argument('--dry-run',action='store_true')
     parser.add_argument('--apply',action='store_true')
     parser.add_argument('--components',default='python,host,node,pi')
+    parser.add_argument('--job-profiles',default='structure,wrapper',help='Public Conda profiles to cache during prepare; comma-separated.')
     values=list(sys.argv[1:] if argv is None else argv)
     extra=values[values.index('--')+1:] if '--' in values else []
     if '--' in values: values=values[:values.index('--')]
@@ -396,6 +397,8 @@ def main(argv=None):
             hits={name:(expected[name]/'.prepared.json').is_file() for name in components}
             started=time.monotonic()
             environment.prepare(ROOT,root,components)
+            from tools.test.scientific import prepare as prepare_scientific
+            prepare_scientific(ROOT,root,[name for name in args.job_profiles.split(',') if name])
             metric={'status':'prepared','components':components,'cache_hits':hits,'seconds':round(time.monotonic()-started,3)}
             write_json(root/'registry'/('prepare-'+uuid.uuid4().hex[:10]+'.json'),metric)
             print(json.dumps(metric))

@@ -17,6 +17,12 @@ def digest(path: Path) -> str:
 def generated(root: Path) -> dict[Path, str]:
     output = {}
     package = json.loads((root / "package.json").read_text())
+    for name in package['researchAgent'].get('environments', []):
+        path = root / name
+        value = json.loads(path.read_text())
+        for profile in value['profiles'].values():
+            profile['resources'] = {key: digest(path.parent / key) for key in sorted(profile['resources'])}
+        output[path] = json.dumps(value, indent=2) + '\n'
     for name in package["researchAgent"]["execution"]:
         path = root / name
         value = json.loads(path.read_text())

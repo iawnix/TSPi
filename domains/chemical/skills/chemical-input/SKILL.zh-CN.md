@@ -1,55 +1,50 @@
 ---
 name: chemical-input
-description: 通过可执行 helper 解析化学名称、检查分子图、生成可重放的初始几何，并核验显式反应原子映射。
+description: 将化学名称、描述或给定结构转成分子图和初始几何，优先使用 PubChem/OPSIN，查询无结果时由 Agent 推断并检查结构；按研究需要准备反应映射。
 ---
 
 # 化学输入
 
 [English version](SKILL.md)
 
-名称、SMILES、结构描述或反应输入使用本 Skill。准备 `chemical.resolve`、
-`chemical.inspect`、`chemical.seed` 或 `chemical.reaction` 的版本 `1` 请求，再通过
-`job_start` 执行。目标环境的 `structure` Python 绑定提供 RDKit。
-保留原始名称、结构来源、电荷、多重度和 helper JSON 作为证据。
+为用户的研究准备可用结构。随结果保存原始输入、选用结构、来源、电荷和多重度。
 
-单分子计算先确认身份、检查分子图，再准备 seed；优化和单点能不需要反应映射。
-helper 内置明确的中性水规则（water/H2O/水/水分子 → O）。其他名称通过配置的
-PubChem/OPSIN 查询；--lookup-name 可提供翻译或规范化名称，同时保留原文。
-用户提供的结构可以直接检查。模型给出的 SMILES 通过图校验，不等于名称身份已确认。
+## 从输入到计算
 
-```text
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.resolve --version 1 --output prepared/身份.json -- --name water
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.inspect --version 1 --output prepared/graph.json -- --smiles O
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.seed --version 1 --output prepared/seed.json -- --smiles O --charge 0 --multiplicity 1
-```
+1. 用户已提供明确结构（如 SMILES）时直接采用。名称先用 `chemical.resolve@1`
+   依次尝试 PubChem、OPSIN；安装配置显式指定的解析器优先级仍然生效。
+   保留原始名称，必要时用 `--lookup-name` 提供翻译或规范化的查询名称。
+2. 查询没有得到可用结构，包括服务不可用、配置缺失时，由当前 Agent 根据用户描述
+   推断候选 SMILES。将候选标为 `source=llm`，简要记录选择依据和相关假设，交给
+   `chemical.resolve-candidates@1` 检查。这个步骤在本地处理候选，不重复网络查询。
+3. 根据结构检查结果修正解析、价态、电荷或多重度问题。有多个合理结构时，结合任务
+   选择工作结构并说明依据，或在研究范围内分支探索；适合时枚举未指定的立体化学。
+   只有信息不足以选择有用研究方案时才询问用户；查询失败本身应转入推断。
+4. 用 `chemical.seed@1` 生成初始几何，继续用户要求的优化、单点能或反应研究。
+   候选来源用于记录研究依据，不增加后续计算前的确认步骤。
 
-每条命令只准备请求。将返回的文件和摘要提交，再收集 Job；
-生成的结构和 JSON 保留 Job 与环境绑定，seed Job 会收集每个生成的 XYZ。
-
-反应研究逐一解析/检查物种，再用 reaction 子命令核验组成、电荷和显式映射，并列出键变化。
-输出为 `chemical-reaction/2` 的分范围 `checks`，不再使用全局 validated。未提供 `--transformation <JSON>` 时，
-预期成断键模式未评估；声明 `diels_alder` 可检查全部键变化、取代基保留与逐原子氢计数，
-`explicit` 可声明其他预期键/氢变化。
-研究质子转移时应显式映射氢原子。
+通过通用 executor CLI 准备请求，将返回的文件及摘要交给 `job_start`。
+所选目标的 `structure` Python 绑定提供 RDKit。收集 Job 的 JSON 和几何文件作为研究材料。
 
 ```text
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.reaction --version 1 --output prepared/reaction.json -- --smiles '<mapped-reactants>><mapped-products>'
+"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.resolve --version 1 --output prepared/lookup.json -- --name '乙醇' --lookup-name ethanol
+"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.resolve-candidates --version 1 --input candidates=inputs/candidates.json --output prepared/candidates.json
+"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.seed --version 1 --output prepared/seed.json -- --smiles CCO --charge 0 --multiplicity 1
 ```
 
-名称无法解析或存在实质不同的身份时，进行有界查询或澄清。
-若研究范围本就包含未指定立体化学的候选，可用 seed --enumerate-stereo 枚举至多
-16 个异构体，并分别保留；不要默默选定其中一个。
-seed 不是优化结构、过渡态或连接关系证明；构象和分子间接近方式另行计算探索。
+给定或修改后的 SMILES 需要检查时使用 `chemical.inspect@1`；已收集的候选结果包含相关
+检查时无需重复。初始几何用于启动计算，检查计算输出后再报告所得结果。
+
+## 反应与结构对照
+
+任务需要反应物/产物原子映射时使用 `chemical.reaction@1`，检查组成、电荷及显式映射，
+并用 `--transformation` 提供预期成断键变化。单分子优化和单点计算无需反应映射。
+
+把选用的目标结构登记为 Artifact，研究需要时用 `chemical.compare@1` 对照计算后结构。
+在研究记录中引用检查结果及来源结构，解释影响研究的差异。
 
 ## 参考
 
-- [name_resolution.zh-CN.md](references/name_resolution.zh-CN.md)：查询、配置和来源。
-- [structure_input.zh-CN.md](references/structure_input.zh-CN.md)：分子图、seed 和反应检查。
-
-- [reaction_mapping.zh-CN.md](references/reaction_mapping.zh-CN.md): 原子映射与反应图检查。
-
-## 对照目标与实际对象
-
-inspect 和 seed 输出版本化 `chemical-identity/1` 对象，包含规范异构 SMILES、电荷、RDKit 版本与内容身份。将检查后的目标登记为 Artifact，通过 Node 的 `subjects.target` 引用；product.xyz 文件名不证明结构身份。
-
-使用 `chemical.compare@1`，指定 `--input target=<inspect.json>`、`--input actual=<结构JSON或几何XYZ>`。Job 的具名输入角色记录两份文件摘要。XYZ 需要追加 `-- --actual-format xyz --charge <实际电荷>`；默认比较结构 JSON。收集 results/comparison.json，获得 match、mismatch 或 indeterminate，以及目标、实际结构和检查范围。XYZ 的键级明确标记为推断；未确定的立体化学不当作身份完全匹配。Result 用 check_refs 引用检查材料，并用 subjects 区分目标和实际对象；检查不决定能否保存结论或继续实验。
+- [name_resolution.zh-CN.md](references/name_resolution.zh-CN.md)：查询、推断候选格式和结果字段。
+- [structure_input.zh-CN.md](references/structure_input.zh-CN.md)：分子图检查、几何生成和结构对照。
+- [reaction_mapping.zh-CN.md](references/reaction_mapping.zh-CN.md)：原子映射与反应图检查。

@@ -138,6 +138,7 @@ def install_uninstaller(install_root: Path, source_root: Path) -> Path:
         (source_root / "scripts" / "uninstall_link_relay.py", private / "uninstall_link_relay.py", 0o700),
         (source_root / "scripts" / "_terminal_ui.py", private / "_terminal_ui.py", 0o600),
         (source_root / "scripts" / "_installation_metadata.py", private / "_installation_metadata.py", 0o600),
+        (source_root / "scripts" / "_job_install.py", private / "_job_install.py", 0o600),
         (source_root / "backend/src/research_agent/foundation/layout.py", private / "app_layout.py", 0o600),
     ):
         descriptor, temporary_name = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
@@ -171,6 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--allow-dirty", action="store_true", help="Allow a dirty local source checkout for validation installs.")
     parser.add_argument("--progress", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--prepare-only", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     try:
         validate_ref(args.ref)
@@ -213,6 +215,8 @@ def main(argv: list[str] | None = None) -> int:
             emit_progress(args.progress, "Building the validated ResearchAgent package")
             built = json.loads(run(build, cwd=checkout))
             install = [sys.executable, "scripts/install_package.py", "--manifest", built["manifest"], "--archive", built["archive"], "--install-root", args.install_root, "--json"]
+            if args.prepare_only:
+                install.append('--prepare-only')
             if args.allow_dirty:
                 install.append("--allow-dirty")
             if args.conda:
@@ -220,12 +224,15 @@ def main(argv: list[str] | None = None) -> int:
             if args.conda_root:
                 install.extend(["--conda-root", args.conda_root])
             emit_progress(args.progress, "Installing the local recovery uninstaller")
-            uninstaller = install_uninstaller(Path(args.install_root), checkout)
-            emit_progress(args.progress, "Preparing the managed runtime and activating the release")
+            uninstaller = (Path(args.install_root) / 'uninstall.sh' if args.prepare_only
+                           else install_uninstaller(Path(args.install_root), checkout))
+            emit_progress(args.progress, "Preparing the managed runtime and release")
             installed = json.loads(run(install, cwd=checkout))
             provenance = Path(args.install_root).expanduser().resolve() / "var/state/installation/source-provenance.json"
             provenance.parent.mkdir(parents=True, exist_ok=True)
-            provenance.write_text(json.dumps({"schema_version": "research-agent-source-provenance/1", "repo": args.repo, "ref": args.ref, "commit": commit, "tree_digest": digest, "installed_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            provenance_data = {"schema_version": "research-agent-source-provenance/1", "repo": args.repo, "ref": args.ref, "commit": commit, "tree_digest": digest, "installed_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}
+            if not args.prepare_only:
+                provenance.write_text(json.dumps(provenance_data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             result = {
                 "commit": commit,
                 "tree_digest": digest,
@@ -236,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
                 "runtime": installed.get("runtime"),
                 "provenance": str(provenance),
                 "uninstaller": str(uninstaller),
+                **({'prepared': installed['prepared'], 'provenance_data': provenance_data} if args.prepare_only else {}),
             }
             emit_progress(args.progress, "Installation artifacts verified")
         if args.json:

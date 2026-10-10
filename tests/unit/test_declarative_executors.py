@@ -383,3 +383,52 @@ def test_installed_resolver_is_used_by_an_isolated_name_resolution_job(tmp_path,
         finally:
             server.shutdown()
             thread.join(timeout=5)
+
+
+def test_name_lookup_fallback_candidates_and_geometry_run_as_managed_jobs(tmp_path):
+    import os
+    workspace(tmp_path)
+    config = os.environ['RESEARCH_AGENT_JOB_CONFIG']
+
+    def run(executor, inputs, arguments=()):
+        request = prepare(config, 'local', executor, '1', inputs, arguments)
+        path = tmp_path / (executor + '.request.json')
+        path.write_text(json.dumps(request))
+        receipt = execute('job.start', tmp_path, {'request_file': str(path),
+            'request_sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+        try:
+            for _ in range(250):
+                status = execute('job.status', tmp_path, {'job_id': receipt['job_id']})
+                if status['state'] in {'succeeded', 'failed'}:
+                    break
+                time.sleep(.02)
+            assert status['state'] == 'succeeded'
+            collected = execute('job.collect', tmp_path, {'job_id': receipt['job_id']})
+            assert collected['output_validation']['complete']
+            return request, receipt, collected
+        finally:
+            execute('job.cancel', tmp_path, {'job_id': receipt['job_id']})
+
+    # The fixture has no resolver binding; the isolated Job reports a next step.
+    _, lookup, _ = run('chemical.resolve', {}, ['--name', 'ethanol'])
+    lookup_file = Path(lookup['cwd'])/'results/resolve.json'
+    original_lookup = lookup_file.read_bytes()
+    assert json.loads(original_lookup)['data']['next_step'] == 'infer_candidates'
+    candidates = tmp_path/'proposals.json'
+    candidates.write_text(json.dumps({'name': 'ethanol', 'lookup_ref': lookup['job_id'],
+        'candidates': [{'source': 'llm', 'smiles': 'CCO', 'reason': 'Two-carbon alcohol.',
+                        'charge': 0, 'multiplicity': 1}]}))
+    request, proposed, _ = run('chemical.resolve-candidates', {'candidates': candidates})
+    assert request['metadata']['input_roles']['candidates']['sha256'] == 'sha256:' + hashlib.sha256(candidates.read_bytes()).hexdigest()
+    result = json.loads((Path(proposed['cwd'])/'results/resolve.json').read_text())
+    assert result['data']['status'] == 'resolved'
+    assert result['data']['next_step'] == 'prepare_geometry'
+    row = result['data']['candidates'][0]
+    assert row['source'] == 'llm'
+    _, seeded, _ = run('chemical.seed', {}, ['--smiles', row['canonical_smiles'],
+        '--charge', str(row['charge']), '--multiplicity', str(row['multiplicity'])])
+    xyz = Path(seeded['cwd'])/'results/seeds/seed-1.xyz'
+    assert xyz.read_text().splitlines()[0] == '9'
+    assert lookup_file.read_bytes() == original_lookup
+    assert execution(tmp_path, proposed['job_id'])['metadata']['executor']['id'] == 'chemical.resolve-candidates'
+    assert any(a['provenance'].get('job_id') == seeded['job_id'] for a in manifests(tmp_path))

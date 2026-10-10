@@ -80,7 +80,7 @@ def email_options(config: Path) -> list[str]:
     return command
 
 
-def environment_defaults(parser: argparse.ArgumentParser) -> None:
+def environment_defaults(parser: argparse.ArgumentParser, argv=None) -> None:
     """Environment variables are defaults; explicit CLI flags take precedence."""
     aliases = {
         "research_agent_repo": "RESEARCH_AGENT_INSTALL_REPO",
@@ -105,6 +105,10 @@ def environment_defaults(parser: argparse.ArgumentParser) -> None:
             if value.lower() not in {"1", "true", "yes", "on", "0", "false", "no", "off"}:
                 parser.error(f"{name} must be a boolean")
             value = value.lower() in {"1", "true", "yes", "on"}
+        elif isinstance(action, argparse._AppendAction):
+            if any(token.split('=', 1)[0] in action.option_strings for token in (argv or [])):
+                continue
+            value = [part.strip() for part in value.split(',') if part.strip()]
         elif action.choices and value not in action.choices:
             parser.error(f"{name} must be one of {', '.join(action.choices)}")
         defaults[action.dest] = value

@@ -94,14 +94,22 @@ def installation(tmp_path, monkeypatch):
         wizard.validate_options(args)
         return {'operation':'update','release_id':(root/'current').resolve().name}
     def install(_args):
-        assert events[-1] == 'stop'
+        assert_installation_available(root) if not (control/'maintenance.json').exists() else None
         events.append('install')
         (root/'releases/new').mkdir(exist_ok=True)
+        return {'release_id':'new','package_root':str(root/'releases/new'),'runtime':{'python_executable': 'fixture-python'}}
+    def publish(_root, result, **kwargs):
+        assert events[-1] == 'stop'
         (root/'current').unlink()
         (root/'current').symlink_to('releases/new')
         (control/'install-state.json').write_text(json.dumps({'current_release_id':'new'}))
         job_config.write_text('# new fixture configuration\n'+CONFIG)
-        return {'release_id':'new','package_root':str(root/'releases/new'),'runtime':{}}
+        return result
+    def prepare_jobs(value, *_args):
+        events.append('prepare-jobs')
+        if state['failure'] == 'preparation':
+            raise RuntimeError('fixture environment preparation failed')
+        return value
     def verify(*_args):
         events.append('verify')
         if state['failure'] == 'configuration':
@@ -129,18 +137,47 @@ def installation(tmp_path, monkeypatch):
     monkeypatch.setattr(wizard,'_prepare_installation',prepare)
     monkeypatch.setattr(wizard,'stop_installation_services',lambda _args:events.append('stop'))
     monkeypatch.setattr(wizard,'run_install',install)
+    from scripts import install_package
+    monkeypatch.setattr(install_package, 'activate_prepared_package', publish)
+    monkeypatch.setattr(wizard._job_install, 'plan', lambda *_a: {'inputs': {}})
+    monkeypatch.setattr(wizard._job_install, 'prepare', prepare_jobs)
+    monkeypatch.setattr(wizard._job_install, 'publish', lambda *_a: {'job': {'path': str(job_config), 'status':'configured'}})
     monkeypatch.setattr(wizard,'install_uninstaller',lambda *_a:None)
     for name in ('provision_pi_agent_configuration','configure_model_icons','configure_workspace_root',
                  'configure_service_runtime','configure_remote_host','configure_phone_connection',
                  'provision_service_credentials','configure_notification_config','configure_backend_configs'):
         monkeypatch.setattr(wizard,name,lambda *_a,**_k:{})
-    monkeypatch.setattr(wizard,'prepare_app_server_runtime',lambda _root:root/'runtimes/pi')
+    monkeypatch.setattr(wizard,'prepare_app_server_runtime',lambda _root, **_k:root/'runtimes/pi')
+    monkeypatch.setattr(wizard,'bind_pi_runtime_node_modules',lambda *_a:None)
     monkeypatch.setattr(wizard,'ensure_host_identity',lambda _root:None)
     monkeypatch.setattr(wizard,'verify_job_bindings',verify)
     monkeypatch.setattr(wizard,'configure_services',configure)
     monkeypatch.setattr(wizard,'activate_installed_services',activate)
     monkeypatch.setattr(wizard,'inspect_installation',inspect)
     return root, workspace, options, events, state, credentials.read_bytes()
+
+
+def test_preparation_failure_keeps_old_runtime_available_without_stopping_services(installation):
+    root, workspace, options, events, state, auth = installation
+    state['failure'] = 'preparation'
+    assert wizard.main(options) == 1
+    assert 'stop' not in events
+    assert (root/'current').resolve().name == 'old'
+    assert (root/'etc/pi/auth.json').read_bytes() == auth
+    assert_installation_available(root)
+
+
+def test_deferred_maintenance_serializes_preparation_without_fencing_runtime(tmp_path):
+    operation = InstallationMaintenance(tmp_path).acquire(defer=True)
+    try:
+        assert_installation_available(tmp_path)
+        with pytest.raises(RuntimeError, match='busy'):
+            InstallationMaintenance(tmp_path).acquire(defer=True)
+        operation.transition('preparing')
+        with pytest.raises(RuntimeError, match='maintenance_required'):
+            assert_installation_available(tmp_path)
+    finally:
+        operation.close()
 
 
 def test_failure_before_activation_restores_configuration_and_old_release(installation):

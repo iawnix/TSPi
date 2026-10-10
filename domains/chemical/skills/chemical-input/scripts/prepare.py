@@ -9,7 +9,7 @@ import sys
 from rdkit import Chem, rdBase
 from rdkit.Chem import AllChem, rdMolDescriptors
 from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers, StereoEnumerationOptions
-from name_resolution import resolve
+from name_resolution import resolve, resolve_candidates_file
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / '_shared'))
 from chemical_identity import identity, compare
 
@@ -26,13 +26,6 @@ def inspect(smiles):
 
 
 def resolve_name(name, lookup_name=None):
-    # This explicit scientific rule is intentionally small and auditable.
-    if (lookup_name or name).strip().casefold() in {'water', 'h2o', '水', '水分子'}:
-        _, data = inspect('O')
-        return {'schema_version': 'chemical-input/1', 'data': {'name': name, 'lookup_name': lookup_name or name,
-                'status': 'resolved', 'candidates': [dict(data, canonical_smiles='O', source='builtin')],
-                'resolver_provenance': {'implementation': 'research-agent-known-species', 'version': '1', 'rule': 'neutral-water'}},
-                'diagnostics': [], 'verdict': 'valid'}
     return resolve({}, {'name': name, 'lookup_name': lookup_name or name})
 
 
@@ -80,6 +73,7 @@ def main():
     if args.config: os.environ['RESEARCH_AGENT_NAME_RESOLVER_CONFIG'] = args.config
     try:
         if args.command == 'resolve': result = resolve_name(args.name, args.lookup_name)
+        elif args.command == 'candidates': result = resolve_candidates_file(args.input)
         elif args.command == 'inspect': result = {'schema_version': 'chemical-structure/1', **inspect(args.smiles)[1], 'identity_status': 'supplied_graph'}
         elif args.command == 'seed': result = seeds(args.smiles, args.charge, args.multiplicity, args.output_dir, args.enumerate_stereo)
         elif args.command == 'compare': result = compare(args.target, args.actual, actual_format=args.actual_format, charge=args.charge)

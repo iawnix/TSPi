@@ -1,0 +1,176 @@
+{
+  "schema_version": "research-agent-environments/1",
+  "profiles": {
+    "structure": {
+      "lock": "structure.lock",
+      "backends": [
+        "structure",
+        "validation"
+      ],
+      "default": true,
+      "checks": [
+        {
+          "script": "check_structure.py",
+          "backend": "structure",
+          "collect": [
+            "structure-check.json"
+          ],
+          "result": {
+            "path": "structure-check.json",
+            "fields": {
+              "graph": "passed",
+              "resolver_binding": "passed"
+            }
+          }
+        },
+        {
+          "executor": "chemical.seed",
+          "backend": "structure",
+          "arguments": [
+            "--smiles",
+            "CCO",
+            "--charge",
+            "0",
+            "--multiplicity",
+            "1"
+          ],
+          "result": {
+            "path": "results/seed.json",
+            "fields": {
+              "formula": "C2H6O"
+            }
+          }
+        }
+      ],
+      "platform": {
+        "system": "Linux",
+        "machines": [
+          "x86_64",
+          "amd64"
+        ],
+        "glibc": "2.28"
+      },
+      "resources": {
+        "check_structure.py": "sha256:1a80cfec25517a049f29876e969b3fd5d04cfb69f8f6120d4f72f8d168fd7f08",
+        "structure.lock": "sha256:b2447fff9059d0819049b9d4761e740d6a69a5f3686bf40cc7122edc3307d39b"
+      }
+    },
+    "pyscf": {
+      "lock": "cf22d.lock",
+      "backends": [
+        "pyscf"
+      ],
+      "checks": [
+        {
+          "executor": "chemical.cf22d",
+          "backend": "pyscf",
+          "arguments": [
+            "--task",
+            "sp",
+            "--basis",
+            "sto-3g",
+            "--grid-level",
+            "0",
+            "--threads",
+            "1",
+            "--memory-mb",
+            "512"
+          ],
+          "inputs": {
+            "geometry": "2\ninstallation H2 fixture\nH 0 0 0\nH 0 0 0.74\n"
+          }
+        }
+      ],
+      "platform": {
+        "system": "Linux",
+        "machines": [
+          "x86_64",
+          "amd64"
+        ],
+        "glibc": "2.28"
+      },
+      "resources": {
+        "cf22d.lock": "sha256:432b3e6a78ef38b18c39b7ac665af8c8a6a1e4aed9f2e2bf4c1948eb27a3d1f5"
+      }
+    },
+    "render": {
+      "lock": "render.lock",
+      "backends": [
+        "render"
+      ],
+      "checks": [
+        {
+          "executor": "chemical.render",
+          "backend": "render",
+          "arguments": [],
+          "inputs": {
+            "geometry": "2\ninstallation H2 fixture\nH 0 0 0\nH 0 0 0.74\n"
+          }
+        }
+      ],
+      "platform": {
+        "system": "Linux",
+        "machines": [
+          "x86_64",
+          "amd64"
+        ],
+        "glibc": "2.28"
+      },
+      "resources": {
+        "render.lock": "sha256:486b3ea1e751473ed1bf14f100e9dce05e080681a532a2d4820b0f29919f8c6e",
+        "render.requirements.txt": "sha256:83a3c0f753d257a6de7052a8b1c22605854249e1fce707b1a01fac60607bd741"
+      }
+    },
+    "wrapper": {
+      "lock": "wrapper.lock",
+      "backends": [
+        "gaussian",
+        "xtb"
+      ],
+      "auto_bind": false,
+      "checks": [
+        {
+          "executor": "chemical.gaussian",
+          "backend": "gaussian",
+          "arguments": [
+            "--task",
+            "sp",
+            "--method",
+            "HF",
+            "--basis",
+            "STO-3G",
+            "--threads",
+            "1",
+            "--memory-mb",
+            "256"
+          ],
+          "inputs": {
+            "geometry": "2\ninstallation H2 fixture\nH 0 0 0\nH 0 0 0.74\n"
+          }
+        },
+        {
+          "executor": "chemical.xtb",
+          "backend": "xtb",
+          "arguments": [
+            "--task",
+            "sp"
+          ],
+          "inputs": {
+            "geometry": "2\ninstallation H2 fixture\nH 0 0 0\nH 0 0 0.74\n"
+          }
+        }
+      ],
+      "platform": {
+        "system": "Linux",
+        "machines": [
+          "x86_64",
+          "amd64"
+        ],
+        "glibc": "2.17"
+      },
+      "resources": {
+        "wrapper.lock": "sha256:ee54a7a2686e1c68ba6d1591096806e5855ddc1dadd74f6853d61baf81f19874"
+      }
+    }
+  }
+}

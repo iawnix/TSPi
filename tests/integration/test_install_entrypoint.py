@@ -58,6 +58,16 @@ def test_local_selection_never_downloads_and_pins_actual_head(tmp_path, monkeypa
     assert installer.main(["install", "--source-root", str(selected), "--allow-dirty", "--non-interactive"]) == 0
 
 
+def test_package_source_uses_the_shared_wizard_without_fetching_sources(tmp_path, monkeypatch):
+    monkeypatch.setattr(install_from_github, 'checkout_github', lambda *_:pytest.fail('package source must stay local'))
+    seen=[]
+    monkeypatch.setattr(install_wizard, 'main', lambda arguments:seen.extend(arguments) or 0)
+    manifest=tmp_path/'release.json'
+    assert installer.main(['install','--source','package','--package-manifest',str(manifest),
+                           '--install-root',str(tmp_path/'install'),'--non-interactive']) == 0
+    assert seen[seen.index('--package-manifest')+1] == str(manifest)
+
+
 def test_standalone_relay_routes_to_its_installer(tmp_path, monkeypatch):
     monkeypatch.setattr(installer, "local_source", lambda *args, **kwargs: (tmp_path, COMMIT))
     def run(command, **kwargs):

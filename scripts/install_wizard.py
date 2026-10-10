@@ -46,6 +46,7 @@ try:
     from ._component_release import validate_install_root
     from .link_relay_discovery import discover_link_relay
     from .model_icons import install_model_icon_font
+    from . import _job_install
 except ImportError:
     from _credentials import provision_service_credentials
     from _installation_metadata import read_installation_metadata, read_workspace_root, write_workspace_root
@@ -65,6 +66,7 @@ except ImportError:
     from _component_release import validate_install_root
     from link_relay_discovery import discover_link_relay
     from model_icons import install_model_icon_font
+    import _job_install
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -209,6 +211,8 @@ def parse_args(argv: list[str] | None = None, *, use_environment: bool = True) -
     parser.add_argument("--research-agent-ref", default=os.environ.get("RESEARCH_AGENT_INSTALL_REF", "main"))
     parser.add_argument("--research-agent-commit", help=argparse.SUPPRESS)
     parser.add_argument("--source-root", help=argparse.SUPPRESS)
+    parser.add_argument('--package-manifest', help='Manifest of a complete local release package; use --source package.')
+    parser.add_argument('--package-archive', help='Complete package archive; defaults to the filename in its manifest.')
     web = parser.add_mutually_exclusive_group()
     web.add_argument("--with-web", dest="with_web", action="store_true", help="Install TS Web.")
     web.add_argument("--without-web", dest="with_web", action="store_false", help="Skip TS Web installation.")
@@ -245,6 +249,13 @@ def parse_args(argv: list[str] | None = None, *, use_environment: bool = True) -
         help="Deterministic chemical name resolver TOML to install as etc/name-resolver.toml.",
     )
     parser.add_argument("--conda-root")
+    parser.add_argument('--job-profile', action='append', metavar='TARGET:PROFILE', help='Prepare a domain environment (structure, pyscf, render, wrapper). Repeat for multiple targets.')
+    parser.add_argument('--job-software-root', action='append', metavar='TARGET=PATH', help='Dedicated target directory for managed scientific environments.')
+    parser.add_argument('--job-conda', action='append', metavar='TARGET=PATH', help='Target-local Conda executable; required when provisioning a new remote target.')
+    parser.add_argument('--verify-job-target', action='append', metavar='TARGET', help='Also verify this remote target through real scheduled Jobs.')
+    parser.add_argument('--job-check-timeout', type=int, default=180, help='Maximum seconds per acceptance Job, including queue wait.')
+    parser.add_argument('--job-offline', action='store_true', help='Provision scientific environments from prepared caches only.')
+    parser.add_argument('--without-default-job-environment', action='store_true', help='Create a control-only installation when no job.toml is supplied.')
     parser.add_argument("--allow-dirty", action="store_true", help="Allow a dirty local source checkout for validation installs.")
     parser.add_argument(
         "--service-scope",
@@ -311,7 +322,7 @@ def parse_args(argv: list[str] | None = None, *, use_environment: bool = True) -
     except ImportError:
         from _install_inputs import environment_defaults
     if use_environment:
-        environment_defaults(parser)
+        environment_defaults(parser, sys.argv[1:] if argv is None else argv)
     return parser.parse_args(argv)
 
 
@@ -333,7 +344,7 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
     section("Core")
     field("ResearchAgent terminal client", "required", tone="success")
     field("Control runtime", "required", tone="success")
-    field("Scientific execution", "configured separately in job.toml", tone="muted")
+    field("Scientific execution", "prepare selected environments and verify Jobs", tone="muted")
     field("Pi App Server runtime", "required", tone="success")
 
     section("Optional components")
@@ -632,6 +643,18 @@ def interactive_menu_options(args: argparse.Namespace) -> argparse.Namespace:
                 "Chemical name resolver TOML path (blank uses the bundled PubChem default for a new install)",
                 args.name_resolver_config or "",
             ).strip() or None
+            args.job_profile = [value.strip() for value in ask(
+                'Environment selections, comma separated (TARGET:structure/pyscf/render/wrapper; blank preserves defaults)',
+                ','.join(args.job_profile or [])).split(',') if value.strip()]
+            args.verify_job_target = [value.strip() for value in ask(
+                'Remote targets to verify through the scheduler, comma separated (blank skips remote verification)',
+                ','.join(args.verify_job_target or [])).split(',') if value.strip()]
+            for attribute, prompt in (
+                ('job_software_root', 'Environment stores, comma separated TARGET=/absolute/path'),
+                ('job_conda', 'Conda executables, comma separated TARGET=/absolute/path'),
+            ):
+                setattr(args, attribute, [value.strip() for value in ask(prompt,
+                    ','.join(getattr(args, attribute) or [])).split(',') if value.strip()])
         elif choice == "4":
             _configure_menu_phone(args)
         elif choice == "5":
@@ -751,8 +774,10 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     field("Control runtime", "install from explicit lock and verify", tone="success")
     field("Scientific execution", "verify configured targets and declared dependencies", tone="muted")
     field("Pi App Server", "install pinned runtime and verify", tone="success")
-    field("Local backend policy", "core Python/runtime only; native tools must be selected explicitly", tone="muted")
-    field("Job platform config", args.job_config or "preserve <install>/etc/job.toml if present", tone="muted")
+    field("Local backend policy", "automatic structure environment on a fresh install; native tools use supplied paths", tone="muted")
+    field("Job platform config", args.job_config or "preserve existing bindings or generate local defaults", tone="muted")
+    for row in _job_install.preview(_job_install.plan(args))['environments']:
+        field(row['target'] + ':' + row['profile'], row['action'] + ' - ' + row['prefix'], tone='muted')
     field(
         "Chemical name resolver config",
         args.name_resolver_config or "bundled PubChem default for a new install; preserve existing otherwise",
@@ -854,6 +879,13 @@ def validate_options(args: argparse.Namespace) -> None:
     if not args.install_root:
         raise ValueError("--install-root is required in non-interactive mode")
     args.install_root = str(validate_install_root(Path(args.install_root)))
+    if not 1 <= args.job_check_timeout <= 3600:
+        raise ValueError('--job-check-timeout must be between 1 and 3600 seconds')
+    if args.package_archive and not args.package_manifest:
+        raise ValueError('--package-archive requires --package-manifest')
+    for filename in (args.package_manifest, args.package_archive):
+        if filename and (not Path(filename).expanduser().is_file() or Path(filename).expanduser().is_symlink()):
+            raise ValueError('package inputs must be existing regular files')
     _load_existing_remote_host_defaults(args, Path(args.install_root))
     if args.job_config:
         source = Path(args.job_config).expanduser()
@@ -863,9 +895,10 @@ def validate_options(args: argparse.Namespace) -> None:
             parsed_job = tomllib.loads(source.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
             raise ValueError(f"invalid job TOML configuration: {source}: {error}") from error
-        _validate_job_config(parsed_job)
+        _validate_job_config(_job_install.plan(args)['settings'] if args.job_profile else parsed_job)
     elif (Path(args.install_root) / "etc/job.toml").is_file():
-        _validate_job_config(tomllib.loads((Path(args.install_root) / "etc/job.toml").read_text()))
+        _validate_job_config(_job_install.plan(args)['settings'] if args.job_profile else
+                             tomllib.loads((Path(args.install_root) / "etc/job.toml").read_text()))
     if args.name_resolver_config:
         source = Path(args.name_resolver_config).expanduser()
         if not source.is_absolute() or source.is_symlink() or not source.is_file():
@@ -1417,20 +1450,18 @@ def _validate_job_config(parsed: dict[str, object]) -> dict:
     contract = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(contract)
     contract.validate_job_config(parsed)
-    # This path runs before the managed Python environment exists. Discovery
-    # and static binding checks use stdlib plus the same Node catalog loader;
-    # dependency imports and version checks run after installation below.
-    try:
-        from ._bootstrap import activate_source_package
-    except ImportError:
-        from _bootstrap import activate_source_package
-    activate_source_package(ROOT)
-    from research_agent.application.environment_check import check_environments
-    return check_environments(parsed, probe=False)
+    # Bootstrap must work before jsonschema/packaging are installed. Full
+    # catalog and dependency validation runs in the prepared Host interpreter.
+    declarations = json.loads((ROOT / 'package.json').read_text())['researchAgent']['execution']
+    catalogs = [json.loads((ROOT / path).read_text()) for path in declarations]
+    return contract.validate_catalog_bindings(parsed, catalogs)
 
 
 def verify_job_bindings(args, installed, backend_configs):
     """Probe with the installed control runtime, after extension installation."""
+    if getattr(args, '_prepared_job_plan', None) is not None:
+        _job_install.verify_publication(args._prepared_job_plan, installed['runtime']['python_executable'])
+        return
     job = backend_configs.get("job", {})
     if job.get("status") == "not_configured":
         return
@@ -1803,6 +1834,14 @@ def append_install_log(install_root: Path, *lines: str) -> Path:
 
 
 def run_install(args: argparse.Namespace) -> dict[str, object]:
+    if args.package_manifest:
+        try:
+            from .install_package import install_package
+        except ImportError:
+            from install_package import install_package
+        return install_package(Path(args.package_manifest).expanduser().resolve(),
+            Path(args.package_archive).expanduser().resolve() if args.package_archive else None,
+            Path(args.install_root), conda_root=args.conda_root, allow_dirty=args.allow_dirty, activate=False)
     command = [
         sys.executable,
         str(ROOT / "scripts/install_from_github.py"),
@@ -1814,6 +1853,7 @@ def run_install(args: argparse.Namespace) -> dict[str, object]:
         args.install_root,
         "--progress",
         "--json",
+        "--prepare-only",
     ]
     if args.research_agent_commit:
         command.extend(["--resolved-commit", args.research_agent_commit])
@@ -1935,6 +1975,8 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
         "etc/job.toml",
         "etc/name-resolver.toml",
         "var/state/installation/source-provenance.json",
+        "var/state/installation/job-environments.json",
+        "var/state/installation/job-readiness.json",
     ]
     paths = {str(root / relative): _snapshot_file(root / relative) for relative in relative_paths}
     external_password = getattr(args, "email_password_file", None)
@@ -2207,8 +2249,8 @@ def restore_active_release(root: Path, snapshot: dict[str, object] | None) -> No
         marker_path.unlink()
 
 
-def prepare_app_server_runtime(root: Path) -> Path:
-    suite_root = active_suite_root(root)
+def prepare_app_server_runtime(root: Path, *, suite_root: Path | None = None, bind=True) -> Path:
+    suite_root = suite_root or active_suite_root(root)
     installer = suite_root / "agent/scripts/prepare_pi_source.py"
     if installer.is_symlink() or not installer.is_file():
         raise RuntimeError(f"installed App Server runtime installer is unavailable: {installer}")
@@ -2239,7 +2281,8 @@ def prepare_app_server_runtime(root: Path) -> Path:
         source = next((candidate for candidate in candidates if candidate.is_absolute() and candidate.is_dir()), None)
     if source is None or not source.is_absolute() or not source.is_dir():
         raise RuntimeError("Pi App Server runtime installer returned an invalid source path")
-    bind_pi_runtime_node_modules(root, source)
+    if bind:
+        bind_pi_runtime_node_modules(root, source)
     return source
 
 
@@ -3141,11 +3184,17 @@ def show_installed_summary(
         section("Job platforms")
         field("Unified config", job_config.get("path", "not configured"))
         field("Status", job_config.get("status", "not configured"), tone="success" if job_config.get("status") in {"configured", "preserved"} else "warning")
-        for environment, backends in job_config.get("readiness", {}).items():
-            for backend, readiness in backends.items():
-                field(f"{environment}/{backend}", readiness["status"], tone="success" if readiness["status"] == "verified" else "warning")
-                if readiness.get("error"):
-                    note(readiness["error"], tone="warning")
+        readiness = job_config.get('readiness', {})
+        if readiness.get('schema_version') == 'research-agent-job-readiness/1':
+            for name, target in readiness['targets'].items():
+                field(name, target['status'], tone='success' if target['status'] == 'execution_verified' else 'warning')
+                if target.get('untested_backends'):
+                    field(name + ' (environment checks only)', ', '.join(target['untested_backends']), tone='muted')
+            field('External name services', readiness['external_services'], tone='muted')
+        else:
+            for environment, backends in readiness.items():
+                for backend, result in backends.items():
+                    field(f"{environment}/{backend}", result['status'], tone='success' if result['status'] == 'verified' else 'warning')
         if job_config.get("configuration_changed"):
             note("Job configuration changed from the previous installation; source and previous digests are recorded.", tone="warning")
     resolver = components.get("name_resolver")
@@ -3241,8 +3290,8 @@ def _interactive_prepare_installation(
 
 def show_dry_run(args: argparse.Namespace) -> None:
     """Expose only configuration references, never credential contents."""
-    if args.job_config:
-        _validate_job_config(tomllib.loads(Path(args.job_config).expanduser().read_text()))
+    scientific = _job_install.plan(args)
+    _validate_job_config(scientific['settings'])
     validate_email_options(args)
     plan = {key: getattr(args, key) for key in (
         "install_root", "config_dir", "workspace_root", "source_root", "research_agent_repo",
@@ -3250,12 +3299,14 @@ def show_dry_run(args: argparse.Namespace) -> None:
         "with_web", "with_link_relay", "service_scope", "phone_access",
     )}
     plan["email"] = "configured" if args.email_binding else "preserve existing or disabled"
-    plan["source"] = "local" if args.source_root else "github"
+    plan["source"] = 'package' if args.package_manifest else "local" if args.source_root else "github"
+    plan['package_manifest'] = args.package_manifest
     plan["with_web"] = True if args.with_web is None else args.with_web
     plan["service_scope"] = args.service_scope or DEFAULT_SERVICE_SCOPE
     plan["phone_access"] = args.phone_access or "preserve existing or disabled"
     plan["web_auth_token"] = "[REDACTED]" if args.web_auth_token else None
     plan["link_enrollment_code"] = "[REDACTED]" if args.link_enrollment_code else None
+    plan['scientific_execution'] = _job_install.preview(scientific)
     print(json.dumps({"dry_run": True, "plan": plan}, indent=2, sort_keys=True))
 
 
@@ -3271,6 +3322,7 @@ def main(argv: list[str] | None = None) -> int:
     previous_configuration: dict[str, object] | None = None
     installation_root: Path | None = None
     maintenance = None
+    cutover_started = False
     writer_guard = ExitStack()
     try:
         _install_inputs.apply_config_directory(args)
@@ -3302,15 +3354,29 @@ def main(argv: list[str] | None = None) -> int:
             from _bootstrap import activate_source_package
         activate_source_package(ROOT)
         from research_agent.foundation.installation_maintenance import InstallationMaintenance
-        maintenance = InstallationMaintenance(installation_root).acquire()
+        maintenance = InstallationMaintenance(installation_root).acquire(defer=True)
+        installed = run_install(args)
+        package = Path(installed['package_root']) / 'agent'
+        args._prepared_job_plan = _job_install.prepare(_job_install.plan(args, package), args, package,
+                                                      installed['runtime']['python_executable'])
+        app_server_runtime = prepare_app_server_runtime(installation_root, suite_root=Path(installed['package_root']), bind=False)
+        _job_install.assert_inputs_unchanged(args._prepared_job_plan)
         previous_release = snapshot_active_release(installation_root)
         previous_configuration = snapshot_install_configuration(installation_root, args)
-        stop_installation_services(args)
-        install_uninstaller(Path(args.install_root), ROOT)
-        installed = run_install(args)
+        cutover_started = True
         maintenance.transition("preparing", release_id=installed.get("release_id"))
+        stop_installation_services(args)
         from research_agent.bootstrap.session_guard import guard_installation_upgrade
         writer_guard.enter_context(guard_installation_upgrade(installation_root))
+        backend_configs = _job_install.publish(args._prepared_job_plan)
+        try:
+            from .install_package import activate_prepared_package
+        except ImportError:
+            from install_package import activate_prepared_package
+        installed = activate_prepared_package(installation_root, installed, guarded=False)
+        if installed.get('provenance_data'):
+            _write_private_config_bytes((json.dumps(installed['provenance_data'], indent=2) + '\n').encode(), Path(installed['provenance']))
+        install_uninstaller(installation_root, ROOT)
         if args.with_link_relay:
             relay_result, relay_owned = _install_relay.install(args, installation_root)
             _install_relay.enroll_options(args, relay_result)
@@ -3327,7 +3393,7 @@ def main(argv: list[str] | None = None) -> int:
             activity.update("Recording the remote terminal profile")
             remote_host_config = configure_remote_host(args)
             activity.update("Installing the Pi App Server runtime")
-            app_server_runtime = prepare_app_server_runtime(Path(args.install_root))
+            bind_pi_runtime_node_modules(installation_root, app_server_runtime)
             ensure_host_identity(Path(args.install_root))
             activity.update("Writing the Phone connection manifest")
             phone_connection = configure_phone_connection(args)
@@ -3341,9 +3407,9 @@ def main(argv: list[str] | None = None) -> int:
             activity.update("Configuring email notifications")
             notifications = configure_notification_config(args)
             activity.update("Installing backend configuration")
-            backend_configs = configure_backend_configs(args)
             activity.update("Verifying declared execution environments")
             verify_job_bindings(args, installed, backend_configs)
+            _write_job_readiness(Path(backend_configs['job']['path']), backend_configs['job'])
             activity.update("Configuring services")
             services = configure_services(args, start=False)
             activity.update("Verifying the installed release")
@@ -3433,7 +3499,7 @@ def main(argv: list[str] | None = None) -> int:
                 _install_relay.rollback(args, relay_result)
             except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as relay_error:
                 error = RuntimeError(f"{error}; Relay cleanup failed: {relay_error}")
-        if maintenance is not None:
+        if maintenance is not None and cutover_started:
             try:
                 stop_installation_services(args)
                 writer_guard.close()

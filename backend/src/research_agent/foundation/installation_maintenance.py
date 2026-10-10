@@ -67,7 +67,7 @@ class InstallationMaintenance:
         self.record = None
         self.repairing = False
 
-    def acquire(self):
+    def acquire(self, *, defer=False):
         missing = []
         directory = self.path.parent
         while not directory.exists():
@@ -95,7 +95,8 @@ class InstallationMaintenance:
                            "attempt_id": str(uuid.uuid4()), "state": "preparing",
                            "activation_started": bool(self.repairing and previous["activation_started"]),
                            "repairing": self.repairing, "started_at": now_iso()}
-            write_json(self.path, self.record)
+            if not defer:
+                write_json(self.path, self.record)
             self.descriptor = descriptor
         except BaseException:
             os.close(descriptor)

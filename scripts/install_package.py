@@ -11,6 +11,7 @@ import shutil
 import sys
 import tarfile
 import tempfile
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable
@@ -148,6 +149,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Allow installation of local-validation components built from dirty source.",
     )
     parser.add_argument("--json", action="store_true", help="Print machine-readable output.")
+    parser.add_argument("--prepare-only", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     manifest_path = Path(args.manifest).expanduser().resolve()
     try:
@@ -159,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
             conda_root=args.conda_root,
             force_runtime=args.force_runtime,
             allow_dirty=args.allow_dirty,
+            activate=not args.prepare_only,
         )
     except (
         SuiteReleaseError,
@@ -178,7 +181,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(f"installed: {result['release_id']}")
         print(f"package_root: {result['package_root']}")
-        print(f"launcher: {result['launcher']}")
+        if result.get('launcher'):
+            print(f"launcher: {result['launcher']}")
     return 0
 
 
@@ -191,6 +195,7 @@ def install_package(
     conda_root: str | Path | None = None,
     force_runtime: bool = False,
     allow_dirty: bool = False,
+    activate: bool = True,
     runtime_preparer: Callable[..., PreparedRuntime] | None = None,
     runtime_publisher: Callable[[PreparedRuntime], Path] | None = None,
 ) -> dict[str, Any]:
@@ -233,6 +238,7 @@ def install_package(
             force_runtime=force_runtime,
             runtime_preparer=runtime_preparer,
             runtime_publisher=runtime_publisher,
+            activate=activate,
         )
 
 
@@ -246,6 +252,7 @@ def _install_captured_package(
     force_runtime: bool,
     runtime_preparer: Callable[..., PreparedRuntime] | None,
     runtime_publisher: Callable[[PreparedRuntime], Path] | None,
+    activate: bool = True,
 ) -> dict[str, Any]:
     """Install only from the private archive snapshot verified by the public entrypoint."""
     suite_members, suite_files = inspect_rooted_archive(captured_archive, "package")
@@ -260,7 +267,7 @@ def _install_captured_package(
 
     install_root = prepare_install_root(install_root)
     layout = paths(install_root).initialize()
-    with guard_installation_upgrade(install_root):
+    with guard_installation_upgrade(install_root) if activate else nullcontext():
         package_home = install_root
         if layout.current.is_symlink() and layout.current.resolve().parent != layout.releases:
             raise SuiteReleaseError("application current pointer escapes the release store")
@@ -283,7 +290,8 @@ def _install_captured_package(
                 if staging.exists():
                     remove_staging_tree(staging)
 
-        ensure_name_resolver_config(install_root, target)
+        if activate:
+            ensure_name_resolver_config(install_root, target)
 
         prepare = runtime_preparer or prepare_runtime
         publish = runtime_publisher or publish_runtime
@@ -314,6 +322,14 @@ def _install_captured_package(
             "services_activated": False,
             "session_guard_contract": CONTRACT,
         }
+        if not activate:
+            return {
+                "ok": True, "created": created, "release_id": manifest["release_id"],
+                "package_root": str(target), "runtime": dict(prepared_runtime.result),
+                "prepared": {"state": state, "manifest": manifest,
+                             "runtime_manifest": prepared_runtime.manifest},
+                "services_activated": False,
+            }
         launchers = _activate_release(
             install_root,
             package_home,
@@ -336,6 +352,31 @@ def _install_captured_package(
             "services_activated": False,
             "archived_retired_notification_state": archived_notification_state,
         }
+
+
+def activate_prepared_package(install_root: Path, result: dict, *, guarded=True) -> dict:
+    """Publish a prepared package after the caller's environment acceptance."""
+    try:
+        from ._bootstrap import load_runtime_environment
+    except ImportError:
+        from _bootstrap import load_runtime_environment
+    root = install_root.resolve()
+    pending = result['prepared']
+    manifest = validate_suite_manifest(pending['manifest'])
+    target = root / 'releases' / manifest['release_id']
+    if str(target) != result['package_root'] or pending['state']['package_root'] != str(target):
+        raise SuiteReleaseError('prepared package destination changed')
+    validate_existing_suite(target, manifest)
+    runtime = load_runtime_environment(target / 'agent')
+    prepared = PreparedRuntime(target / 'agent', paths(root).runtime_home / 'env.json',
+                               pending['runtime_manifest'], result['runtime'], runtime)
+    if not runtime._manifest_matches_spec(target / 'agent', prepared.manifest):
+        raise SuiteReleaseError('prepared runtime does not match the release')
+    with guard_installation_upgrade(root) if guarded else nullcontext():
+        ensure_name_resolver_config(root, target)
+        launchers = _activate_release(root, root, target, prepared, pending['state'], publish_runtime,
+                                     manifest['components'], manifest['schema_version'])
+    return {**result, 'launchers': launchers, 'current': str(root / 'current')}
 
 
 def ensure_name_resolver_config(install_root: Path, release_root: Path) -> None:

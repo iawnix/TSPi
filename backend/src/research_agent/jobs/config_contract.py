@@ -127,6 +127,30 @@ def load_job_config(path):
         return validate_job_config(tomllib.load(handle))
 
 
+def validate_catalog_bindings(settings, catalogs):
+    """Bootstrap binding checks without importing runtime dependencies."""
+    validate_job_config(settings)
+    results = {}
+    for name, target in settings['environments'].items():
+        results[name] = {}
+        for catalog in catalogs:
+            for kind in ('executors', 'validators'):
+                for entry in catalog.get(kind, []):
+                    backend = entry['backend']
+                    key = kind + ':' + entry['id'] + '@' + entry['version']
+                    if backend not in target.get('backends', {}):
+                        results[name][key] = {'status': 'not_configured', 'backend': backend}
+                        continue
+                    selected = resolve_binding(settings, name, backend,
+                        runtime='python' if kind == 'validators' else entry['runtime'])
+                    needs_command = any(token in entry.get('argv', []) for token in ('{command}', '{executable}'))
+                    if bool(selected['binding'].get('command')) != needs_command:
+                        raise ValueError('execution_binding_command_mismatch: ' + name + '/' + key)
+                    results[name][key] = {'status': 'configuration_validated', 'backend': backend,
+                                          'environment_evidence': None}
+    return results
+
+
 def resolve_python(config, environment, backend):
     target = config["environments"][environment]
     binding = target.get("backends", {}).get(backend, {}).get("python", target.get("python"))

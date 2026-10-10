@@ -7,6 +7,7 @@
 | `models.example.json` | `models.json` | 模型服务地址与模型定义 |
 | `auth.example.json` | `auth.json` | 模型 API 凭据；provider 名称须与 models.json 一致 |
 | `job.example.toml` | `job.toml` | 本地和远程计算环境绑定 |
+| `name-resolver.example.toml` | `name-resolver.toml` | PubChem、OPSIN 的启用、超时与缓存设置 |
 | `email.example.toml` | `email.toml` | 可选邮件通知设置 |
 
 已有真实文件时不要用示例覆盖它们。上述私有文件，以及 `smtp-password` 和
@@ -34,3 +35,10 @@
 
 去掉 `--dry-run` 后执行安装。本地源码有未提交修改时，需先提交，或在本机验证时显式
 添加 `--allow-dirty`。真实配置文件保持忽略状态，不随源码提交或发布。
+
+新安装没有提供 `job.toml` 时，会自动准备本地 structure/validation 环境并运行结构
+验收 Job。已有配置保持原绑定；增加环境使用 `--job-profile local:pyscf` 等选项。
+远端先配置 SSH、调度器和队列，再指定 `--job-profile remote:pyscf`、
+`--job-software-root remote=/目标/专用目录` 与 `--job-conda remote=/目标/bin/conda`。
+这些路径在目标机器上解释。名称服务配置与 Python 环境绑定分开，PubChem/OPSIN
+网络不可用不会阻止离线安装验收。完整说明见 `docs/INSTALLATION.zh-CN.md`。

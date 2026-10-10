@@ -6,6 +6,11 @@ Nothing under that directory may be uploaded or included in a product artifact.
 Runner output contains only run IDs, result counts and status. Detailed failures
 remain in each run's local report and log files.
 
+`prepare` also caches the public `structure` and `wrapper` Conda locks for the complete public
+installer acceptance. `--job-profiles` selects these preparation profiles; it
+defaults to `structure,wrapper`. The installation tests use those caches offline and
+cover package activation, ordinary structure Jobs, repeat installation, and purge.
+
 ```bash
 export RESEARCH_AGENT_TEST_CONDA=/home/iaw/soft/miniconda/26.7.1-1/bin/conda
 python3 tools/test/runner.py prepare

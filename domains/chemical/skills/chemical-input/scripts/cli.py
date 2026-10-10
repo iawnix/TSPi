@@ -9,6 +9,8 @@ def parse_arguments(argv=None):
     parser.add_argument('--output', required=True)
     sub = parser.add_subparsers(dest='command', required=True)
     names = sub.add_parser('resolve', allow_abbrev=False); names.add_argument('--name', required=True); names.add_argument('--lookup-name')
+    candidates = sub.add_parser('candidates', allow_abbrev=False)
+    candidates.add_argument('--input', type=Path, required=True, help='JSON with original name and proposed structures')
     check = sub.add_parser('inspect', allow_abbrev=False); check.add_argument('--smiles', required=True)
     seed = sub.add_parser('seed', allow_abbrev=False); seed.add_argument('--smiles', required=True)
     seed.add_argument('--charge', type=int, required=True); seed.add_argument('--multiplicity', type=int, required=True)

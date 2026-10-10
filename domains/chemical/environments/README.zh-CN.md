@@ -17,25 +17,40 @@ glibc >=2.28。CF22D 选择通用 x86_64 PySCF 构建，不绑定维护者的 CP
 文本报告只使用 Host 标准库，不需要渲染锁。渲染环境中的 notebook 依赖来自
 xyzrender 上游要求，只安装在渲染目标中。这些环境均不安装 ResearchAgent wheel。
 
-将所需锁复制到目标的持久目录，保持 `render.requirements.txt` 与 `render.lock`
-相邻。在安装管理的 `job.toml` 中配置目标绝对路径：`conda_executable`、新的版本化
-`prefix` 和 `lock_ref`。`config/job.example.toml` 中的 `/opt` 路径是可编辑的
-示例；本机软件可放在维护者的 `~/soft` 下。
-
-在目标主机运行安装器，SSH 目标也一样：
+统一入口 `install.sh` 根据 `manifest.json` 准备环境。首次安装没有提供 `job.toml`
+时，默认选择本地 `structure`；已有绑定保留。其他环境显式选择：
 
 ```bash
-python3 scripts/install_job_environment.py --config /absolute/job.toml --environment local --backend structure
-python3 scripts/install_job_environment.py --config /absolute/job.toml --environment local --backend pyscf
-python3 scripts/install_job_environment.py --config /absolute/job.toml --environment local --backend render
+./install.sh --source local --job-profile local:pyscf --job-profile local:render
+./install.sh --job-config /absolute/job.toml --job-profile cluster:pyscf \
+  --job-software-root cluster=/absolute/managed-science \
+  --job-conda cluster=/absolute/conda/bin/conda
 ```
 
-选择 Gaussian 或 xTB 的后端名安装共用的 wrapper 前缀。结构与验证可以引用同一个
-前缀和锁。CF22D 不再需要自定义激活脚本或 `LD_PRELOAD` 补丁。
+先在 `job.toml` 配置远端、队列与原生求解器路径。远端路径属于目标机器。准备阶段
+通过 SSH 执行，目标需要 Python 3.11+、Conda、`timeout`、Linux x86_64 及声明的
+glibc；执行阶段使用已配置的 PBS/Torque 和 rsync。本机 Python 路径不会复制给远端。
+`wrapper` 只为已配置的 Gaussian/xTB 后端准备 Python，原生程序仍由管理员提供。
+
+安装器把固定锁和不可变的版本化环境保存在专用受管目录，本机默认是
+`~/soft/research-agent/job-envs/<installation-id>`，再将绝对路径写入 `etc/job.toml`。
+PubChem/OPSIN 服务参数位于 `etc/name-resolver.toml`。本地完成名称解析和结构准备后，
+可以交给远端计算，不要求每个计算目标都安装名称解析服务。
+
+切换当前版本或停止服务前，先完成准备与有时限的实际验收 Job。structure 检查
+RDKit、Job 内的解析器配置路径和乙醇结构生成；其他环境执行声明的最小计算或渲染。
+报告区分环境验证、已测试后端和未验证目标。离线验收不访问外部名称服务。已有远端
+仅在选择准备该目标或显式传入 `--verify-job-target cluster` 时验证。
+
+管理员维护时仍可使用底层目标端工具：
+`python3 scripts/install_job_environment.py --config /absolute/job.toml --environment local --backend structure`。
+它要求已有显式绑定，不负责统一安装器的版本切换或 Job 验收。结构与验证可以共用
+前缀；CF22D 不需要自定义激活脚本或 `LD_PRELOAD` 补丁。
 
 安装时不重新求解依赖。固定的 pip 产物下载到环境父目录下的缓存，再以
 `--require-hashes`、`--no-deps` 安装，并用 `pip check` 检查依赖完整性。
-`--package-cache` 可指定产物目录；`--offline` 仅使用该目录与 Conda 缓存
+主入口的 `--job-offline` 仅使用预先准备的缓存。底层工具的 `--package-cache`
+可指定产物目录；`--offline` 仅使用该目录与 Conda 缓存
 （`CONDA_PKGS_DIRS`）。锁与发行文件保持只读。新建安装中断后删除该次创建的前缀，
 已有前缀不就地更新。显式 `--adopt` 才会核验预先准备的环境并发布安装回执。
 

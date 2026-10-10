@@ -21,7 +21,7 @@ def module(name: str):
 
 def source_options(argv: list[str]):
     parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
-    parser.add_argument("--source", choices=("local", "github"), default=None)
+    parser.add_argument("--source", choices=("local", "github", "package"), default=None)
     parser.add_argument("--source-root")
     parser.add_argument("--research-agent-repo", default=os.environ.get("RESEARCH_AGENT_INSTALL_REPO", "https://github.com/iawnix/TSPi.git"))
     parser.add_argument("--research-agent-ref", default=os.environ.get("RESEARCH_AGENT_INSTALL_REF", "main"))
@@ -29,7 +29,7 @@ def source_options(argv: list[str]):
     options, remaining = parser.parse_known_args(argv)
     if options.research_agent_commit is not None:
         parser.error("--research-agent-commit is reserved for the selected source")
-    if options.source == "github" and options.source_root:
+    if options.source in {'github', 'package'} and options.source_root:
         parser.error("--source-root is only supported with --source local")
     options.source = options.source or ("local" if options.source_root else "github")
     if options.source == "local" and any(arg == "--research-agent-ref" or arg.startswith("--research-agent-ref=") for arg in argv):
@@ -72,13 +72,17 @@ def install(argv: list[str]) -> int:
     implementation = module("install_link_relay" if component == "relay" else "install_wizard")
     if "--help" in remaining or "-h" in remaining:
         print("Usage: install.sh [relay] [options]\n"
-              "Source: --source {local,github} (default: github), --source-root PATH,\n"
+              "Source: --source {local,github,package} (default: github), --source-root PATH,\n"
               "        --research-agent-repo URL, --research-agent-ref REF\n"
               "Use --dry-run to preview without downloading or installing.\n", flush=True)
         implementation.parse_args(["--help"])
     dry_run = "--dry-run" in remaining
     parse_remaining = [arg for arg in remaining if arg != "--dry-run"] if component == "relay" else remaining
     args = implementation.parse_args(parse_remaining)
+    if options.source == 'package' and (component != 'agent' or not args.package_manifest):
+        raise ValueError('--source package requires --package-manifest and the agent component')
+    if component == 'agent' and args.package_manifest and options.source != 'package':
+        raise ValueError('--package-manifest requires --source package')
     source = module("install_from_github")
     source.validate_repo(options.research_agent_repo)
     source.validate_ref(options.research_agent_ref)
@@ -88,7 +92,8 @@ def install(argv: list[str]) -> int:
         module("_install_relay").prepare(args)
         if args.job_config:
             import tomllib
-            implementation._validate_job_config(tomllib.loads(Path(args.job_config).expanduser().read_text()))
+            implementation._validate_job_config(module('_job_install').plan(args)['settings'] if args.job_profile else
+                tomllib.loads(Path(args.job_config).expanduser().read_text()))
         implementation.validate_email_options(args)
     if dry_run:
         if component == "agent":
@@ -103,6 +108,8 @@ def install(argv: list[str]) -> int:
     if options.source == "local":
         root, commit = local_source(options.source_root, allow_dirty=args.allow_dirty)
         return run_selected(root, commit, options, component, remaining)
+    if options.source == 'package':
+        return implementation.main(remaining)
     with tempfile.TemporaryDirectory(prefix="research-agent-installer-") as temporary:
         root = Path(temporary) / "source"
         print(f"Preparing ResearchAgent revision {options.research_agent_ref}...", file=sys.stderr)

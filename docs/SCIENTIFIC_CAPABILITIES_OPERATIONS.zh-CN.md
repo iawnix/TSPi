@@ -33,7 +33,7 @@ job.toml 所选后端提供程序、Python 绑定、激活脚本及资源默认�
 
 准备器在选定本地或 SSH 目标上核验解释器前缀、Conda 显式锁、pip 固定版本、安装回执、包清单，以及程序和激活文件摘要。请求身份包含这次观测；新提交时复查，真正运行时由暂存并固定摘要的检查程序再次复查。激活文件先检查再加载。变化导致拒绝执行，既有 Job 的查询和重试仍返回原身份。核验保证环境与记录一致，科学能力仍须由实际求解与验证证明。
 
-安装回执增加 `inventory_sha256`。旧环境应通过 `scripts/install_job_environment.py --config … --environment … --backend … --adopt` 实际核验后发布新回执；不得手工补写摘要。安装器先检查配置结构，在受管控制环境和扩展安装后运行 `"$RESEARCH_AGENT_PYTHON" -m research_agent.application.environment_check --config "$RESEARCH_AGENT_JOB_CONFIG"`，核验所有已配置入口，包括远端。`job_probe` 仍只表示平台可达。
+安装回执增加 `inventory_sha256`。旧环境应通过 `scripts/install_job_environment.py --config … --environment … --backend … --adopt` 实际核验后发布新回执；不得手工补写摘要。统一安装器准备所选 domain 环境，在受管控制环境中核验配置与依赖，并在切换版本前运行有时限的普通验收 Job。本机目标自动检查；远端仅在选择 `--job-profile TARGET:PROFILE` 或 `--verify-job-target TARGET` 时检查。报告区分环境验证、已测试后端和未验证目标，PubChem/OPSIN 外部可用性不阻止离线验收。`job_probe` 仍只表示平台可达。
 
 应用提交的本地 Job 运行在独立 systemd 用户临时服务中，Host 重启不会连带终止它们。任务只接收最小环境和显式变量，资源请求通过 CPUQuota/MemoryMax 实施。Runtime 在 Job 内或配置的 scratch_root 下创建专属 scratch；显式环境值可引用 `{scratch}`。临时单元移除后，回执仍保留在工作区。
 

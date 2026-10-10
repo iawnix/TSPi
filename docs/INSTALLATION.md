@@ -31,8 +31,9 @@ repository:
 
 Run `./install.sh` and confirm the installation directory, ResearchAgent revision,
 workspace root, Conda root, optional TS Web component, and service policy. Core
-Agent and its control runtime are always installed. Scientific computation,
-validation, and rendering depend on separately configured execution environments.
+Agent and its control runtime are always installed. A fresh installation without
+job.toml also prepares the local structure/validation environment. Other scientific
+environments are selected explicitly; existing bindings are preserved.
 
 The repository has two public entrypoints: `install.sh` and `uninstall.sh`.
 Installation defaults to GitHub; use `--source local` for the current checkout or
@@ -138,24 +139,65 @@ with `--job-config /absolute/path/job.toml`. The installation keeps its private
 copy at `<install>/etc/job.toml`. SSH credentials remain in SSH configuration.
 ResearchAgent does not install site-managed Gaussian or xTB binaries.
 
-The chemical extension ships fixed wrapper, structure/validation, CF22D and
-rendering environment locks. Provision the needed targets with
-`scripts/install_job_environment.py` before installing or updating the Host;
-see the [target environment instructions](../domains/chemical/environments/README.md).
-The sample paths are placeholders, and remote locks must match the remote OS
-and CPU. A native execution entry does not require Python.
+The same installer prepares scientific environments from the domain's pinned
+`environments/manifest.json`. Profiles are `structure` (RDKit/NumPy, shared with
+validation), `pyscf` (CF22D), `render`, and `wrapper` (Python for already configured
+Gaussian/xTB programs). The native programs must already exist on their targets.
 
-Installation checks the common configuration contract and then probes every
-configured execution entry on its actual target. For a maintenance check, use:
+```bash
+./install.sh --source local --install-root "$HOME/ResearchAgent" \
+  --job-profile local:structure --job-profile local:pyscf \
+  --job-software-root local=/home/iaw/soft/research-agent/job-envs/my-install \
+  --non-interactive --yes
+```
+
+Local stores default to `~/soft/research-agent/job-envs/<installation-id>`.
+`--without-default-job-environment` creates a control-only fresh installation.
+Use `--job-offline` with prepopulated Conda/pip caches. Matching environments are
+reused; changed locks select new prefixes. Operator-edited bindings are verified
+without being replaced. Locks and receipts live in persistent target stores.
+
+To provision a configured SSH target named `cluster`, add:
+
+```bash
+--job-config /absolute/job.toml --job-profile cluster:structure \
+--job-software-root cluster=/remote/shared/research-agent/envs \
+--job-conda cluster=/remote/conda/bin/conda
+```
+
+The remote store must be visible on compute nodes. The SSH host needs Python
+3.11+, Conda and `timeout`; queued jobs use the configured PBS/Torque queue.
+Remote provisioning sends only helper code, locks and selected target bindings.
+Generated remote resolver caches use remote paths. Host model and email credentials
+are not copied. Current shipped locks target Linux x86_64: glibc >=2.28 for science
+and rendering, >=2.17 for wrapper. Offline targets need prepared package caches.
+
+Local targets are verified automatically. A selected remote profile is provisioned
+and verified; `--verify-job-target cluster` verifies an existing remote binding.
+Other remote targets are preserved and reported as `not_verified` without SSH calls.
+`--job-check-timeout` bounds each acceptance Job including queue wait (default 180s).
+Acceptance runs ordinary Jobs: structure checks/XYZ generation, and small calculations
+or rendering for configured domain backends. Results are collected; remote test
+directories are removed only after completion or confirmed cancellation. Pending
+cancellation fails acceptance and retains the job receipt for follow-up.
+
+Readiness distinguishes configuration, environment and execution checks. External
+name services are `not_checked`; installation's offline tests do not call PubChem,
+OPSIN, models or email. Names normally resolve on local before sending structures
+to remote computation. The active bindings remain in `etc/job.toml`; ownership and
+acceptance records are in `var/state/installation/job-environments.json` and
+`job-readiness.json`. A maintenance import probe remains available with:
 
 ```bash
 "$RESEARCH_AGENT_PYTHON" -m research_agent.application.environment_check --config "$RESEARCH_AGENT_JOB_CONFIG"
 ```
 
-The report distinguishes verified and unconfigured entries. A configured but
-unusable target fails verification. Probe success is not scientific validation;
-run a bounded Job to verify a method. The [scientific operations guide](SCIENTIFIC_CAPABILITIES_OPERATIONS.md)
-describes resource, scratch, cancellation and recovery behavior.
+A complete release package uses the same workflow, without fetching source:
+
+```bash
+./install.sh --source package --package-manifest /absolute/research-agent-package-release.json \
+  --install-root "$HOME/ResearchAgent" --non-interactive --yes
+```
 
 ## Installation Logs
 
@@ -438,8 +480,9 @@ are retained. This release accepts only current workspace and session contracts;
 use fresh workspaces and sessions when replacing an incompatible release. The
 installer does not import or convert previous research state or Web registries.
 
-The installer serializes upgrades and stops managed Host/Web writers before
-release activation. Independently owned calculation services keep running.
+The installer serializes preparation without fencing the running Host. It prepares
+the release, Python environments, Pi and candidate Job acceptance before stopping
+managed Host/Web writers for the publication window. Independently owned calculation services keep running.
 Configuration and environment checks finish before service startup; readiness
 checks verify the selected Host release and the Web State bridge. Keep the
 existing service scope when updating an installation.
@@ -485,8 +528,17 @@ is removed even when its code path no longer exists.
 
 ## Scientific binding readiness
 
-The installation uses `<install>/etc/job.toml`. Keep the reinstall source synchronized after binding maintenance. Before installation, the shared contract checks configuration. After installing the control runtime and extensions, the installer probes every configured local and SSH target using the declared executor and validator requirements: explicit locks, installation receipts, package versions, module imports, activation files, and program digests. Environment-level Python bindings may be overridden per backend; native executors need no Python binding.
+The installer records each target's `configuration_validated`, `environment_verified`,
+`execution_verified` or `not_verified` status, the checks performed and their scope.
+A selected target failing acceptance stops installation before publication. An
+unselected remote target remains unverified; no previous success is presented as
+fresh evidence. Individual backend imports and versions remain in the detailed report.
 
-The summary separates configuration import from `configuration_validated`, `verified`, and `not_configured` entry states. Missing capabilities do not prevent recording research questions. A configured target that fails verification fails installation. `var/state/installation/job-readiness.json` records per-target, per-entry readiness and configuration digests. These probes do not submit calculations; validate execution with a bounded scientific Job. A healthy Host does not imply that molecular rendering or any solver is available.
+`--purge-runtime` removes owned local scientific stores only when no unfinished
+recorded Jobs or live processes reference them. External, remote and unowned stores
+are retained and listed in the uninstall result.
+Ownership of stores created during a failed preparation is also retained for retry
+and cleanup. With `--purge-all`, retained external stores still survive removal of
+the installation directory; their paths are listed in the result.
 
 Reports and email check/prepare/send/status run through native bash; job_* manages scientific computation. Email retains installation credentials and durable delivery receipts.

@@ -10,14 +10,18 @@ import shutil
 import stat
 import subprocess
 import sys
+import fcntl
+from contextlib import ExitStack
 from pathlib import Path
 
 try:
     from ._installation_metadata import read_installation_metadata, read_workspace_root
     from ._terminal_ui import Spinner, ask_text as ask, ask_yes_no, failure, field, note, section, success, title
+    from . import _job_install
 except ImportError:
     from _installation_metadata import read_installation_metadata, read_workspace_root
     from _terminal_ui import Spinner, ask_text as ask, ask_yes_no, failure, field, note, section, success, title
+    import _job_install
 
 
 SERVICE_NAMES = (
@@ -336,6 +340,18 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
     if args.purge_workspaces:
         workspace_root = _validated_workspace_purge_target(root, workspace_root)
     activity = Spinner("Stopping ResearchAgent services", stream=sys.stderr, enabled=show_progress)
+    guards = ExitStack()
+    lock = root / 'var/state/installation/maintenance.lock'
+    lock.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if lock.is_symlink():
+        raise ValueError('maintenance lock cannot be a symlink')
+    try:
+        operation = guards.enter_context(lock.open('a'))
+        os.chmod(lock, 0o600)
+        fcntl.flock(operation, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BaseException:
+        guards.close()
+        raise
     activity.start()
     try:
         stopped = stop_services(args, root)
@@ -347,7 +363,12 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
         managed = [root / "releases", root / "runtimes/pi", root / "var/cache",
                    root / "var/state/installation/install-state.json",
                    root / "var/state/installation/source-provenance.json"]
+        retained_job_environments = []
         if args.purge_runtime:
+            scientific, retained_job_environments = _job_install.cleanup_stores(root, workspace_root, guards)
+            managed.extend(scientific)
+            if not retained_job_environments:
+                managed.extend([root / _job_install.RECORD, root / _job_install.STORES, root / 'var/state/installation/job-readiness.json'])
             # External environments require a matching installation ownership receipt.
             config = json.loads((root / "etc/installation.json").read_text())
             env_root = Path(config["env_root"])
@@ -372,10 +393,13 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
         activity.succeed("ResearchAgent application files removed")
         return {"ok": True, "install_root": str(root), "workspace_root": str(workspace_root), "stopped_services": stopped, "removed": removed,
                 "preserved_workspaces": not args.purge_workspaces, "preserved_config": not args.purge_config,
-                "preserved_runtime": not args.purge_runtime, "link_relay": relay_result}
+                "preserved_runtime": not args.purge_runtime, "link_relay": relay_result,
+                'retained_job_environments': retained_job_environments}
     except BaseException:
         activity.fail("ResearchAgent uninstall failed")
         raise
+    finally:
+        guards.close()
 
 
 def _validated_workspace_purge_target(root: Path, configured: Path) -> Path:
