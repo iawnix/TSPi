@@ -1,6 +1,6 @@
-# Contributing to ResearchAgent
+# Contributing to CoRAgent
 
-Thank you for helping improve ResearchAgent. The project is a domain-neutral Research
+Thank you for helping improve CoRAgent. The project is a domain-neutral Research
 Harness with a computational-chemistry skill bundle. Contributions should keep
 the Harness lifecycle, ResearchMap authority, and registered capability
 contracts explicit.

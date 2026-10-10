@@ -11,7 +11,7 @@ test('upstream Pi server exposes its native services before any product session'
   process.env.PI_AGENT_DIR=join(root,'agent');
   process.env.PI_CODING_AGENT_DIR=process.env.PI_AGENT_DIR;
   process.env.PI_EXPERIMENTAL='1';
-  process.env.RESEARCH_AGENT_PI_DIAGNOSTIC_FILE=join(root,'pi-diagnostics.log');
+  process.env.CORAGENT_PI_DIAGNOSTIC_FILE=join(root,'pi-diagnostics.log');
   await mkdir(process.env.PI_AGENT_DIR);
   const fromSource=(name)=>import(pathToFileURL(join(pinnedPiSource(),name)).href);
   const { startForegroundServer }=await fromSource('packages/coding-agent/src/experimental/server.ts');

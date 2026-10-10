@@ -82,10 +82,10 @@ def resource(root, relative):
 def profiles(package):
     metadata = json.loads((package / 'package.json').read_text())
     result = {}
-    for relative in metadata.get('researchAgent', {}).get('environments', []):
+    for relative in metadata.get('coragent', {}).get('environments', []):
         path = resource(package, relative)
         document = json.loads(path.read_text())
-        if document.get('schema_version') != 'research-agent-environments/1':
+        if document.get('schema_version') != 'coragent-environments/1':
             raise ValueError('unsupported environment profile schema')
         for identifier, profile in document['profiles'].items():
             if identifier in result or not re.fullmatch(r'[A-Za-z0-9_.-]+', identifier):
@@ -136,7 +136,7 @@ def read_input(path, inputs, *, required=False):
 
 
 def plan(args, package=ROOT):
-    root = Path(args.install_root or Path.home() / '.local/share/research-agent').expanduser().resolve()
+    root = Path(args.install_root or Path.home() / '.local/share/coragent').expanduser().resolve()
     inputs = {}
     installed_job = read_input(root / 'etc/job.toml', inputs)
     raw = read_input(args.job_config, inputs, required=True) if args.job_config else installed_job
@@ -149,7 +149,7 @@ def plan(args, package=ROOT):
     settings = copy.deepcopy(settings)
     previous_raw = read_input(root / RECORD, inputs)
     previous = json.loads(previous_raw) if previous_raw else {'environments': []}
-    if previous_raw and (not isinstance(previous, dict) or previous.get('schema_version') != 'research-agent-job-install/1'
+    if previous_raw and (not isinstance(previous, dict) or previous.get('schema_version') != 'coragent-job-install/1'
                         or not isinstance(previous.get('environments'), list)):
         raise ValueError('invalid managed environment record: ' + str(root / RECORD))
     for row in previous['environments']:
@@ -173,7 +173,7 @@ def plan(args, package=ROOT):
     if (roots.keys() | condas.keys()) - settings['environments'].keys():
         raise ValueError('software root or Conda target is not configured')
     identity = digest(os.fsencode(root))[:16]
-    default_store = str(Path.home() / 'soft/research-agent/job-envs' / identity)
+    default_store = str(Path.home() / 'soft/coragent/job-envs' / identity)
     rows, selected_targets = [], set(getattr(args, 'verify_job_target', None) or [])
     for selection in dict.fromkeys(selections):
         target_name, separator, identifier = selection.partition(':')
@@ -236,23 +236,23 @@ def plan(args, package=ROOT):
         if structure is None:
             continue
         variables = structure.setdefault('environment', {})
-        if {'RESEARCH_AGENT_NAME_RESOLVER_CONFIG', 'RESEARCH_AGENT_INSTALL_ROOT'} & variables.keys():
+        if {'CORAGENT_NAME_RESOLVER_CONFIG', 'CORAGENT_INSTALL_ROOT'} & variables.keys():
             continue
         row = next((item for item in rows if item['target'] == name and item['store'] and item.get('prepare')), None)
         if target['kind'] == 'local':
-            variables['RESEARCH_AGENT_NAME_RESOLVER_CONFIG'] = str(resolver_path)
+            variables['CORAGENT_NAME_RESOLVER_CONFIG'] = str(resolver_path)
             resolver_bindings.append(name)
         elif row:
             remote_configuration = tomllib.loads(resolver.decode())
             for backend, backend_settings in remote_configuration.get('backends', {}).items():
                 backend_settings['cache_dir'] = str(PurePosixPath(row['store']) / 'cache/name-resolver' / backend)
             remote_content = toml_bytes(remote_configuration)
-            variables['RESEARCH_AGENT_NAME_RESOLVER_CONFIG'] = str(PurePosixPath(row['store']) / 'resolver' /
+            variables['CORAGENT_NAME_RESOLVER_CONFIG'] = str(PurePosixPath(row['store']) / 'resolver' /
                 digest(remote_content) / 'name-resolver.toml')
-            remote_resolvers[name] = {'path': variables['RESEARCH_AGENT_NAME_RESOLVER_CONFIG'], 'content': remote_content.decode()}
+            remote_resolvers[name] = {'path': variables['CORAGENT_NAME_RESOLVER_CONFIG'], 'content': remote_content.decode()}
             resolver_bindings.append(name)
     contract().validate_job_config(settings)
-    return {'schema_version': 'research-agent-job-install/1', 'settings': settings,
+    return {'schema_version': 'coragent-job-install/1', 'settings': settings,
             'environments': rows, 'targets': sorted(selected_targets), 'inputs': inputs,
             'resolver': resolver.decode(), 'resolver_bindings': resolver_bindings, 'remote_resolvers': remote_resolvers,
             'configuration_source': 'supplied' if args.job_config else 'preserved' if raw else 'generated',
@@ -306,8 +306,8 @@ def invoke_target(target, request, package, *, timeout=3600, log_path=None):
                                timeout=timeout + 30, env=environment)
     if log_path:
         write_private(log_path, (completed.stdout + '\n' + completed.stderr).encode())
-    lines = [line.removeprefix('RESEARCH_AGENT_PROVISION=') for line in completed.stdout.splitlines()
-             if line.startswith('RESEARCH_AGENT_PROVISION=')]
+    lines = [line.removeprefix('CORAGENT_PROVISION=') for line in completed.stdout.splitlines()
+             if line.startswith('CORAGENT_PROVISION=')]
     if len(lines) == 1 and completed.returncode:
         result = json.loads(lines[0])
         raise RuntimeError('target environment preparation failed: ' + result.get('error', 'unknown'))
@@ -358,7 +358,7 @@ def prepare(value, args, package, python):
     for name in value['resolver_bindings']:
         target = candidate['environments'][name]
         if target['kind'] == 'local':
-            target['backends']['structure']['environment']['RESEARCH_AGENT_NAME_RESOLVER_CONFIG'] = str(resolver)
+            target['backends']['structure']['environment']['CORAGENT_NAME_RESOLVER_CONFIG'] = str(resolver)
     config = stage / 'job.toml'
     write_private(config, toml_bytes(candidate))
     report = stage / 'readiness.json'
@@ -416,10 +416,10 @@ def verify_publication(value, python):
 
 def acceptance_environment(package, python):
     environment = dict(os.environ)
-    for key in ('PYTHONPATH', 'PYTHONHOME', 'RESEARCH_AGENT_INSTALL_ROOT', 'RESEARCH_AGENT_RUNTIME_MANIFEST',
-                'RESEARCH_AGENT_WORKSPACE_ROOT'):
+    for key in ('PYTHONPATH', 'PYTHONHOME', 'CORAGENT_INSTALL_ROOT', 'CORAGENT_RUNTIME_MANIFEST',
+                'CORAGENT_WORKSPACE_ROOT'):
         environment.pop(key, None)
-    environment.update(RESEARCH_AGENT_PACKAGE_ROOT=str(package), RESEARCH_AGENT_PYTHON=python,
+    environment.update(CORAGENT_PACKAGE_ROOT=str(package), CORAGENT_PYTHON=python,
                        PYTHONNOUSERSITE='1', PYTHONDONTWRITEBYTECODE='1')
     return environment
 

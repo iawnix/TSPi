@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect a Research Agent installation layout without mutating it."""
+"""Inspect a CoRAgent installation layout without mutating it."""
 
 from __future__ import annotations
 

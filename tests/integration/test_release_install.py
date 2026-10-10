@@ -97,13 +97,13 @@ def test_real_release_build_excludes_development_tree(tmp_path: Path) -> None:
     assert "config/pi-patches/001-workspaces.patch" in names
     assert "scripts/prepare_pi_source.py" in names
     assert not any(name.startswith("backend/src/research_agent/application/web/") for name in names)
-    assert not any(name.startswith(("packages/research-compute/", "packages/research-agent-provider-runtime/")) for name in names)
+    assert not any(name.startswith(("packages/research-compute/", "packages/coragent-provider-runtime/")) for name in names)
     assert "backend/src/research_agent/research/contracts/finding_candidates.schema.json" not in names
     assert "backend/src/research_agent/research/model.py" not in names
     assert "backend/src/research_agent/research/operational_ids.py" in names
     assert "backend/src/research_agent/research/nodes.py" in names
     assert distribution == build_result["python_distribution"]
-    assert distribution["name"] == "research-agent"
+    assert distribution["name"] == "coragent"
     assert distribution["version"] == json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
     assert distribution["path"] in names
     assert sum(name.startswith("python-dist/") and name.endswith(".whl") for name in names) == 1
@@ -125,11 +125,11 @@ def _synthetic_release(
     temporary_archive = root / "package.tgz"
     files = {name: b"\n" for name in required_files}
     files["package.json"] = json.dumps(
-        {"name": "@iawnix/research-agent", "version": version},
+        {"name": "@iawnix/coragent", "version": version},
         separators=(",", ":"),
     ).encode() + b"\n"
-    files["research-agent"] = b"#!/usr/bin/env bash\nexit 0\n"
-    files["libexec/research-agent-host"] = b"#!/usr/bin/env bash\nexit 0\n"
+    files["coragent"] = b"#!/usr/bin/env bash\nexit 0\n"
+    files["libexec/coragent-host"] = b"#!/usr/bin/env bash\nexit 0\n"
     files["README.md"] = f"release {marker}\n".encode()
     files["config/name-resolver.example.toml"] = (ROOT / "config/name-resolver.example.toml").read_bytes()
     files.update(extra_files or {})
@@ -159,17 +159,17 @@ def _synthetic_release(
         for name, content in sorted(files.items()):
             info = tarfile.TarInfo(name if name.startswith("package/") else f"package/{name}")
             info.size = len(content)
-            info.mode = 0o755 if name in {"research-agent", "libexec/research-agent-host", "apps/agent-cli/research_web_bridge.py"} else 0o644
+            info.mode = 0o755 if name in {"coragent", "libexec/coragent-host", "apps/agent-cli/research_web_bridge.py"} else 0o644
             archive.addfile(info, io.BytesIO(content))
     digest = hashlib.sha256(temporary_archive.read_bytes()).hexdigest()
     release_id = f"{version}-sha256-{digest[:16]}"
-    archive_name = f"research-agent-{release_id}.tgz"
+    archive_name = f"coragent-{release_id}.tgz"
     archive_path = root / archive_name
     temporary_archive.rename(archive_path)
     manifest = {
-        "schema_version": "research-agent-release/1",
+        "schema_version": "coragent-release/1",
         "release_id": release_id,
-        "package": {"name": "@iawnix/research-agent", "version": version},
+        "package": {"name": "@iawnix/coragent", "version": version},
         "python_distribution": distribution,
         "archive": {
             "filename": archive_name,
@@ -179,21 +179,21 @@ def _synthetic_release(
         "source": {"git_commit": "test", "dirty": False},
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
     }
-    manifest_path = root / "research-agent-release.json"
+    manifest_path = root / "coragent-release.json"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     return manifest_path, release_id
 
 
 def _synthetic_wheel(root: Path, *, version: str, package_files: dict[str, bytes]) -> Path:
-    wheel = root / f"research_agent-{version}-py3-none-any.whl"
-    metadata = f"Metadata-Version: 2.4\nName: research-agent\nVersion: {version}\n\n".encode()
+    wheel = root / f"coragent-{version}-py3-none-any.whl"
+    metadata = f"Metadata-Version: 2.4\nName: coragent\nVersion: {version}\n\n".encode()
     with zipfile.ZipFile(wheel, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, content in sorted(package_files.items()):
             archive.writestr(name, content)
-        archive.writestr(f"research_agent-{version}.dist-info/METADATA", metadata)
+        archive.writestr(f"coragent-{version}.dist-info/METADATA", metadata)
         archive.writestr(
-            f"research_agent-{version}.dist-info/WHEEL",
+            f"coragent-{version}.dist-info/WHEEL",
             "Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
         )
-        archive.writestr(f"research_agent-{version}.dist-info/RECORD", "")
+        archive.writestr(f"coragent-{version}.dist-info/RECORD", "")
     return wheel

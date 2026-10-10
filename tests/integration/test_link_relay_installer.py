@@ -51,9 +51,9 @@ def test_link_relay_unit_is_independent_from_research_agent_host(tmp_path: Path)
         "/usr/bin/node",
     )
 
-    assert "Description=ResearchAgent Link Relay" in unit
-    assert "research-agent-relay.service" not in unit
-    assert "ts-app-server-research-agent.service" not in unit
+    assert "Description=CoRAgent Link Relay" in unit
+    assert "coragent-relay.service" not in unit
+    assert "coragent.service" not in unit
     assert '--public-url "https://relay.example.test"' in unit
     assert "WantedBy=multi-user.target" in unit
 
@@ -114,9 +114,9 @@ def test_link_relay_uninstaller_removes_unit_when_code_root_is_missing(tmp_path:
     state = tmp_path / "state"
     unit_dir = tmp_path / "systemd-user"
     unit_dir.mkdir(parents=True)
-    unit = unit_dir / "research-agent-relay.service"
+    unit = unit_dir / "coragent-relay.service"
     unit.write_text(
-        """[Service]\nDescription=ResearchAgent Link Relay\nWorkingDirectory=%s\n""" % (install_root / "current" / "services/relay"),
+        """[Service]\nDescription=CoRAgent Link Relay\nWorkingDirectory=%s\n""" % (install_root / "current" / "services/relay"),
         encoding="utf-8",
     )
     monkeypatch.setattr(uninstaller, "service_directory", lambda _scope: unit_dir)
@@ -149,14 +149,14 @@ def test_link_relay_uninstaller_removes_unit_when_code_root_is_missing(tmp_path:
 
 def test_package_uninstaller_recognizes_installation_owned_relay_unit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     home = tmp_path / "home"
-    root = home / "research-agent"
+    root = home / "coragent"
     unit_dir = home / ".config/systemd/user"
     unit_dir.mkdir(parents=True)
-    unit = unit_dir / "research-agent-relay.service"
+    unit = unit_dir / "coragent-relay.service"
     unit.write_text(
-        """[Service]\nDescription=ResearchAgent Link Relay\nWorkingDirectory=%s\n""" % (root / "runtimes/link-relay/current/services/relay"),
+        """[Service]\nDescription=CoRAgent Link Relay\nWorkingDirectory=%s\n""" % (root / "runtimes/link-relay/current/services/relay"),
         encoding="utf-8",
     )
     monkeypatch.setattr(package_uninstaller.Path, "home", classmethod(lambda _cls: home))
 
-    assert package_uninstaller.service_belongs_to_root("research-agent-relay.service", root, "user")
+    assert package_uninstaller.service_belongs_to_root("coragent-relay.service", root, "user")

@@ -33,7 +33,7 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
         sendJson(response, status, { error: error.code, message: error.message });
         return;
       }
-      logger.error?.(`ResearchAgent Link Relay request failed: ${safeMessage(error)}`);
+      logger.error?.(`CoRAgent Link Relay request failed: ${safeMessage(error)}`);
       sendJson(response, 500, { error: "internal_error", message: "relay request failed" });
     });
   });
@@ -41,7 +41,7 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
 
   server.on("upgrade", (request, socket, head) => {
     void handleUpgrade(request, socket, head).catch((error) => {
-      logger.warn?.(`ResearchAgent Link Relay WebSocket rejected: ${safeMessage(error)}`);
+      logger.warn?.(`CoRAgent Link Relay WebSocket rejected: ${safeMessage(error)}`);
       rejectUpgrade(socket, error instanceof HttpError ? error.status : 401, "WebSocket connection rejected");
     });
   });
@@ -103,10 +103,10 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
     const protocols = String(request.headers["sec-websocket-protocol"] ?? "")
       .split(",")
       .map((value) => value.trim());
-    if (!protocols.includes(LINK_PROTOCOL)) throw new HttpError(400, "protocol", "research-agent-link.v1 is required");
+    if (!protocols.includes(LINK_PROTOCOL)) throw new HttpError(400, "protocol", "coragent-link.v1 is required");
     const identity = authenticateRequest(request, store);
     if (identity.role === "device" && !hosts.has(identity.hostId)) {
-      throw new HttpError(503, "host_offline", "ResearchAgent Host is offline");
+      throw new HttpError(503, "host_offline", "CoRAgent Host is offline");
     }
     webSockets.handleUpgrade(request, socket, head, (webSocket) => {
       webSocket.linkAlive = true;
@@ -123,7 +123,7 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
     if (previous) previous.socket.close(4001, "Host connection replaced");
     const active = { socket, identity, connections: new Map() };
     hosts.set(identity.hostId, active);
-    logger.info?.(`ResearchAgent Link Relay Host connected: ${identity.hostId}`);
+    logger.info?.(`CoRAgent Link Relay Host connected: ${identity.hostId}`);
     socket.on("message", (data, isBinary) => {
       try {
         if (isBinary) {
@@ -137,7 +137,7 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
         const device = active.connections.get(control.connectionId);
         if (device) device.socket.close(control.code ?? 1000, "Host closed Link connection");
       } catch (error) {
-        logger.warn?.(`ResearchAgent Link Relay closed malformed Host connection: ${safeMessage(error)}`);
+        logger.warn?.(`CoRAgent Link Relay closed malformed Host connection: ${safeMessage(error)}`);
         socket.close(4000, "invalid Link frame");
       }
     });
@@ -147,17 +147,17 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
       for (const device of active.connections.values()) {
         device.hostToDevice.stop();
         device.deviceToHost.stop();
-        device.socket.close(1012, "ResearchAgent Host disconnected");
+        device.socket.close(1012, "CoRAgent Host disconnected");
       }
       active.connections.clear();
-      if (current) logger.info?.(`ResearchAgent Link Relay Host disconnected: ${identity.hostId}`);
+      if (current) logger.info?.(`CoRAgent Link Relay Host disconnected: ${identity.hostId}`);
     });
   }
 
   function attachDevice(socket, identity) {
     const host = hosts.get(identity.hostId);
     if (!host) {
-      socket.close(1013, "ResearchAgent Host is offline");
+      socket.close(1013, "CoRAgent Host is offline");
       return;
     }
     const previous = devices.get(identity.deviceId);
@@ -191,7 +191,7 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
         if (!isBinary) throw new Error("device Link messages must be binary");
         active.deviceToHost.enqueue(data);
       } catch (error) {
-        logger.warn?.(`ResearchAgent Link Relay closed malformed device connection: ${safeMessage(error)}`);
+        logger.warn?.(`CoRAgent Link Relay closed malformed device connection: ${safeMessage(error)}`);
         socket.close(4000, "invalid Link frame");
       }
     });
@@ -219,7 +219,7 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
     },
     async close() {
       clearInterval(heartbeat);
-      for (const socket of webSockets.clients) socket.close(1001, "ResearchAgent Link Relay stopping");
+      for (const socket of webSockets.clients) socket.close(1001, "CoRAgent Link Relay stopping");
       await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
       webSockets.close();
       store.close();
@@ -278,10 +278,10 @@ function normalizePublicUrl(value) {
   const url = new URL(value);
   const loopback = ["127.0.0.1", "::1", "localhost"].includes(url.hostname);
   if (url.protocol !== "https:" && !(loopback && url.protocol === "http:")) {
-    throw new Error("ResearchAgent Link Relay public URL must use HTTPS except on loopback");
+    throw new Error("CoRAgent Link Relay public URL must use HTTPS except on loopback");
   }
   if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
-    throw new Error("ResearchAgent Link Relay public URL must contain only scheme, host, and port");
+    throw new Error("CoRAgent Link Relay public URL must contain only scheme, host, and port");
   }
   return url.origin;
 }

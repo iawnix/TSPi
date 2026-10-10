@@ -34,7 +34,7 @@ def test_github_selection_runs_the_resolved_checkout_and_keeps_private_inputs_lo
         return 0
     monkeypatch.setattr(install_from_github, "checkout_github", checkout)
     monkeypatch.setattr(installer, "run_selected", run_selected)
-    assert installer.main(["install", "--source", "github", "--research-agent-ref", "release-tag",
+    assert installer.main(["install", "--source", "github", "--coragent-ref", "release-tag",
                            "--config-dir", str(config), "--install-root", str(tmp_path / "install"),
                            "--non-interactive", "--yes"]) == 0
     assert not seen[0].exists()
@@ -51,8 +51,8 @@ def test_local_selection_never_downloads_and_pins_actual_head(tmp_path, monkeypa
     monkeypatch.setattr(install_from_github, "checkout_github", lambda *args: pytest.fail("local source must not download"))
     def run(command, **kwargs):
         assert command[2] == str(selected / "scripts/install_wizard.py")
-        assert command[command.index("--research-agent-commit") + 1] == COMMIT
-        assert command[command.index("--research-agent-ref") + 1] == COMMIT
+        assert command[command.index("--coragent-commit") + 1] == COMMIT
+        assert command[command.index("--coragent-ref") + 1] == COMMIT
         return SimpleNamespace(returncode=0)
     monkeypatch.setattr(installer.subprocess, "run", run)
     assert installer.main(["install", "--source-root", str(selected), "--allow-dirty", "--non-interactive"]) == 0
@@ -72,7 +72,7 @@ def test_standalone_relay_routes_to_its_installer(tmp_path, monkeypatch):
     monkeypatch.setattr(installer, "local_source", lambda *args, **kwargs: (tmp_path, COMMIT))
     def run(command, **kwargs):
         assert command[2] == str(tmp_path / "scripts/install_link_relay.py")
-        assert "--research-agent-commit" not in command
+        assert "--coragent-commit" not in command
         assert command[command.index("--source-root") + 1] == str(tmp_path)
         return SimpleNamespace(returncode=0)
     monkeypatch.setattr(installer.subprocess, "run", run)

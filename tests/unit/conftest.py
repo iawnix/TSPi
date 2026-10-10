@@ -18,7 +18,7 @@ def execution_platform_fixture(tmp_path, monkeypatch):
     prefix = tmp_path / "target-python"
     venv.EnvBuilder(with_pip=False, symlinks=True).create(prefix)
     site = next(prefix.glob('lib/python*/site-packages'))
-    # Wheel tests import scientific dependencies from the base and ResearchAgent from
+    # Wheel tests import scientific dependencies from the base and CoRAgent from
     # the overlay. Keep both installed package directories in this test target.
     packages = [path for path in sys.path if Path(path).name in {'site-packages', 'dist-packages'}]
     (site / 'fixture-packages.pth').write_text('\n'.join(packages) + '\n')
@@ -64,7 +64,7 @@ command = \"xtb\"
         .replace("LOCK_PATH", json.dumps(str(tmp_path / "fixture.lock"))),
         encoding="utf-8",
     )
-    monkeypatch.setenv("RESEARCH_AGENT_JOB_CONFIG", str(config))
+    monkeypatch.setenv("CORAGENT_JOB_CONFIG", str(config))
 
 
 @pytest.fixture

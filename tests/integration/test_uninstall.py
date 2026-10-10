@@ -40,11 +40,11 @@ def test_uninstall_preserves_workspace_and_config_by_default(tmp_path: Path) -> 
     web_token.write_text("w" * 43)
     phone_connection = root / "var/state/host/link.json"
     phone_connection.parent.mkdir(parents=True, exist_ok=True)
-    phone_connection.write_text('{"schema_version":"research-agent-link/1"}\n', encoding="utf-8")
+    phone_connection.write_text('{"schema_version":"coragent-link/1"}\n', encoding="utf-8")
     download = root / "downloads/client.apk"
     download.parent.mkdir()
     download.write_bytes(b"apk")
-    (root / "research-agent").symlink_to("./current")
+    (root / "coragent").symlink_to("./current")
 
     result = uninstall(_args(root))
 
@@ -62,10 +62,10 @@ def test_uninstall_removes_owned_stable_links(tmp_path: Path, dangling: bool) ->
     args = _args(root)
     if not dangling: (root / "releases/old/agent").mkdir(parents=True)
     (root / "current").symlink_to("releases/old")
-    (root / "research-agent").symlink_to("current/agent/research-agent")
+    (root / "coragent").symlink_to("current/agent/coragent")
     uninstall(args)
     assert not (root / "current").is_symlink()
-    assert not (root / "research-agent").is_symlink()
+    assert not (root / "coragent").is_symlink()
     assert root.is_dir()
 
 
@@ -74,8 +74,8 @@ def test_uninstall_does_not_follow_external_bin_directory(tmp_path: Path) -> Non
     root.mkdir()
     external = tmp_path / "external"
     external.mkdir()
-    launcher = external / "research-agent"
-    launcher.symlink_to(root / "./current/agent/research-agent")
+    launcher = external / "coragent"
+    launcher.symlink_to(root / "./current/agent/coragent")
     (root / "bin").symlink_to(external)
 
     uninstall(_args(root))
@@ -119,7 +119,7 @@ def test_interactive_defaults_run_safe_uninstall_and_preserve_data(tmp_path: Pat
     config.write_text("[remote]\n", encoding="utf-8")
     runtime = paths(root).env_root / "base/test"
     runtime.mkdir(parents=True)
-    (root / "research-agent").symlink_to("./current")
+    (root / "coragent").symlink_to("./current")
     monkeypatch.setattr(uninstaller.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(uninstaller.sys.stdout, "isatty", lambda: True)
     replies = iter(["", "", "", ""])
@@ -163,7 +163,7 @@ def test_uninstall_purge_removes_the_dedicated_installation_root(tmp_path: Path)
     from research_agent.foundation.layout import paths
     paths(root).initialize()
     (root / "workspaces/ts_001").mkdir(parents=True)
-    (root / "research-agent").symlink_to("./current")
+    (root / "coragent").symlink_to("./current")
     install_uninstaller(root, Path(__file__).resolve().parents[2])
     download = root / "downloads/client.apk"
     download.parent.mkdir()
@@ -236,12 +236,12 @@ def test_installed_uninstaller_removes_an_immutable_partial_release(tmp_path: Pa
 def test_uninstall_rejects_a_source_checkout_without_installation_metadata(tmp_path: Path) -> None:
     root = tmp_path / "source"
     root.mkdir()
-    (root / "research-agent").write_text("#!/bin/sh\n")
+    (root / "coragent").write_text("#!/bin/sh\n")
 
-    with pytest.raises(ValueError, match="trusted ResearchAgent installation metadata"):
+    with pytest.raises(ValueError, match="trusted CoRAgent installation metadata"):
         uninstaller.validate_root(root)
 
-    assert (root / "research-agent").is_file()
+    assert (root / "coragent").is_file()
 
 
 def test_uninstall_rejects_non_object_package_state(tmp_path: Path) -> None:
@@ -327,7 +327,7 @@ def test_installed_uninstaller_removes_owned_relay_without_source_tree(tmp_path:
     state.mkdir(parents=True)
     (state / 'relay.db').write_bytes(b'preserved state')
     (root / 'etc/link-relay.json').write_text(json.dumps({
-        'schema': 'research-agent-install-link-relay/1', 'owned': True, 'install_root': str(root),
+        'schema': 'coragent-install-link-relay/1', 'owned': True, 'install_root': str(root),
         'relay_install_root': str(relay_root), 'state_dir': str(state), 'service_scope': 'none',
     }))
     completed = subprocess.run([

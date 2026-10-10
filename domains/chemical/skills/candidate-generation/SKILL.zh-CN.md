@@ -3,7 +3,7 @@ name: candidate-generation
 description: 通过化学构造、扫描、QST、NEB 或构象与取向采样生成过渡态候选几何。
 ---
 
-# ResearchAgent 过渡态候选生成
+# CoRAgent 过渡态候选生成
 
 [English version](SKILL.md)
 

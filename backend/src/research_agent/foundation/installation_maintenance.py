@@ -15,7 +15,7 @@ import uuid
 from .io import now_iso, read_json, write_json
 from .path_safety import lexical_path, path_has_symlink
 
-_SCHEMA = "research-agent-installation-maintenance/1"
+_SCHEMA = "coragent-installation-maintenance/1"
 _TERMINAL = {"completed", "rolled_back"}
 _STATES = _TERMINAL | {"preparing", "starting", "failed"}
 

@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_resources_are_complete_and_match_their_bytes():
     validate_resources(ROOT)
     inventory = json.loads((ROOT / "config/resources.json").read_text())["files"]
-    assert "prompts/research-agent.md" in inventory
+    assert "prompts/coragent.md" in inventory
     for directory in ("skills", "domains", "prompts"):
         for path in (ROOT / directory).rglob("*"):
             if path.is_file() and "__pycache__" not in path.parts:
@@ -24,7 +24,7 @@ def test_execution_catalog_uses_its_own_schema_and_resources():
     Draft202012Validator.check_schema(schema)
     package = json.loads((ROOT / "package.json").read_text())
     assert package["pi"]["extensions"] == []
-    for relative in package["researchAgent"]["execution"]:
+    for relative in package["coragent"]["execution"]:
         catalog = json.loads((ROOT / relative).read_text())
         Draft202012Validator(schema).validate(catalog)
         for executor in catalog["executors"]:

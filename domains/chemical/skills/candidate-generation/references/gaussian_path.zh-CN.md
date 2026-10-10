@@ -24,7 +24,7 @@
 下列命令使用系统列出的真实 Skill 路径和工作区路径：
 
 ```text
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.path-candidates --version 1 --input spec=<workspace>/spec.json --input-artifact <spec-ref> --output <workspace>/candidates-request.json -- --enumerate-stereo --conformers 2
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config "$CORAGENT_JOB_CONFIG" --environment local --executor chemical.path-candidates --version 1 --input spec=<workspace>/spec.json --input-artifact <spec-ref> --output <workspace>/candidates-request.json -- --enumerate-stereo --conformers 2
 ```
 
 将返回的 request_file/request_sha256 提交并收集后，再检查候选。入口使用目标 structure 绑定，每个生成文件均保留 Job 来源。
@@ -34,13 +34,13 @@
 对齐并分离反应物片段。这些是未经优化的端点种子；需检查输入并保留失败分支，不能保证 QST2
 收敛或有限候选集完整。登记所选分支的 spec 与几何。分支 spec 是
 `chemical.diels_alder_path@1` 的验收对象，不得混用不同 spec 的证据满足同一路径。
-生成的 `ResearchAgentSpec` 标题将求解器输出绑定到分支 spec 摘要。TS 输入与 checkpoint 必须保留
+生成的 `CoRAgentSpec` 标题将求解器输出绑定到分支 spec 摘要。TS 输入与 checkpoint 必须保留
 该标题，原始 TS 和 IRC log 也必须回显它。
 
 使用既有 method-selection helper 准备 TS 请求：
 
 ```text
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config <installation>/job.toml --environment local --executor chemical.gaussian-input --version 1 --input input=<branch>/ts.gjf --collect results/ts.chk --output <workspace>/ts-request.json -- --method M062X --basis '6-31G**' --threads 12 --memory-mb 4000 --validation saddle
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config <installation>/job.toml --environment local --executor chemical.gaussian-input --version 1 --input input=<branch>/ts.gjf --collect results/ts.chk --output <workspace>/ts-request.json -- --method M062X --basis '6-31G**' --threads 12 --memory-mb 4000 --validation saddle
 ```
 
 将返回的 `request_file` 和 `request_sha256`  交给 `job_start`，在 Job 终止后收集结果。
@@ -49,7 +49,7 @@ runner 成功不是科学结论：可用已注册鞍点验证器检查收集的�
 当选择 IRC 作为下一步时，从该 Job 收集的 `ts.chk` 准备正反 IRC 输入：
 
 ```text
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.path-irc --version 1 --input spec=<branch>/spec.json --input checkpoint=<collected-ts.chk> --input-artifact <spec-ref> --input-artifact <checkpoint-ref> --output <workspace>/irc-request.json
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config "$CORAGENT_JOB_CONFIG" --environment local --executor chemical.path-irc --version 1 --input spec=<branch>/spec.json --input checkpoint=<collected-ts.chk> --input-artifact <spec-ref> --input-artifact <checkpoint-ref> --output <workspace>/irc-request.json
 ```
 
 先提交并收集 IRC 输入准备 Job，再使用其生成的输入和检查点。

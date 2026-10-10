@@ -10,7 +10,7 @@ endpoint = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
 timeout_seconds = 10
 cache = true
 # cache_dir = "/absolute/path/to/a/private/cache"
-user_agent = "ResearchAgent-chemical-name-resolver/1"
+user_agent = "CoRAgent-chemical-name-resolver/1"
 
 # OPSIN provides deterministic IUPAC parsing when PubChem does not index a
 # name. Auto lookup tries each enabled backend in manifest order.
@@ -19,4 +19,4 @@ enabled = true
 endpoint = "https://opsin.ch.cam.ac.uk/opsin"
 timeout_seconds = 10
 cache = true
-user_agent = "ResearchAgent-chemical-name-resolver/1"
+user_agent = "CoRAgent-chemical-name-resolver/1"

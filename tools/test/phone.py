@@ -39,12 +39,12 @@ def capture_phone(args, root, run, record, replay):
 
 
 def main():
-    run=Path(os.environ['RESEARCH_AGENT_TEST_RUN_ROOT'])
+    run=Path(os.environ['CORAGENT_TEST_RUN_ROOT'])
     mobile=run/'phone/apps/mobile'
-    flutter=str(Path(os.environ['RESEARCH_AGENT_TEST_FLUTTER_ROOT'])/'bin/flutter')
+    flutter=str(Path(os.environ['CORAGENT_TEST_FLUTTER_ROOT'])/'bin/flutter')
     subprocess.run([flutter,'pub','get','--offline','--enforce-lockfile'],cwd=mobile,check=True)
     files=sys.argv[1:] or [
-        'test/connection_settings_test.dart','test/tspi_link_pairing_test.dart',
+        'test/connection_settings_test.dart','test/link_pairing_test.dart',
         'test/settings_store_test.dart','test/host_gateway_test.dart',
         'test/monitor_page_test.dart','test/host_interop_test.dart',
     ]

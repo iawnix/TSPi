@@ -35,9 +35,9 @@ digest through `job_start`. The selected target's `structure` Python binding
 provides RDKit. Collect the Job's JSON and geometries as research materials.
 
 ```text
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.resolve --version 1 --output prepared/lookup.json -- --name 'ethanol'
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.resolve-candidates --version 1 --input candidates=inputs/candidates.json --output prepared/candidates.json
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.seed --version 1 --output prepared/seed.json -- --smiles CCO --charge 0 --multiplicity 1
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config "$CORAGENT_JOB_CONFIG" --environment local --executor chemical.resolve --version 1 --output prepared/lookup.json -- --name 'ethanol'
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config "$CORAGENT_JOB_CONFIG" --environment local --executor chemical.resolve-candidates --version 1 --input candidates=inputs/candidates.json --output prepared/candidates.json
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config "$CORAGENT_JOB_CONFIG" --environment local --executor chemical.seed --version 1 --output prepared/seed.json -- --smiles CCO --charge 0 --multiplicity 1
 ```
 
 Use `chemical.inspect@1` for supplied or revised SMILES when graph checks are needed.

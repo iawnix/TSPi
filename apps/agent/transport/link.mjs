@@ -25,7 +25,7 @@ let activeSocket;
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.once(signal, () => {
     abortController.abort();
-    activeSocket?.close(1000, "ResearchAgent Host stopping");
+    activeSocket?.close(1000, "CoRAgent Host stopping");
   });
 }
 
@@ -37,10 +37,10 @@ async function run() {
     try {
       await connectOnce();
       retryMilliseconds = 1_000;
-      if (!abortController.signal.aborted) throw new Error("ResearchAgent Link disconnected");
+      if (!abortController.signal.aborted) throw new Error("CoRAgent Link disconnected");
     } catch (error) {
       if (abortController.signal.aborted) return;
-      process.stderr.write(`ResearchAgent Link: ${errorMessage(error)}; retrying\n`);
+      process.stderr.write(`CoRAgent Link: ${errorMessage(error)}; retrying\n`);
       await delay(retryMilliseconds, abortController.signal);
       retryMilliseconds = Math.min(retryMilliseconds * 2, 30_000);
     }
@@ -103,7 +103,7 @@ async function connectOnce() {
     abortController.signal.addEventListener(
       "abort",
       () => {
-        socket.close(1000, "ResearchAgent Host stopping");
+        socket.close(1000, "CoRAgent Host stopping");
         finish();
       },
       { once: true },
@@ -126,7 +126,7 @@ function openLocalConnection(relay, connections, connectionId) {
   local.on("data", (chunk) => outgoing.enqueue(chunk));
   local.on("drain", () => flushLocalData(relay, connection));
   local.once("error", (error) => {
-    process.stderr.write(`ResearchAgent Link: local App Server connection failed: ${errorMessage(error)}\n`);
+    process.stderr.write(`CoRAgent Link: local App Server connection failed: ${errorMessage(error)}\n`);
   });
   local.once("close", () => {
     outgoing.stop();
@@ -172,7 +172,7 @@ function parseArguments(arguments_) {
     const option = remaining.shift();
     const value = remaining.shift();
     if (!option?.startsWith("--") || !value || value.startsWith("--")) {
-      throw new Error(`invalid ResearchAgent Link Host argument: ${option ?? ""}`);
+      throw new Error(`invalid CoRAgent Link Host argument: ${option ?? ""}`);
     }
     values[option.slice(2)] = value;
   }
@@ -191,9 +191,9 @@ function linkWebSocketUrl(value) {
   const loopback = ["127.0.0.1", "::1", "localhost"].includes(url.hostname);
   if (url.protocol === "https:") url.protocol = "wss:";
   else if (url.protocol === "http:" && loopback) url.protocol = "ws:";
-  else throw new Error("ResearchAgent Link Relay URL must use HTTPS except on loopback");
+  else throw new Error("CoRAgent Link Relay URL must use HTTPS except on loopback");
   if (url.username || url.password || !["", "/"].includes(url.pathname) || url.search || url.hash) {
-    throw new Error("ResearchAgent Link Relay URL must contain only scheme, host, and port");
+    throw new Error("CoRAgent Link Relay URL must contain only scheme, host, and port");
   }
   url.pathname = LINK_PATH;
   url.search = "";
@@ -202,7 +202,7 @@ function linkWebSocketUrl(value) {
 }
 
 async function resolveWebSocketFactory() {
-  const sourceRoot = process.env.RESEARCH_AGENT_PI_RUNTIME_ROOT;
+  const sourceRoot = process.env.CORAGENT_PI_RUNTIME_ROOT;
   const modulePath = sourceRoot
     ? resolve(sourceRoot, "node_modules/ws/wrapper.mjs")
     : resolve(import.meta.dirname, "../../node_modules/ws/wrapper.mjs");
@@ -224,7 +224,7 @@ function delay(milliseconds, signal) {
       "abort",
       () => {
         clearTimeout(timer);
-        rejectPromise(new Error("ResearchAgent Link stopped"));
+        rejectPromise(new Error("CoRAgent Link stopped"));
       },
       { once: true },
     );

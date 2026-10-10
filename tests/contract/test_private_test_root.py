@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class PrivateTestRootTests(unittest.TestCase):
     def setUp(self):
-        base = Path(os.environ.get("RESEARCH_AGENT_TEST_ENV_ROOT", ROOT / "local_debug")) / "tmp"
+        base = Path(os.environ.get("CORAGENT_TEST_ENV_ROOT", ROOT / "local_debug")) / "tmp"
         base.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.temporary = tempfile.TemporaryDirectory(prefix="privacy-", dir=base)
         self.addCleanup(self.temporary.cleanup)
@@ -89,7 +89,7 @@ class PrivateTestRootTests(unittest.TestCase):
             configure_paths(root)
             with tempfile.TemporaryDirectory() as temporary:
                 self.assertTrue(Path(temporary).is_relative_to(root))
-            for key in ("RESEARCH_AGENT_TEST_ROOT", "TMPDIR", "npm_config_cache", "PIP_CACHE_DIR",
+            for key in ("CORAGENT_TEST_ROOT", "TMPDIR", "npm_config_cache", "PIP_CACHE_DIR",
                         "CONDA_PKGS_DIRS", "XDG_CACHE_HOME"):
                 self.assertTrue(Path(os.environ[key]).is_relative_to(root), key)
 

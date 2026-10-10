@@ -30,7 +30,7 @@ def valid_node_binding(value):
 
 def read_binding(path):
     value = read(path)
-    if (value.get('schema_version') != 'research-agent-job-monitor/2'
+    if (value.get('schema_version') != 'coragent-job-monitor/2'
             or not valid_node_binding(value)
             or any(not value.get(key) for key in ('job_id', 'job_digest'))):
         raise ValueError('monitor_binding_schema_invalid: current Job binding required')
@@ -39,7 +39,7 @@ def read_binding(path):
 
 def read_delivery(path):
     value = read(path)
-    if value.get('schema_version') != 'research-agent-job-monitor-delivery/2':
+    if value.get('schema_version') != 'coragent-job-monitor-delivery/2':
         raise ValueError('monitor_delivery_schema_invalid: current Job delivery required')
     return value
 
@@ -65,7 +65,7 @@ def bind(root, intent, session_id):
         read_binding(path)
         return
     manifest=read(root/'workspace_manifest.json')
-    write(path,{'schema_version':'research-agent-job-monitor/2','monitor_id':mid,'workspace_id':manifest['workspace_id'],
+    write(path,{'schema_version':'coragent-job-monitor/2','monitor_id':mid,'workspace_id':manifest['workspace_id'],
         'job_id':job,'node_id':intent.get('node_id'),'node_revision':intent.get('node_revision'),
         'job_digest':digest(intent),'session_id':session_id,'wake_policy':'next_run','notify_policy':'none',
         'enabled':True,'created_at':now(),'sequence':0,'last_state':None})
@@ -154,12 +154,12 @@ def _commit_observation(root, request):
         write(p,row);return result
     row['sequence']+=1
     eid='event_'+hashlib.sha256(f"{row['monitor_id']}:{row['sequence']}:{state}".encode()).hexdigest()[:32]
-    event={**row,'schema_version':'research-agent-job-monitor-event/2','event_id':eid,'state':state,
+    event={**row,'schema_version':'coragent-job-monitor-event/2','event_id':eid,'state':state,
         'previous_state':previous,'status_digest':digest({'state':state,'exit_code':status.exit_code}),
         'program_status':None,'exit_status':status.exit_code,'error_class':None,
         'error':status.error,'observed_at':now(),'status':{'state':state,'exit_code':status.exit_code,'diagnostics':diagnostics, 'reason':'queue_wait_exceeded' if queue_wait else 'state_changed'}}
     write(p.parent/'events'/f'{eid}.json',event)
-    write(p.parent/'deliveries'/f'{eid}.json',{'schema_version':'research-agent-job-monitor-delivery/2','event_id':eid,'session_id':row['session_id'],
+    write(p.parent/'deliveries'/f'{eid}.json',{'schema_version':'coragent-job-monitor-delivery/2','event_id':eid,'session_id':row['session_id'],
         'request_id':'job-wake:'+eid,'delivered':False})
     write(p,row)
     return result
@@ -208,7 +208,7 @@ def _delivery_command(root,base,action,args):
 
 
 def validate_event(event):
-    if (event.get("schema_version") != "research-agent-job-monitor-event/2" or not valid_node_binding(event) or
+    if (event.get("schema_version") != "coragent-job-monitor-event/2" or not valid_node_binding(event) or
             any(not isinstance(event.get(key), str) or not event[key]
                 for key in ("event_id", "monitor_id", "job_id", "workspace_id", "session_id"))):
         raise ValueError("monitor_event_schema_invalid")

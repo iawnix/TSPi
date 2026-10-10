@@ -1,7 +1,7 @@
 """Standalone target-side environment observation and execution guard (stdlib).
 
 This file is staged with Python Jobs. It must not import the control plane or
-require ResearchAgent to be installed on a compute host. Diagnostics never echo package
+require CoRAgent to be installed on a compute host. Diagnostics never echo package
 URLs, activated environment output, or arbitrary import exceptions.
 """
 from __future__ import annotations
@@ -92,7 +92,7 @@ def inspect_python(binding, requirements, command=(), *, require_receipt=True):
     inventory = sorted((re.sub(r"[-_.]+", "-", row.metadata["Name"]).lower(), row.version)
                        for row in importlib.metadata.distributions() if row.metadata["Name"])
     inventory_digest = digest(inventory)
-    receipt_path = Path(binding["prefix"]) / "research-agent-environment.json"
+    receipt_path = Path(binding["prefix"]) / "coragent-environment.json"
     receipt_digest = None
     if require_receipt:
         if not receipt_path.is_file():
@@ -135,16 +135,16 @@ def main():
         if expected is not None and observed != expected:
             raise EnvironmentMismatch("execution_environment_changed")
     except EnvironmentMismatch as exc:
-        print("RESEARCH_AGENT_ENVIRONMENT_ERROR=" + str(exc), file=sys.stderr)
+        print("CORAGENT_ENVIRONMENT_ERROR=" + str(exc), file=sys.stderr)
         raise SystemExit(125) from None
     except Exception:
-        print("RESEARCH_AGENT_ENVIRONMENT_ERROR=environment_probe_failed", file=sys.stderr)
+        print("CORAGENT_ENVIRONMENT_ERROR=environment_probe_failed", file=sys.stderr)
         raise SystemExit(125) from None
     if len(sys.argv) > 3:
         if sys.argv[3] != "--" or len(sys.argv) < 5:
             raise SystemExit(125)
         os.execv(sys.executable, [sys.executable, *sys.argv[4:]])
-    print("RESEARCH_AGENT_ENVIRONMENT=" + json.dumps(observed, sort_keys=True))
+    print("CORAGENT_ENVIRONMENT=" + json.dumps(observed, sort_keys=True))
 
 
 if __name__ == "__main__":

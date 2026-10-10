@@ -66,7 +66,7 @@ export function createSystemPromptManifest({
     }
   }
   return deepFreeze({
-    schema_version: "research-agent-system-prompt/2",
+    schema_version: "coragent-system-prompt/2",
     runtime,
     effective,
     sha256: sha256Text(effective),
@@ -86,7 +86,7 @@ export function createSystemPromptTool(manifestOrResolver, contract) {
   return {
     ...contract,
     async execute(_params, api, context) {
-      const manifest = await resolveManifest(api.researchAgent, context);
+      const manifest = await resolveManifest(api.coragent, context);
       assertManifest(manifest);
       return {
         content: [{ type: "text", text: JSON.stringify(manifest, null, 2) }],
@@ -106,11 +106,11 @@ export function sha256Text(text) {
 
 function assertManifest(manifest) {
   if (
-    manifest?.schema_version !== "research-agent-system-prompt/2"
+    manifest?.schema_version !== "coragent-system-prompt/2"
     || typeof manifest.effective !== "string"
     || !Array.isArray(manifest.contributors)
   ) {
-    throw new TypeError("system_prompt requires a ResearchAgent system prompt manifest");
+    throw new TypeError("system_prompt requires a CoRAgent system prompt manifest");
   }
 }
 

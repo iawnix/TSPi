@@ -1,14 +1,14 @@
 {
-  "product": "research-agent",
-  "command": "research-agent",
-  "npm": "@iawnix/research-agent",
-  "python_distribution": "research-agent",
+  "product": "coragent",
+  "command": "coragent",
+  "npm": "@iawnix/coragent",
+  "python_distribution": "coragent",
   "python_namespace": "research_agent",
-  "host_protocol": "research-agent-host/2",
-  "link_protocol": "research-agent-link.v1",
-  "host_token_prefix": "rah_",
-  "device_token_prefix": "rad_",
-  "environment_prefix": "RESEARCH_AGENT_",
-  "host_service": "research-agent.service",
-  "relay_service": "research-agent-relay.service"
+  "host_protocol": "coragent-host/2",
+  "link_protocol": "coragent-link.v1",
+  "host_token_prefix": "cah_",
+  "device_token_prefix": "cad_",
+  "environment_prefix": "CORAGENT_",
+  "host_service": "coragent.service",
+  "relay_service": "coragent-relay.service"
 }

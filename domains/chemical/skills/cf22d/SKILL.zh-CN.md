@@ -10,7 +10,7 @@ description: 执行并解释 PySCF CF22D 单点、结构优化、过渡态、频
 实际具备 CF22D 及其色散实现。
 
 ```bash
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.cf22d --version 1 --input geometry=input.xyz --output prepared/cf22d.json -- --task opt-sp --basis def2-tzvp --charge 0 --multiplicity 1
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config "$CORAGENT_JOB_CONFIG" --environment local --executor chemical.cf22d --version 1 --input geometry=input.xyz --output prepared/cf22d.json -- --task opt-sp --basis def2-tzvp --charge 0 --multiplicity 1
 ```
 
 将返回的请求文件和摘要连同对应 node_id 交给 `job_start`。准备器负责暂存声明的

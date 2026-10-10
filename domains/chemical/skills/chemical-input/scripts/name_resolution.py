@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-RESOLVER_CONFIG_ENV = "RESEARCH_AGENT_NAME_RESOLVER_CONFIG"
+RESOLVER_CONFIG_ENV = "CORAGENT_NAME_RESOLVER_CONFIG"
 RESOLVER_VERSION = "1"
 DEFAULT_PUBCHEM_ENDPOINT = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
 DEFAULT_OPSIN_ENDPOINT = "https://opsin.ch.cam.ac.uk/opsin"
@@ -28,7 +28,7 @@ class ResolverConfigurationError(ValueError):
 def _config_path() -> Path | None:
     configured = os.environ.get(RESOLVER_CONFIG_ENV, "").strip()
     if not configured:
-        install_root = os.environ.get("RESEARCH_AGENT_INSTALL_ROOT", "").strip()
+        install_root = os.environ.get("CORAGENT_INSTALL_ROOT", "").strip()
         if install_root:
             configured = str(Path(install_root) / "etc" / "name-resolver.toml")
     if not configured:
@@ -80,7 +80,7 @@ def _load_config() -> tuple[Path | None, dict[str, Any]]:
         cache_dir = value.get("cache_dir")
         if cache_dir is not None and (not isinstance(cache_dir, str) or not Path(cache_dir).is_absolute()):
             raise ResolverConfigurationError(f"backends.{name}.cache_dir must be an absolute path")
-        user_agent = value.get("user_agent", "ResearchAgent-chemical-name-resolver/1")
+        user_agent = value.get("user_agent", "CoRAgent-chemical-name-resolver/1")
         if not isinstance(user_agent, str) or not user_agent.strip() or len(user_agent) > 256:
             raise ResolverConfigurationError(f"backends.{name}.user_agent must be a non-empty string")
         normalized["backends"][name] = {

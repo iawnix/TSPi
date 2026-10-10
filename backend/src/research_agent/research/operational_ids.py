@@ -15,9 +15,9 @@ from research_agent.foundation.path_safety import has_symlink_component, lexical
 from .workspace import WorkspaceModeError, validate_workspace_manifest
 
 
-STATE_SCHEMA = "research-agent-operational-id-state/1"
-STATE_FILE = ".research-agent-operational-ids.json"
-LOCK_FILE = ".research-agent-operational-ids.lock"
+STATE_SCHEMA = "coragent-operational-id-state/1"
+STATE_FILE = ".coragent-operational-ids.json"
+LOCK_FILE = ".coragent-operational-ids.lock"
 KINDS = frozenset({"calc", "sub", "op"})
 _ID_PATTERNS = {
     "calc": re.compile(r"^calc_[1-9][0-9]*$"),
@@ -73,7 +73,7 @@ def allocate_operational_id(root: str | Path, kind: str) -> dict[str, Any]:
         finally:
             os.close(descriptor)
     return {
-        "schema_version": "research-agent-operational-id-allocation/1",
+        "schema_version": "coragent-operational-id-allocation/1",
         "kind": kind,
         "ordinal": ordinal,
         "identifier": f"{kind}_{ordinal}",
@@ -86,7 +86,7 @@ def _workspace_root(root: str | Path) -> Path:
         raise ValueError("workspace root must not be a symbolic link")
     workspace = candidate
     if not workspace.is_dir() or not (workspace / "workspace_manifest.json").is_file():
-        raise ValueError("operational IDs require an initialized TS workspace")
+        raise ValueError("operational IDs require an initialized CoRAgent workspace")
     try:
         validate_workspace_manifest(
             json.loads((workspace / "workspace_manifest.json").read_text(encoding="utf-8")),

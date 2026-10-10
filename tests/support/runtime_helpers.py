@@ -13,13 +13,13 @@ def write_test_suite_manifest(suite_root: Path, *, version: str = "0.10.0") -> P
     """Write the minimal complete suite identity required by launcher tests."""
 
     release_id = suite_root.name
-    manifest_path = suite_root / ".research-agent-package-release.json"
+    manifest_path = suite_root / ".coragent-package-release.json"
     manifest_path.write_text(
         json.dumps(
             {
-                "schema_version": "research-agent-package-release/4",
+                "schema_version": "coragent-package-release/4",
                 "release_id": release_id,
-                "package": {"name": "@iawnix/research-agent", "version": version},
+                "package": {"name": "@iawnix/coragent", "version": version},
                 "components": {
                     "agent": {"release_id": "test-agent", "version": version},
                 },
@@ -34,8 +34,8 @@ def write_test_suite_manifest(suite_root: Path, *, version: str = "0.10.0") -> P
     layout = paths(suite_root.parent.parent).initialize()
     state_path = layout.install_state
     state_path.write_text(json.dumps({
-        "schema_version": "research-agent-package-install/1", "current_release_id": release_id,
-        "package_root": str(suite_root), "session_guard_contract": "research-agent-session-guard/1",
+        "schema_version": "coragent-package-install/1", "current_release_id": release_id,
+        "package_root": str(suite_root), "session_guard_contract": "coragent-session-guard/1",
     }) + "\n")
     state_path.chmod(0o600)
     return manifest_path
@@ -85,7 +85,7 @@ def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
             "ok": True,
             "python": {"version": sys.version.split()[0], "executable": str(kernel_bin / "python")},
             "distribution": {
-                "name": "research-agent",
+                "name": "coragent",
                 "installed": True,
                 "version": package["version"],
                 "root": str(kernel_prefix),

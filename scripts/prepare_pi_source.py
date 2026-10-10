@@ -1,4 +1,4 @@
-"""Resolve, patch, and verify the Pi v1 durable runtime used by ResearchAgent."""
+"""Resolve, patch, and verify the Pi v1 durable runtime used by CoRAgent."""
 from __future__ import annotations
 import argparse, json, os, re, shutil, subprocess, sys, tempfile
 from pathlib import Path

@@ -1,8 +1,8 @@
 # Execution and research boundaries
 
-Research Memory stores local problem Nodes, immutable Results, explicit relations and original requirements. It does not own Job state, Artifact bytes, scientific validation or email transport. The [architecture](ARCHITECTURE.md) specifies the current contract and implementation status.
+Research Memory stores local problem Nodes, immutable Results, explicit relations and original requirements. It does not own Job state, Artifact bytes, scientific validation or email transport. The [architecture](ARCHITECTURE.md) specifies the current contract.
 
-Skills contain methods, executable scripts, templates and parsers. Generic Job Runtime executes explicit argv locally or through SSH/PBS and owns dispatch, status, cancellation and collection. The ResearchAgent adapter fixes actual inputs and optional Node/revision association. The platform launcher does not import Memory or infer a scientific plan.
+Skills contain methods, executable scripts, templates and parsers. Generic Job Runtime executes explicit argv locally or through SSH/PBS and owns dispatch, status, cancellation and collection. The CoRAgent adapter fixes actual inputs and optional Node/revision association. The platform launcher does not import Memory or infer a scientific plan.
 
 Collection registers materials with producing Job and input provenance. ResearchResult references fixed materials and recorded executions; the Agent distinguishes observations, scientific judgments and limitations. Process success and required-file completeness do not prove a hypothesis.
 

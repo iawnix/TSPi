@@ -10,7 +10,7 @@ MANIFEST_PATH = ROOT / 'tools/test/manifest.toml'
 def load_manifest(root: Path = ROOT) -> dict[str, Any]:
     with (root / 'tools/test/manifest.toml').open('rb') as handle:
         manifest = tomllib.load(handle)
-    if manifest.get('schema_version') != 'research-agent-test-manifest/1':
+    if manifest.get('schema_version') != 'coragent-test-manifest/1':
         raise ValueError('Unsupported test manifest')
     return manifest
 

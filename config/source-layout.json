@@ -1,5 +1,5 @@
 {
-  "schema_version": "research-agent-source-layout/1",
+  "schema_version": "coragent-source-layout/1",
   "python": {
     "project": "backend",
     "source": "backend/src/research_agent"
@@ -20,9 +20,9 @@
     "docs"
   ],
   "files": [
-    "research-agent",
+    "coragent",
     "install.sh",
-    "libexec/research-agent-host",
+    "libexec/coragent-host",
     "LICENSE",
     "README.md",
     "README.zh-CN.md",
@@ -48,8 +48,8 @@
     "scripts/update_*.mjs"
   ],
   "required": [
-    "research-agent",
-    "libexec/research-agent-host",
+    "coragent",
+    "libexec/coragent-host",
     "apps/agent/main.mjs",
     "apps/agent/pi/worker.mjs",
     "apps/agent/host/server.mjs",
@@ -72,7 +72,7 @@
     "scripts/_runtime_install.py",
     "scripts/_wheel.py",
     "apps/agent-cli/launcher.py",
-    "prompts/research-agent.md",
+    "prompts/coragent.md",
     "scripts/installer.py",
     "scripts/_install_inputs.py",
     "scripts/_install_relay.py"

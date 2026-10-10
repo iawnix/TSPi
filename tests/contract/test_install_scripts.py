@@ -12,10 +12,10 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_configured_dry_run_redacts_secret_arguments() -> None:
     environment = {
         **os.environ,
-        "RESEARCH_AGENT_WEB_AUTH_TOKEN": "web-secret-for-test",
-        "RESEARCH_AGENT_PHONE_ACCESS": "link",
-        "RESEARCH_AGENT_LINK_URL": "https://relay.example",
-        "RESEARCH_AGENT_LINK_ENROLLMENT_CODE": "enrollment-secret-for-test",
+        "CORAGENT_WEB_AUTH_TOKEN": "web-secret-for-test",
+        "CORAGENT_PHONE_ACCESS": "link",
+        "CORAGENT_LINK_URL": "https://relay.example",
+        "CORAGENT_LINK_ENROLLMENT_CODE": "enrollment-secret-for-test",
     }
     completed = subprocess.run(
         [str(ROOT / "install.sh"), "--dry-run"],
@@ -62,7 +62,7 @@ def test_public_entrypoints_and_relay_help_do_not_fetch_sources() -> None:
 def test_environment_defaults_can_be_overridden_by_cli() -> None:
     completed = subprocess.run([
         str(ROOT / "install.sh"), "--dry-run", "--without-web", "--service-scope", "none",
-    ], env={**os.environ, "RESEARCH_AGENT_WITH_WEB": "true", "RESEARCH_AGENT_SERVICE_SCOPE": "user"},
+    ], env={**os.environ, "CORAGENT_WITH_WEB": "true", "CORAGENT_SERVICE_SCOPE": "user"},
         text=True, capture_output=True, check=True)
     plan = json.loads(completed.stdout)["plan"]
     assert plan["with_web"] is False

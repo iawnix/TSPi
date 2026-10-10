@@ -12,7 +12,7 @@ from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
-CONTRACT = "research-agent-session-guard/1"
+CONTRACT = "coragent-session-guard/1"
 SESSION_ID = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,158}[A-Za-z0-9])?$")
 HEADER_LIMIT = 64 * 1024
 _PROC_ROOT = Path("/proc")
@@ -44,7 +44,7 @@ def installation_is_guarded(installation: Path) -> bool:
         if not isinstance(value, dict) or value.get("session_guard_contract") != CONTRACT:
             return False
         package_root = value.get("package_root")
-        if (value.get("schema_version") != "research-agent-package-install/1"
+        if (value.get("schema_version") != "coragent-package-install/1"
                 or not isinstance(package_root, str)
                 or Path(package_root).parent != installation.resolve() / "./releases"
                 or Path(package_root).name != value.get("current_release_id")):
@@ -57,8 +57,8 @@ def installation_is_guarded(installation: Path) -> bool:
 def require_guarded_installation(installation: Path) -> None:
     if not installation_is_guarded(installation):
         raise SessionGuardError(
-            "installation guard upgrade is incomplete; no selected ResearchAgent Package release is safe to use; "
-            "run the Package installer after closing old ResearchAgent writers",
+            "installation guard upgrade is incomplete; no selected CoRAgent Package release is safe to use; "
+            "run the Package installer after closing old CoRAgent writers",
             code="session_guard_upgrade_required",
         )
 
@@ -76,7 +76,7 @@ def guard_installation_upgrade(installation: Path) -> Iterator[None]:
 def _ensure_workspace_pi_root(workspace: Path) -> Path:
     """Create the workspace Pi state directory before opening its Root lock.
 
-    Workspaces created by older ResearchAgent releases may contain research data without
+    Workspaces created by older CoRAgent releases may contain research data without
     the newer ``.pi`` directory.  ``os.open(..., O_CREAT)`` cannot create the
     lock's parent, so initialize that one directory while preserving the
     symlink and type checks used by normal workspace startup.
@@ -192,13 +192,13 @@ def assert_no_unguarded_writers(workspace: Path) -> None:
                 continue
             environment = (process / "environ").read_bytes().split(b"\0")
             values = dict(item.split(b"=", 1) for item in environment if b"=" in item)
-            if not bound_to_workspace and values.get(b"RESEARCH_AGENT_WORKSPACE_ROOT") != os.fsencode(workspace):
+            if not bound_to_workspace and values.get(b"CORAGENT_WORKSPACE_ROOT") != os.fsencode(workspace):
                 continue
-            if (values.get(b"RESEARCH_AGENT_WORKSPACE_ROOT") == os.fsencode(workspace)
-                    and values.get(b"RESEARCH_AGENT_SESSION_GUARD") == CONTRACT.encode()):
+            if (values.get(b"CORAGENT_WORKSPACE_ROOT") == os.fsencode(workspace)
+                    and values.get(b"CORAGENT_SESSION_GUARD") == CONTRACT.encode()):
                 continue
             raise SessionGuardError(
-                f"unguarded ResearchAgent writer pid {process.name} is still open; exit it before upgrading",
+                f"unguarded CoRAgent writer pid {process.name} is still open; exit it before upgrading",
                 code="session_writer_active",
             )
         except (FileNotFoundError, ProcessLookupError):
@@ -213,7 +213,7 @@ def assert_no_unguarded_writers(workspace: Path) -> None:
 
 
 def _uses_workspace_sessions(process: Path, workspace: Path, arguments: list[bytes]) -> bool:
-    # ResearchAgent always binds Pi with --session-dir. Inspect that public binding before
+    # CoRAgent always binds Pi with --session-dir. Inspect that public binding before
     # cwd/environ: unrelated privileged user services may deny those reads.
     expected = workspace / ".pi" / "sessions"
     for index, argument in enumerate(arguments):
@@ -250,7 +250,7 @@ def select_session(
         argument = arguments[index]
         option, _, inline = argument.partition("=")
         if option in {"--resume", "-r", "--fork", "--session-dir", "--no-session"}:
-            raise SessionGuardError(f"{option} is not supported by guarded ResearchAgent; reopen with --session-id <id>")
+            raise SessionGuardError(f"{option} is not supported by guarded CoRAgent; reopen with --session-id <id>")
         if option in {"--session-id", "--session"}:
             if not inline:
                 index += 1

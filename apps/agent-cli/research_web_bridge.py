@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bridge TS Web requests to Research Memory over the JSON-lines protocol."""
+"""Bridge CoRAgent Web requests to Research Memory over the JSON-lines protocol."""
 
 from __future__ import annotations
 
@@ -35,9 +35,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source-root", action="append", default=[])
     parser.add_argument("--label", action="append", default=[])
     args = parser.parse_args(argv)
-    if os.environ.get("RESEARCH_AGENT_INSTALL_ROOT"):
+    if os.environ.get("CORAGENT_INSTALL_ROOT"):
         from research_agent.foundation.installation_maintenance import assert_installation_available
-        assert_installation_available(os.environ["RESEARCH_AGENT_INSTALL_ROOT"])
+        assert_installation_available(os.environ["CORAGENT_INSTALL_ROOT"])
 
     if args.register:
         try:
@@ -55,9 +55,9 @@ def main(argv: list[str] | None = None) -> int:
 
 def _serve_protocol(state_dir: str, workspace_roots: list[str] | None) -> int:
     for raw_line in sys.stdin:
-        if os.environ.get("RESEARCH_AGENT_INSTALL_ROOT"):
+        if os.environ.get("CORAGENT_INSTALL_ROOT"):
             from research_agent.foundation.installation_maintenance import assert_installation_available
-            assert_installation_available(os.environ["RESEARCH_AGENT_INSTALL_ROOT"])
+            assert_installation_available(os.environ["CORAGENT_INSTALL_ROOT"])
         request: object = None
         if len(raw_line.encode("utf-8")) > 2 * 1024 * 1024:
             response = provider_error_payload("unknown", ResearchWebError("provider request is too large"))

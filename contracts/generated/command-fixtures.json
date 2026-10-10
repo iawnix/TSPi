@@ -1,5 +1,5 @@
 {
-  "schema_version": "research-agent-command-fixtures/1",
+  "schema_version": "coragent-command-fixtures/1",
   "cases": [
     {
       "command": "research.read",

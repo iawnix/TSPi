@@ -6,7 +6,7 @@ import { createDocumentView } from "../renderers/document.mjs";
 import { createCommandPresentation } from "./panel.mjs";
 
 /** Presentation-only commands; all scientific reads execute in the worker. */
-export async function createResearchAgentNativeClientFacet({ sourceRoot, session } = {}) {
+export async function createCoRAgentNativeClientFacet({ sourceRoot, session } = {}) {
   if (typeof sourceRoot !== "string" || !sourceRoot) throw new TypeError("sourceRoot is required");
 
   const [{ defineFacet, defineService }, { SlashCommands }, { PresentationUI }, components, { Transcript }, { theme }, { BACKGROUND_CONTEXT, withAbortSignal }] = await Promise.all([
@@ -20,7 +20,7 @@ export async function createResearchAgentNativeClientFacet({ sourceRoot, session
   ]);
   const queriesService = defineService(CLIENT_QUERIES_SERVICE_ID);
   return defineFacet({
-    id: "@research-agent/native-client-commands",
+    id: "@coragent/native-client-commands",
     setup(env) {
       const commands = env.use(SlashCommands);
       const ui = env.use(PresentationUI);
@@ -28,7 +28,7 @@ export async function createResearchAgentNativeClientFacet({ sourceRoot, session
       const transcript = env.use(Transcript);
       env.onActivate(() => {
         ui.setCommandPresentation(createCommandPresentation({ ...components, scope: 'Session' }));
-        const status = createStatusPresentation({ session, theme, ...components, ring: process.env.TERM !== "dumb" && process.env.RESEARCH_AGENT_TUI_RING !== "0" });
+        const status = createStatusPresentation({ session, theme, ...components, ring: process.env.TERM !== "dumb" && process.env.CORAGENT_TUI_RING !== "0" });
         const lifetime = new AbortController();
         const queryContext = withAbortSignal(lifetime.signal, BACKGROUND_CONTEXT);
         let stopped = false, refreshing = false, dirty = false, timer;

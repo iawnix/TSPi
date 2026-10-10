@@ -15,11 +15,11 @@ async function fixture(t) {
   const files = {
     "skills/demo/SKILL.md": "---\nname: demo\ndescription: Test a managed resource.\n---\nRead references relative to this directory.\n",
     "skills/demo/example.txt": "resource\n",
-    "prompts/research-agent.md": "Product principles.\n",
+    "prompts/coragent.md": "Product principles.\n",
   };
   for (const [name, content] of Object.entries(files)) await writeFile(join(root, name), content);
   await writeFile(join(root, "package.json"), JSON.stringify({ pi: { skills: ["./skills"] } }));
-  const inventory = { schema_version: "research-agent-resources/1", files: Object.fromEntries(Object.entries(files)
+  const inventory = { schema_version: "coragent-resources/1", files: Object.fromEntries(Object.entries(files)
     .map(([name, content]) => [name, `sha256:${createHash("sha256").update(content).digest("hex")}`])) };
   await writeFile(join(root, "config/resources.json"), JSON.stringify(inventory));
   return root;
@@ -48,7 +48,7 @@ test("managed Skill modifications and unlisted resources fail integrity validati
 
 test("managed Skill roots cannot escape or redirect through symlinks", async t => {
   const root = await fixture(t);
-  await symlink(join(root, "prompts/research-agent.md"), join(root, "skills/demo/linked.md"));
+  await symlink(join(root, "prompts/coragent.md"), join(root, "skills/demo/linked.md"));
   await assert.rejects(loadProductSkills({ packageRoot: root }), /symlink/);
   await rm(join(root, "skills/demo/linked.md"));
   await writeFile(join(root, "package.json"), JSON.stringify({ pi: { skills: ["../outside"] } }));
@@ -58,17 +58,17 @@ test("managed Skill roots cannot escape or redirect through symlinks", async t =
 test("Skills remain independent of scientific execution catalog discovery", async t => {
   const root = await fixture(t);
   const manifest = JSON.parse(await readFile(join(root, "package.json")));
-  manifest.researchAgent = { execution: ["domains/missing/execution.json"] };
+  manifest.coragent = { execution: ["domains/missing/execution.json"] };
   await writeFile(join(root, "package.json"), JSON.stringify(manifest));
   assert.equal((await loadProductSkills({ packageRoot: root })).skills.length, 1);
 });
 
 test("the permanent system prompt is required even if omitted from the inventory", async t => {
   const root = await fixture(t);
-  await rm(join(root, "prompts/research-agent.md"));
+  await rm(join(root, "prompts/coragent.md"));
   const path = join(root, "config/resources.json");
   const inventory = JSON.parse(await readFile(path));
-  delete inventory.files["prompts/research-agent.md"];
+  delete inventory.files["prompts/coragent.md"];
   await writeFile(path, JSON.stringify(inventory));
   await assert.rejects(loadProductSkills({ packageRoot: root }), /system prompt is missing/);
 });

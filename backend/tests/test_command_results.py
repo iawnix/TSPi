@@ -19,7 +19,7 @@ def command_workspace(tmp_path, monkeypatch):
     admit_research_workspace(root)
     config = tmp_path / 'job.toml'
     config.write_text('default_environment = "local"\n[environments.local]\nkind = "local"\nsupervisor = "process"\n')
-    monkeypatch.setenv('RESEARCH_AGENT_JOB_CONFIG', str(config))
+    monkeypatch.setenv('CORAGENT_JOB_CONFIG', str(config))
     return root
 
 

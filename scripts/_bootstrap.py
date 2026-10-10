@@ -14,14 +14,14 @@ def load_runtime_environment(package_root: str | Path) -> ModuleType:
     root = Path(package_root).expanduser().resolve()
     source = root / "backend/src/research_agent/foundation/env.py"
     if not source.is_file():
-        raise RuntimeError(f"ResearchAgent runtime bootstrap module is missing: {source}")
+        raise RuntimeError(f"CoRAgent runtime bootstrap module is missing: {source}")
     name = f"_research_agent_runtime_runtime_env_{hashlib.sha256(str(source).encode()).hexdigest()[:12]}"
     cached = sys.modules.get(name)
     if cached is not None:
         return cached
     spec = importlib.util.spec_from_file_location(name, source, submodule_search_locations=[str(source.parent)])
     if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load ResearchAgent runtime bootstrap module: {source}")
+        raise RuntimeError(f"cannot load CoRAgent runtime bootstrap module: {source}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)
@@ -48,7 +48,7 @@ def bootstrap_python_package(
     if install_root is not None:
         runtime.seed_installation_runtime(install_root, authoritative=True)
     python = runtime.ensure_runtime_python(root, required=required)
-    if (root / ".research-agent-release.json").is_file() or install_root is not None:
+    if (root / ".coragent-release.json").is_file() or install_root is not None:
         if python is None:
             raise runtime.RuntimeEnvironmentError("installed commands require the managed Python wheel")
         source = root / "backend/src"

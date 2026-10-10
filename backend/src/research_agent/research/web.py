@@ -1,4 +1,4 @@
-"""Read-only transport helpers for clients such as TS Web.
+"""Read-only transport helpers for clients such as CoRAgent Web.
 
 The transport exposes the same memory snapshot and records as Agent tools.
 Workspace/catalog envelopes do not create a separate research model.

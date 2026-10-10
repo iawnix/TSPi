@@ -1,4 +1,4 @@
-"""ResearchAgent-native PySCF/CF22D workflow runner.
+"""CoRAgent-native PySCF/CF22D workflow runner.
 
 The runner accepts explicit argv instead of the source project's YAML file so
 that local workers and remote schedulers can safely rewrite staged input
@@ -659,7 +659,7 @@ def _read_xyz(path: Path) -> tuple[list[str], list[tuple[float, float, float]]]:
 def _make_scratch(output_dir: Path) -> Path:
     base = Path(os.environ.get("TMPDIR") or output_dir / ".pyscf-tmp")
     base.mkdir(parents=True, exist_ok=True)
-    scratch = base / f"research-agent-pyscf-{uuid.uuid4().hex[:12]}"
+    scratch = base / f"coragent-pyscf-{uuid.uuid4().hex[:12]}"
     scratch.mkdir(mode=0o700)
     return scratch
 

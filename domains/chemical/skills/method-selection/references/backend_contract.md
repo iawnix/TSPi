@@ -4,7 +4,7 @@ A domain extension owns scientific inputs, argv, parsing and validation. Its exe
 
 ## Submission
 
-Use `"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors` to combine an installed executor with a named job.toml binding. It writes a request containing argv, platform, process environment, pinned inputs and required outputs. Inspect the file, then pass its returned request_file/request_sha256 with optional timeout_seconds to job_start. Configure resource defaults in job.toml before preparing. Runtime registers prepared_ref together with the dispatch intent and Job; the preparation command does not write Research Memory.
+Use `"$CORAGENT_PYTHON" -m research_agent.application.executors` to combine an installed executor with a named job.toml binding. It writes a request containing argv, platform, process environment, pinned inputs and required outputs. Inspect the file, then pass its returned request_file/request_sha256 with optional timeout_seconds to job_start. Configure resource defaults in job.toml before preparing. Runtime registers prepared_ref together with the dispatch intent and Job; the preparation command does not write Research Memory.
 
 Inputs are snapshotted with paths and digests. Keep script module layout intact. Runtime owns local/remote process control; Skill scripts may synchronously launch the scientific executable inside the Job but must not detach or submit their own scheduler jobs.
 

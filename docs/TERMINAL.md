@@ -2,7 +2,7 @@
 
 [English](TERMINAL.md) | [简体中文](TERMINAL.zh-CN.md)
 
-`research-agent --workspace <name>` is the public launcher for Pi's official remote
+`coragent --workspace <name>` is the public launcher for Pi's official remote
 `ExperimentalClientTui`. It uses Pi's editor, transcript rendering, and input loop.
 This is a separate presentation from ordinary Pi `InteractiveMode`, with its own
 command and plugin capabilities. The selected workspace is
@@ -15,7 +15,7 @@ Workspaces use the research mode automatically. No mode selection is needed; see
 There is one Agent Server owner and several clients:
 
 ```text
-TS Phone/Web -- Link/HTTP --+      ResearchAgent Agent Server / Host API
+CoRHub/Web -- Link/HTTP --+      CoRAgent Agent Server / Host API
 Pi native TUI -- Unix/SSH ---+-->   Root Agent Session
 Monitor -- Host RPC ---------+      Harness / Pi App Server / SessionWorker
 ```
@@ -28,17 +28,17 @@ The native Pi TUI, Phone, and Monitor all address that same lane; none starts
 another agent loop.
 
 The Host client's RPC transport can be a local Unix socket or an SSH-launched
-`research-agent-host-proxy`, which forwards the same `research-agent-host/2` NDJSON over SSH
+`coragent-host-proxy`, which forwards the same `coragent-host/2` NDJSON over SSH
 stdin/stdout to a private remote socket. SSH changes the connection path, not
 the owner of the workspace, session, or Agent lane.
 
 For a remote installation, provide the remote Host socket and the proxy path:
 
 ```bash
-./research-agent --workspace reaction-a \
+./coragent --workspace reaction-a \
   --remote-host pi.example \
-  --remote-host-socket /run/user/1000/research-agent/host.sock \
-  --remote-proxy-path /opt/research-agent/apps/agent/transport/ssh.mjs \
+  --remote-host-socket /run/user/1000/coragent/host.sock \
+  --remote-proxy-path /opt/coragent/apps/agent/transport/ssh.mjs \
   --ssh-config ~/.ssh/config
 ```
 
@@ -49,8 +49,8 @@ remain on the remote Host; the local directory is only a presentation cwd.
 ## Open a workspace
 
 ```bash
-./research-agent --workspace reaction-a
-./research-agent --workspace reaction-a -c
+./coragent --workspace reaction-a
+./coragent --workspace reaction-a -c
 ```
 
 The launcher first ensures the installation Host is ready, then requests a
@@ -64,8 +64,8 @@ The Host service is installation-wide and scans direct child workspaces. It is
 normally managed with:
 
 ```bash
-systemctl --user start ts-app-server-research-agent.service
-systemctl --user status ts-app-server-research-agent.service
+systemctl --user start coragent.service
+systemctl --user status coragent.service
 ```
 
 Use the same commands without `--user` for a system unit. The private Host
@@ -74,7 +74,7 @@ socket is under the configured runtime directory.
 ## Sessions and controls
 
 The remote `ExperimentalClientTui` provides `/resume`, `/model`, `/thinking`,
-`/compact`, `/reload`, and the Native ResearchAgent commands. `/resume`
+`/compact`, `/reload`, and the Native CoRAgent commands. `/resume`
 switches to another SQLite durable session in the current workspace; it does not
 cross workspace boundaries. Switching disposes the old terminal connection before
 attaching the selected session; background tasks continue. Other standalone Pi
@@ -88,10 +88,10 @@ status line and leave the editor usable; no panel needs to be dismissed.
 that it was skipped, cancelled, or failed. The transcript shows a compacted
 context marker; it does not print the internal summary as an ordinary reply.
 
-ResearchAgent command names, arguments, and completions share one catalogue:
+CoRAgent command names, arguments, and completions share one catalogue:
 
 - `/research`: read-only queries in the attached worker, for Memory context and records, including a remote workspace over SSH. Use the command help for supported selectors. Long results open a separate reading page.
-- `/sys-prompt`: inspect the current worker's ResearchAgent system prompt manifest and sources without a model request.
+- `/sys-prompt`: inspect the current worker's CoRAgent system prompt manifest and sources without a model request.
 - `/resume [session-id]`: select or specify a session in the current workspace. Cancelling keeps the current session.
 - `/usage`: inspect session token totals, context and usage by model in a compact panel.
 - `/monitor`: inspect this session's running and queued jobs, pending deliveries and last check in a live panel.
@@ -147,13 +147,13 @@ retrying the same business ID does not create another input.
 
 ## Phone and browser
 
-Phone clients must implement the versioned `research-agent-host/2` NDJSON methods through ResearchAgent Link. The
+Phone clients must implement the versioned `coragent-host/2` NDJSON methods through CoRAgent Link. The
 Relay transports opaque frames and does not own sessions or research state.
 Phone and the terminal receive the same Pi snapshot and events. The optional
 browser gateway attaches to one existing session over loopback HTTP/SSE; it
 does not start Pi or a worker.
 
-Host accepts only `initialize` with `protocol: "research-agent-host/2"`. Version 1 clients
+Host accepts only `initialize` with `protocol: "coragent-host/2"`. Version 1 clients
 must be updated. Capability names are the callable slash-separated methods.
 Session reads and attachments accept only `after_cursor: {epoch, sequence}`;
 a different Host epoch returns a current snapshot without replaying old events.

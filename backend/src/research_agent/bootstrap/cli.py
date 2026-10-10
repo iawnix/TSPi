@@ -73,7 +73,7 @@ def main(argv: list[str] | None = None, *, package_root: str | Path | None = Non
 
 
 def resolve_runtime(package_root: Path, argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Resolve the ResearchAgent package runtime paths.")
+    parser = argparse.ArgumentParser(description="Resolve the CoRAgent package runtime paths.")
     parser.add_argument("--package-root", default=str(package_root))
     parser.add_argument("--workspace-root")
     parser.add_argument("--runtime-home")

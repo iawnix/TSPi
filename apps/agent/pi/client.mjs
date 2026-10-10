@@ -6,11 +6,11 @@ import { formatTerminalFailure } from "../terminal/errors.mjs";
 import { runTerminalSessions } from "../terminal/session.mjs";
 import { subscribeMonitor } from "../terminal/status/monitor.mjs";
 import { connectHost } from "../transport/host-client.mjs";
-import { createResearchAgentToolRenderers } from "../terminal/renderers/tools.mjs";
+import { createCoRAgentToolRenderers } from "../terminal/renderers/tools.mjs";
 import { PUBLIC_TOOL_NAMES } from "../tools/contracts.mjs";
 
-if (!process.env.RESEARCH_AGENT_PI_RUNTIME_ROOT) throw new Error("remote Pi client requires RESEARCH_AGENT_PI_RUNTIME_ROOT");
-const sourceRoot = resolve(process.env.RESEARCH_AGENT_PI_RUNTIME_ROOT);
+if (!process.env.CORAGENT_PI_RUNTIME_ROOT) throw new Error("remote Pi client requires CORAGENT_PI_RUNTIME_ROOT");
+const sourceRoot = resolve(process.env.CORAGENT_PI_RUNTIME_ROOT);
 
 
 const [commandModule, clientModule, tuiModule] = await Promise.all([
@@ -25,12 +25,12 @@ const [{ configureToolRenderers }, tuiComponents] = await Promise.all([
   loadPi("clientChat", sourceRoot),
   loadPi("tui", sourceRoot),
 ]);
-configureToolRenderers(createResearchAgentToolRenderers(tuiComponents, Object.values(PUBLIC_TOOL_NAMES)));
+configureToolRenderers(createCoRAgentToolRenderers(tuiComponents, Object.values(PUBLIC_TOOL_NAMES)));
 
 function createHostRequest() {
-  const socketPath = process.env.RESEARCH_AGENT_HOST_SOCKET?.trim();
+  const socketPath = process.env.CORAGENT_HOST_SOCKET?.trim();
   if (!socketPath) throw new Error("Terminal commands require the Host connection");
-  const expectedReleaseId = process.env.RESEARCH_AGENT_HOST_RELEASE_ID?.trim() || undefined;
+  const expectedReleaseId = process.env.CORAGENT_HOST_RELEASE_ID?.trim() || undefined;
   const request = async (method, params) => {
     const peer = await connectHost({ socketPath, expectedReleaseId });
     try { return await peer.request(method, params); }
@@ -43,12 +43,12 @@ function createHostRequest() {
 }
 
 function bindWorkspaceCwd() {
-  const cwd = process.env.RESEARCH_AGENT_SESSION_CWD?.trim();
+  const cwd = process.env.CORAGENT_SESSION_CWD?.trim();
   if (!cwd) return process.cwd();
   const resolvedCwd = resolve(cwd);
   const info = lstatSync(resolvedCwd);
   if (!info.isDirectory() || info.isSymbolicLink()) {
-    throw new Error(`ResearchAgent session cwd must be a regular directory: ${resolvedCwd}`);
+    throw new Error(`CoRAgent session cwd must be a regular directory: ${resolvedCwd}`);
   }
   process.chdir(resolvedCwd);
   return resolvedCwd;
@@ -87,7 +87,7 @@ if (!parsed.ok) {
     bindWorkspaceCwd();
     // Pi persists presentation package selections per session. For a local
     // Host, an omitted `-e` must therefore mean an explicit empty selection;
-    // otherwise `--continue` can resurrect an older ResearchAgent custom TUI. Radius
+    // otherwise `--continue` can resurrect an older CoRAgent custom TUI. Radius
     // does not accept local package paths, so it keeps Pi's undefined value.
     const command = parsed.command.pluginPackages === undefined && parsed.command.connect?.transport !== "radius"
       ? { ...parsed.command, pluginPackages: [] }
@@ -95,27 +95,27 @@ if (!parsed.ok) {
     if (command.prompt !== undefined || process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
       await runPrintClient(command);
     } else {
-      const [{ createStaticFacetLoader }, { createResearchAgentNativeClientFacet }] = await Promise.all([
+      const [{ createStaticFacetLoader }, { createCoRAgentNativeClientFacet }] = await Promise.all([
         loadPi("chord", sourceRoot),
         import("../terminal/commands/facet.mjs"),
       ]);
       await runTerminalSessions({
         command,
-        workspaceId: process.env.RESEARCH_AGENT_WORKSPACE_ID,
+        workspaceId: process.env.CORAGENT_WORKSPACE_ID,
         request: createHostRequest(),
         run: (selected, options) => runClientTui(selected, { directory: process.env.PI_SERVER_DIR, ...options }),
         createFacet: async (session) => createStaticFacetLoader([
-          await createResearchAgentNativeClientFacet({ sourceRoot, session }),
+          await createCoRAgentNativeClientFacet({ sourceRoot, session }),
         ]),
       });
     }
   } catch (error) {
-    const diagnosticFile = process.env.RESEARCH_AGENT_DIAGNOSTIC_FILE
-      || (process.env.RESEARCH_AGENT_STATE_ROOT
-        ? `${process.env.RESEARCH_AGENT_STATE_ROOT.replace(/\/$/u, "")}/worker-diagnostics.log`
+    const diagnosticFile = process.env.CORAGENT_DIAGNOSTIC_FILE
+      || (process.env.CORAGENT_STATE_ROOT
+        ? `${process.env.CORAGENT_STATE_ROOT.replace(/\/$/u, "")}/worker-diagnostics.log`
         : undefined);
     console.error(`Error: ${formatTerminalFailure(error, {
-      installRoot: process.env.RESEARCH_AGENT_INSTALL_ROOT,
+      installRoot: process.env.CORAGENT_INSTALL_ROOT,
       diagnosticFile,
     })}`);
     process.exitCode = 1;

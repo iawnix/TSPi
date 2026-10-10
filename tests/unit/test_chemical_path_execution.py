@@ -93,7 +93,7 @@ def synthetic_logs(row):
     r=np.array([a[1:] for a in reactants]);p=np.array([a[1:] for a in product]);middle=(r+p)/2
     saddle=[(a[0],*v) for a,v in zip(reactants,middle)]
     vector=p-r;vector/=np.linalg.norm(vector)
-    title=' SYNTHETIC FIXTURE: exercises parser and runtime, not physical chemistry\n %nprocshared=12\n %mem=4000MB\n ResearchAgentSpec '+hashlib.sha256(Path(row['files']['spec.json']['path']).read_bytes()).hexdigest()+'\n'
+    title=' SYNTHETIC FIXTURE: exercises parser and runtime, not physical chemistry\n %nprocshared=12\n %mem=4000MB\n CoRAgentSpec '+hashlib.sha256(Path(row['files']['spec.json']['path']).read_bytes()).hexdigest()+'\n'
     route=Path(row['files']['ts.gjf']['path']).read_text().splitlines()[3]
     log=title+route+'\n ----------------\n Charge = 0 Multiplicity = 1\n'+orientation(saddle)+'\n SCF Done: E(RM062X) = -270.0 A.U.\n'
     log+=' Maximum Force 0.00001 0.00045 YES\n RMS     Force 0.00001 0.00030 YES\n Maximum Displacement 0.00001 0.0018 YES\n RMS     Displacement 0.00001 0.0012 YES\n Stationary point found.\n Harmonic frequencies\n'
@@ -131,7 +131,7 @@ def test_scientific_checks_reject_method_mode_missing_origin_and_wrong_endpoint(
     assert direct_validate(tmp_path,row,'saddle',[logs['ts'].replace('M062X/6-31G**','HF/6-31G**')])['verdict']=='fail'
     assert direct_validate(tmp_path,row,'saddle',[logs['ts'].replace('%nprocshared=12','%nprocshared=1')])['verdict']=='fail'
     assert direct_validate(tmp_path,row,'saddle',[logs['ts'].replace('%mem=4000MB','%mem=1000MB')])['verdict']=='fail'
-    assert direct_validate(tmp_path,row,'saddle',[logs['ts'].replace('ResearchAgentSpec ', 'UnknownSpec ')])['verdict']!='pass'
+    assert direct_validate(tmp_path,row,'saddle',[logs['ts'].replace('CoRAgentSpec ', 'UnknownSpec ')])['verdict']!='pass'
     wrong_mode=logs['ts'].replace('Frequencies -- -200.0','Frequencies -- 200.0')
     assert direct_validate(tmp_path,row,'saddle',[wrong_mode])['verdict']=='fail'
     spectator=logs['ts']
@@ -199,9 +199,9 @@ def test_registered_validator_rejects_resource_target_collisions(tmp_path, monke
     digest='sha256:'+hashlib.sha256(script.read_bytes()).hexdigest()
     descriptor={'id':'fixture.validator','version':'1','entry':'validator.py','sha256':digest,'backend':'validation',
                 'resources':{name:{'path':'validator.py','sha256':digest} for name in destinations}}
-    (domain/'execution.json').write_text(json.dumps({'schema_version':'research-agent-execution/1','name':'fixture','version':'1.0.0','executors':[],'validators':[descriptor],'acceptance_profiles':[]}))
-    (package/'package.json').write_text(json.dumps({'researchAgent':{'execution':['domains/fixture/execution.json']}}))
-    monkeypatch.setenv('RESEARCH_AGENT_PACKAGE_ROOT',str(package))
+    (domain/'execution.json').write_text(json.dumps({'schema_version':'coragent-execution/1','name':'fixture','version':'1.0.0','executors':[],'validators':[descriptor],'acceptance_profiles':[]}))
+    (package/'package.json').write_text(json.dumps({'coragent':{'execution':['domains/fixture/execution.json']}}))
+    monkeypatch.setenv('CORAGENT_PACKAGE_ROOT',str(package))
     with pytest.raises(ValueError,match='execution_(resource_path_invalid|destinations_overlap_or_reserved)'):
         prepare(tmp_path,{'validator_id':'fixture.validator', "validator_version": "1",'input_artifact_ids':['art_unused']})
 

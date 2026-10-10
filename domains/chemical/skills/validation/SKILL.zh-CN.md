@@ -3,7 +3,7 @@ name: validation
 description: 根据鞍点、目标振动模式、结构、电子态与立体化学证据验证过渡态候选。
 ---
 
-# ResearchAgent 过渡态验证
+# CoRAgent 过渡态验证
 
 [English version](SKILL.md)
 

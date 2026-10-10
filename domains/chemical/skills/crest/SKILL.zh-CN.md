@@ -3,7 +3,7 @@ name: crest
 description: 运行和评估 CREST 构象搜索，并保存构象集合、能量、设置、来源与选择理由。
 ---
 
-# ResearchAgent CREST
+# CoRAgent CREST
 
 [English version](SKILL.md)
 

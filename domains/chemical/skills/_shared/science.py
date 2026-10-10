@@ -56,7 +56,7 @@ def provenance(script):
 def finish(out, result, script, error=None):
     result['checks_passed'] = error is None
     result['scripts'] = provenance(script)
-    receipt = Path(sys.prefix) / 'research-agent-environment.json'
+    receipt = Path(sys.prefix) / 'coragent-environment.json'
     result['runtime'] = {'python': sys.executable, 'prefix': sys.prefix, 'version': sys.version,
                          'environment_receipt': json.loads(receipt.read_text()) if receipt.is_file() else None}
     if error is not None:

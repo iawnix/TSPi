@@ -1,5 +1,5 @@
 /** Session mutations execute on the pinned Pi transaction boundary. */
-export const SESSION_ADMISSION_SERVICE_ID = "research-agent.session-admission";
+export const SESSION_ADMISSION_SERVICE_ID = "coragent.session-admission";
 
 export function createSessionAdmission({ harness, conversation, LiveDoc }) {
   return {

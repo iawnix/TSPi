@@ -46,9 +46,9 @@ def test_pending_delivery_does_not_read_research_memory(tmp_path):
     workspace(tmp_path)
     folder=tmp_path/'operations/monitors/monitor_fixture/deliveries'
     folder.mkdir(parents=True)
-    (folder.parent/'binding.json').write_text(json.dumps({'schema_version':'research-agent-job-monitor/2',
+    (folder.parent/'binding.json').write_text(json.dumps({'schema_version':'coragent-job-monitor/2',
         'node_id':None,'node_revision':None,'job_id':'job_fixture','job_digest':'sha256:'+'a'*64,'enabled':True}))
-    (folder/'event_fixture.json').write_text(json.dumps({'schema_version':'research-agent-job-monitor-delivery/2',
+    (folder/'event_fixture.json').write_text(json.dumps({'schema_version':'coragent-job-monitor-delivery/2',
         'event_id':'event_fixture','session_id':'s','request_id':'job-wake:event_fixture','delivered':False}))
     # Even an unavailable Memory projection cannot hide a runtime event.
     import shutil
@@ -67,7 +67,7 @@ def test_long_queue_emits_one_diagnostic_event_without_poll_wakes(tmp_path, monk
     config.write_text('default_environment="cluster"\n[environments.cluster]\nkind="remote"\n'
                       'ssh_host="fixture"\nremote_root="/scratch"\n'
                       '[environments.cluster.submission]\nqueue="batch"\nqueue_wait_seconds=60\n')
-    monkeypatch.setenv('RESEARCH_AGENT_JOB_CONFIG', str(config))
+    monkeypatch.setenv('CORAGENT_JOB_CONFIG', str(config))
     # Exercise submission and Monitor registration with a queued remote Job;
     # local processes have no scheduler queue or queue-wait threshold.
     def submit(platform, spec):
@@ -94,10 +94,10 @@ def test_long_queue_emits_one_diagnostic_event_without_poll_wakes(tmp_path, monk
 def test_batches_are_stable_across_retry_and_new_events(tmp_path):
     workspace(tmp_path)
     folder=tmp_path/'operations/monitors/monitor_fixture/deliveries';folder.mkdir(parents=True)
-    (folder.parent/'binding.json').write_text(json.dumps({'schema_version':'research-agent-job-monitor/2',
+    (folder.parent/'binding.json').write_text(json.dumps({'schema_version':'coragent-job-monitor/2',
         'node_id':None,'node_revision':None,'job_id':'job_fixture','job_digest':'sha256:'+'a'*64,'enabled':True}))
     def add(name, **extra):
-        (folder/f'{name}.json').write_text(json.dumps({'schema_version':'research-agent-job-monitor-delivery/2','event_id':name,'session_id':'s',
+        (folder/f'{name}.json').write_text(json.dumps({'schema_version':'coragent-job-monitor-delivery/2','event_id':name,'session_id':'s',
             'request_id':'job-wake:'+name,'delivered':False,**extra}))
     add('event_1');add('event_2')
     rows=command(tmp_path,'pending',{})['deliveries']
@@ -116,10 +116,10 @@ def test_monitor_status_observes_outbox_without_claiming_or_batching(tmp_path):
     workspace(tmp_path)
     folder = tmp_path/'operations/monitors/monitor_fixture'
     (folder/'deliveries').mkdir(parents=True)
-    (folder/'binding.json').write_text(json.dumps({'schema_version':'research-agent-job-monitor/2','monitor_id':'monitor_fixture','session_id':'s', 'job_id':'job_fixture','node_id':None,'node_revision':None,'job_digest':'sha256:'+'a'*64}))
+    (folder/'binding.json').write_text(json.dumps({'schema_version':'coragent-job-monitor/2','monitor_id':'monitor_fixture','session_id':'s', 'job_id':'job_fixture','node_id':None,'node_revision':None,'job_digest':'sha256:'+'a'*64}))
     pending = folder/'deliveries/event_pending.json'
-    pending.write_text(json.dumps({'schema_version':'research-agent-job-monitor-delivery/2','event_id':'event_pending','session_id':'s','request_id':'wake_pending','delivered':False}))
-    (folder/'deliveries/event_done.json').write_text(json.dumps({'schema_version':'research-agent-job-monitor-delivery/2','event_id':'event_done','session_id':'s','delivered':True}))
+    pending.write_text(json.dumps({'schema_version':'coragent-job-monitor-delivery/2','event_id':'event_pending','session_id':'s','request_id':'wake_pending','delivered':False}))
+    (folder/'deliveries/event_done.json').write_text(json.dumps({'schema_version':'coragent-job-monitor-delivery/2','event_id':'event_done','session_id':'s','delivered':True}))
     before = pending.read_bytes()
     result = command(tmp_path,'status',{})
     assert [row['event_id'] for row in result['pending_deliveries']] == ['event_pending']
@@ -149,10 +149,10 @@ def test_delivery_retry_identity_is_independent_of_research_notes(tmp_path):
     workspace(tmp_path)
     folder = tmp_path/'operations/monitors/monitor_fixture/deliveries'
     folder.mkdir(parents=True)
-    (folder.parent/'binding.json').write_text(json.dumps({'schema_version':'research-agent-job-monitor/2',
+    (folder.parent/'binding.json').write_text(json.dumps({'schema_version':'coragent-job-monitor/2',
         'node_id':None,'node_revision':None,'job_id':'job_fixture','job_digest':'sha256:'+'a'*64,'enabled':True}))
     path = folder/'event_fixture.json'
-    path.write_text(json.dumps({'schema_version':'research-agent-job-monitor-delivery/2', 'event_id':'event_fixture',
+    path.write_text(json.dumps({'schema_version':'coragent-job-monitor-delivery/2', 'event_id':'event_fixture',
         'session_id':'s', 'request_id':'original', 'delivered':False, 'batch_event_ids':['event_fixture']}))
     row = command(tmp_path, 'claim', {'event_id':'event_fixture', 'channel':'wake'})
     command(tmp_path, 'complete', {'event_id':'event_fixture', 'channel':'wake', 'claim_token':row['claim_token'], 'error':'busy'})

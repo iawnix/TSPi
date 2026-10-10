@@ -27,21 +27,21 @@ import { RESEARCH_MEMORY_WRITE_PRINCIPAL } from "../bridge/ports.mjs";
 import { createTransactionCoordinator } from "../bridge/transactions.mjs";
 
 
-const sourceRoot = process.env.RESEARCH_AGENT_PI_RUNTIME_ROOT;
-if (!sourceRoot) throw new Error("ResearchAgent worker requires RESEARCH_AGENT_PI_RUNTIME_ROOT");
+const sourceRoot = process.env.CORAGENT_PI_RUNTIME_ROOT;
+if (!sourceRoot) throw new Error("CoRAgent worker requires CORAGENT_PI_RUNTIME_ROOT");
 const { estimateContextTokens } = await loadPi("estimate", sourceRoot);
 const setupModule = await loadPi("setup", sourceRoot);
 const { createHarnessSettings, configureHarnessHttp, ExecutionEnvs, findInitialAgentModel } = setupModule;
 // Pinned Pi transaction primitive keeps Monitor admission atomic with native input.
 const { admitSubmission } = await loadPi("submissions", sourceRoot);
-const ResearchAgentMonitorAdmission = defineService(MONITOR_ADMISSION_SERVICE_ID);
-const ResearchAgentInputAdmission = defineService(INPUT_ADMISSION_SERVICE_ID);
-const ResearchAgentSessionAdmission = defineService(SESSION_ADMISSION_SERVICE_ID);
-const ResearchAgentClientQueries = defineService(CLIENT_QUERIES_SERVICE_ID);
+const CoRAgentMonitorAdmission = defineService(MONITOR_ADMISSION_SERVICE_ID);
+const CoRAgentInputAdmission = defineService(INPUT_ADMISSION_SERVICE_ID);
+const CoRAgentSessionAdmission = defineService(SESSION_ADMISSION_SERVICE_ID);
+const CoRAgentClientQueries = defineService(CLIENT_QUERIES_SERVICE_ID);
 
-export async function createResearchAgentHarness(databasePath, options) {
-  const producerToken = process.env.RESEARCH_AGENT_INPUT_PRODUCER_TOKEN;
-  delete process.env.RESEARCH_AGENT_INPUT_PRODUCER_TOKEN;
+export async function createCoRAgentHarness(databasePath, options) {
+  const producerToken = process.env.CORAGENT_INPUT_PRODUCER_TOKEN;
+  delete process.env.CORAGENT_INPUT_PRODUCER_TOKEN;
   if (!producerToken) throw new Error("Worker requires supervised input producer identity");
   const { cwd, workspaceId, id: sessionId } = options.metadata;
   const modelRuntime = await (await loadPi("modelRuntime", sourceRoot)).ModelRuntime.create();
@@ -61,7 +61,7 @@ export async function createResearchAgentHarness(databasePath, options) {
     const transactionCoordinator = createTransactionCoordinator({ bridge: commandBridge, workspaceRoot: cwd });
     const businessTools = createCoreTools({ commandBridge });
     const promptManifest = createSystemPromptManifest({
-      native: { source: join(loadedSkills.packageRoot, "prompts/research-agent.md"), text: `Working directory: ${cwd}\n\n${await readFile(join(loadedSkills.packageRoot, "prompts/research-agent.md"), "utf8")}` },
+      native: { source: join(loadedSkills.packageRoot, "prompts/coragent.md"), text: `Working directory: ${cwd}\n\n${await readFile(join(loadedSkills.packageRoot, "prompts/coragent.md"), "utf8")}` },
       skills: { source: loadedSkills.skillsRoot, items: loadedSkills.skills },
 
     });
@@ -93,9 +93,9 @@ export async function createResearchAgentHarness(databasePath, options) {
     registry.install(defineExtension({ name: "coding-tools", tools:
       await createCodingTools(cwd),
     }));
-    registry.install(defineExtension({ name: "research-agent-tools", tools: durableTools }));
+    registry.install(defineExtension({ name: "coragent-tools", tools: durableTools }));
     registry.install(defineExtension({
-      name: "research-agent-prompt",
+      name: "coragent-prompt",
       sections: [section("research_agent_system_prompt", () => promptManifest.effective, { tag: false })],
       hooks: [
         hook(GenerationTask, {
@@ -122,7 +122,7 @@ export async function createResearchAgentHarness(databasePath, options) {
       registry,
       settings: createHarnessSettings(settingsManager),
       env: executionEnvs.env,
-      onReport: (error) => { if (process.env.RESEARCH_AGENT_DEBUG === "1") console.error(error); },
+      onReport: (error) => { if (process.env.CORAGENT_DEBUG === "1") console.error(error); },
     }, PI_TODO_CONTEXT);
     const created = (await harness.conversation("root", PI_TODO_CONTEXT)) === undefined;
     const conversation = await harness.root(PI_TODO_CONTEXT, { agent: { cwd, ...(created && resolved.model ? { model: resolved.model } : {}), ...(created && resolved.thinkingLevel ? { thinkingLevel: resolved.thinkingLevel } : {}) } });
@@ -132,12 +132,12 @@ export async function createResearchAgentHarness(databasePath, options) {
       wakeMessage, producerToken });
     return {
       harness, conversation: bindUserInputConversation(conversation, inputAdmission, harness), modelRuntime, settingsManager,
-      facetLoader: createStaticFacetLoader([defineFacet({ id: "@research-agent/client-queries", setup(env) {
+      facetLoader: createStaticFacetLoader([defineFacet({ id: "@coragent/client-queries", setup(env) {
         const { validateConsumption: _validate, ...monitorService } = monitorAdmission;
-        env.provide(ResearchAgentMonitorAdmission, monitorService);
-        env.provide(ResearchAgentInputAdmission, createInputService(inputAdmission));
-        env.provide(ResearchAgentSessionAdmission, createSessionAdmission({ harness, conversation, LiveDoc }));
-        env.provide(ResearchAgentClientQueries, createClientQueries({ workspaceId, sessionId, commandBridge, promptManifest,
+        env.provide(CoRAgentMonitorAdmission, monitorService);
+        env.provide(CoRAgentInputAdmission, createInputService(inputAdmission));
+        env.provide(CoRAgentSessionAdmission, createSessionAdmission({ harness, conversation, LiveDoc }));
+        env.provide(CoRAgentClientQueries, createClientQueries({ workspaceId, sessionId, commandBridge, promptManifest,
           readTelemetry: async (context) => {
             const { estimateContext } = await loadPi("compaction", sourceRoot);
             const [view, agent, research] = await Promise.all([conversation.context(context), conversation.agent(context), commandBridge.execute_command("research.read", {})]);

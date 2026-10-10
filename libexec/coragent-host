@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+readonly ENTRY="$(readlink -f -- "${BASH_SOURCE[0]}")"
+readonly PACKAGE_ROOT="$(dirname -- "$(dirname -- "$ENTRY")")"
+exec python3 "$PACKAGE_ROOT/apps/agent-cli/launcher.py" --install-root "${CORAGENT_INSTALL_ROOT:?CORAGENT_INSTALL_ROOT is required}" -- --service-host "$@"

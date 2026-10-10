@@ -45,7 +45,7 @@ def test_required_release_members_are_in_the_npm_allowlist() -> None:
     assert package_inventory.REQUIRED_RUNTIME_FILES <= allowlisted
     assert "scripts/package_inventory.py" in allowlisted
     assert "environment.lock.txt" in allowlisted
-    assert "contracts/ts-web/provider-response.schema.json" in allowlisted
+    assert "contracts/coragent-web/provider-response.schema.json" in allowlisted
     assert "contracts/ts-render/curve-data.schema.json" in allowlisted
     assert "apps/agent/pi/prompt.mjs" in allowlisted
     assert manifest["pi"]["extensions"] == []

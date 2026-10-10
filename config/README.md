@@ -22,7 +22,7 @@
 缺少邮件配置或 `enabled = false` 时，不传入邮件设置：新安装不启用邮件，更新保留已有设置。
 
 交互和非交互安装共用同一套参数、配置校验及默认值。命令行参数优先于
-`RESEARCH_AGENT_*` 环境默认值和配置目录。可以用 `--agent-config-dir`、`--job-config`
+`CORAGENT_*` 环境默认值和配置目录。可以用 `--agent-config-dir`、`--job-config`
 或 `--email-*` 参数单独指定输入。Phone/Relay 默认不启用，需要时显式使用
 `--with-link-relay --link-url https://你的域名`。
 
@@ -30,7 +30,7 @@
 
 ```bash
 ./install.sh --source local --config-dir "$PWD/config" \
-  --install-root "$HOME/ResearchAgent" --non-interactive --yes --dry-run
+  --install-root "$HOME/CoRAgent" --non-interactive --yes --dry-run
 ```
 
 去掉 `--dry-run` 后执行安装。本地源码有未提交修改时，需先提交，或在本机验证时显式

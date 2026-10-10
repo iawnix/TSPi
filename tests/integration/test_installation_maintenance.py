@@ -216,17 +216,17 @@ def test_failure_after_activation_retains_new_release_and_resumes(installation):
 def test_stop_waits_for_all_installation_writers_but_never_stops_jobs(tmp_path, monkeypatch):
     units = tmp_path/'units'
     units.mkdir()
-    for name in ('ts-web-research-agent.service','ts-app-server-research-agent.service','ts-app-server-research-agent@.service'):
+    for name in ('coragent-web.service','coragent.service','coragent@.service'):
         (units/name).touch()
     args = wizard.parse_args(['--install-root',str(tmp_path/'install'),'--service-scope','user'])
     monkeypatch.setattr(wizard,'validate_service_ownership',lambda _a:None)
     monkeypatch.setattr(wizard,'_service_unit_directory',lambda _s:units)
-    monkeypatch.setattr(wizard,'app_server_service_instances',lambda _s:['ts-app-server-research-agent@old.service'])
+    monkeypatch.setattr(wizard,'app_server_service_instances',lambda _s:['coragent@old.service'])
     calls = []
     monkeypatch.setattr(wizard,'_run_systemctl',lambda _s,*args:calls.append(args))
     monkeypatch.setattr(wizard,'_service_status',lambda *_a:{'active':'inactive'})
     wizard.stop_installation_services(args)
-    assert calls == [('stop','ts-web-research-agent.service'),('stop','ts-app-server-research-agent.service'),('stop','ts-app-server-research-agent@old.service')]
+    assert calls == [('stop','coragent-web.service'),('stop','coragent.service'),('stop','coragent@old.service')]
     monkeypatch.setattr(wizard,'_service_status',lambda *_a:{'active':'deactivating'})
     with pytest.raises(RuntimeError,match='did not stop'):
         wizard.stop_installation_services(args)

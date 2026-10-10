@@ -27,9 +27,9 @@ description: 将化学名称、描述或给定结构转成分子图和初始几�
 所选目标的 `structure` Python 绑定提供 RDKit。收集 Job 的 JSON 和几何文件作为研究材料。
 
 ```text
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.resolve --version 1 --output prepared/lookup.json -- --name '乙醇' --lookup-name ethanol
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.resolve-candidates --version 1 --input candidates=inputs/candidates.json --output prepared/candidates.json
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.seed --version 1 --output prepared/seed.json -- --smiles CCO --charge 0 --multiplicity 1
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config "$CORAGENT_JOB_CONFIG" --environment local --executor chemical.resolve --version 1 --output prepared/lookup.json -- --name '乙醇' --lookup-name ethanol
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config "$CORAGENT_JOB_CONFIG" --environment local --executor chemical.resolve-candidates --version 1 --input candidates=inputs/candidates.json --output prepared/candidates.json
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config "$CORAGENT_JOB_CONFIG" --environment local --executor chemical.seed --version 1 --output prepared/seed.json -- --smiles CCO --charge 0 --multiplicity 1
 ```
 
 给定或修改后的 SMILES 需要检查时使用 `chemical.inspect@1`；已收集的候选结果包含相关

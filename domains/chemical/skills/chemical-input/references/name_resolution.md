@@ -11,8 +11,8 @@ continue to the next backend. Each enabled backend is attempted once per invocat
 Use a purposeful translated/normalized query if helpful, then infer candidates when
 further lookup is unlikely to add information.
 
-Configuration comes from RESEARCH_AGENT_NAME_RESOLVER_CONFIG or
-RESEARCH_AGENT_INSTALL_ROOT/etc/name-resolver.toml. Managed Jobs receive explicit
+Configuration comes from CORAGENT_NAME_RESOLVER_CONFIG or
+CORAGENT_INSTALL_ROOT/etc/name-resolver.toml. Managed Jobs receive explicit
 bindings: the installer sets the local structure backend's resolver path in job.toml.
 Explicit settings are preserved; remote targets require a path readable on that target.
 Prepare a new request after changing a binding. Missing configuration returns

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build one content-addressed ResearchAgent Package from validated component releases."""
+"""Build one content-addressed CoRAgent Package from validated component releases."""
 
 from __future__ import annotations
 
@@ -50,9 +50,9 @@ BUILD_WEB = ROOT / "scripts" / "build_web.py"
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Build a ResearchAgent Core Package with optional TS Web.")
-    parser.add_argument("--without-web", action="store_true", help="Omit the optional TS Web component.")
-    parser.add_argument("--web-manifest", help="Existing validated ts-web-component-release.json.")
+    parser = argparse.ArgumentParser(description="Build a CoRAgent Core Package with optional CoRAgent Web.")
+    parser.add_argument("--without-web", action="store_true", help="Omit the optional CoRAgent Web component.")
+    parser.add_argument("--web-manifest", help="Existing validated coragent-web-component-release.json.")
     parser.add_argument("--agent-manifest", help="Existing Agent component manifest; otherwise build from this checkout.")
     parser.add_argument("--output-dir", default="dist/package", help="Directory for the suite archive and manifest.")
     parser.add_argument("--allow-dirty", action="store_true", help="Allow dirty component sources for local validation only.")
@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
             include_web=not args.without_web,
         )
     except (SuiteReleaseError, json.JSONDecodeError, OSError, ValueError) as error:
-        print(f"ResearchAgent Package build failed: {error}", file=sys.stderr)
+        print(f"CoRAgent Package build failed: {error}", file=sys.stderr)
         return 1
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
@@ -89,7 +89,7 @@ def build_package(
     allow_dirty: bool,
     include_web: bool = True,
 ) -> dict[str, object]:
-    with tempfile.TemporaryDirectory(prefix="research-agent-package-build-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="coragent-package-build-") as temporary:
         temporary_root = Path(temporary)
         if agent_manifest_path is None:
             agent_output = temporary_root / "agent"
@@ -153,24 +153,24 @@ def build_package(
             web_archive = verify_archive_descriptor(
                 web_manifest_path.parent / web_manifest["archive"]["filename"],
                 web_manifest["archive"],
-                "TS Web component archive",
+                "CoRAgent Web component archive",
             )
             if web_manifest["component"]["version"] != agent_manifest["package"]["version"]:
                 raise SuiteReleaseError("Web component version must match the Agent component version")
         components = suite_components(agent_manifest, include_web=include_web, web=web_manifest)
         output_dir.mkdir(parents=True, exist_ok=True)
-        temporary_archive = temporary_root / "research-agent-package.tgz"
+        temporary_archive = temporary_root / "coragent-package.tgz"
         write_suite_archive(temporary_archive, components, agent_archive, web_archive)
         archive_sha256 = sha256_file(temporary_archive)
         version = agent_manifest["package"]["version"]
         release_id = f"{version}-sha256-{archive_sha256[:16]}"
-        archive_name = f"research-agent-package-{release_id}.tgz"
+        archive_name = f"coragent-package-{release_id}.tgz"
         archive_path = output_dir / archive_name
         if archive_path.exists():
             if not archive_path.is_file() or archive_path.is_symlink():
-                raise SuiteReleaseError(f"existing ResearchAgent Package archive is unsafe: {archive_path}")
+                raise SuiteReleaseError(f"existing CoRAgent Package archive is unsafe: {archive_path}")
             if sha256_file(archive_path) != archive_sha256:
-                raise SuiteReleaseError(f"existing ResearchAgent Package archive has different content: {archive_path}")
+                raise SuiteReleaseError(f"existing CoRAgent Package archive has different content: {archive_path}")
         else:
             atomic_copy(temporary_archive, archive_path)
         manifest = {

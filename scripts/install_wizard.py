@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interactive installer and service configurator for a ResearchAgent installation."""
+"""Interactive installer and service configurator for a CoRAgent installation."""
 
 from __future__ import annotations
 
@@ -70,8 +70,8 @@ except ImportError:
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_REPO = "git@github.com:iawnix/TSPi.git"
-PROGRESS_PREFIX = "@@research-agent-progress@@"
+DEFAULT_REPO = "git@github.com:iawnix/coragent.git"
+PROGRESS_PREFIX = "@@coragent-progress@@"
 MINIMUM_NODE_VERSION = (22, 19, 0)
 EMAIL_PROVIDERS = {"clawemail", "smtp"}
 SMTP_PRESETS = {
@@ -81,9 +81,9 @@ SMTP_PRESETS = {
 }
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 WEB_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,100}$")
-SERVICE_CONFIG_SCHEMA = "research-agent-service/1"
+SERVICE_CONFIG_SCHEMA = "coragent-service/1"
 SERVICE_CONFIG_RELATIVE = Path("etc/installation.json")
-REMOTE_HOST_CONFIG_SCHEMA = "research-agent-remote-host/1"
+REMOTE_HOST_CONFIG_SCHEMA = "coragent-remote-host/1"
 REMOTE_HOST_CONFIG_RELATIVE = Path("etc/remote-host.json")
 PI_AGENT_CONFIG_FILES = ("models.json", "auth.json")
 PI_AGENT_CONFIG_MAX_BYTES = 2 * 1024 * 1024
@@ -178,7 +178,7 @@ def inspect_installation(root: Path) -> dict[str, str | None]:
     if not metadata["state_present"]:
         if metadata["owned"]:
             return {"operation": "restore", "release_id": None}
-        research_agent_like = [root / "research-agent", root / "current", root / "bin", root / "releases"]
+        research_agent_like = [root / "coragent", root / "current", root / "bin", root / "releases"]
         if any(path.exists() or path.is_symlink() for path in research_agent_like):
             raise RuntimeError(
                 f"installation-like files exist without trusted package state in {root}; "
@@ -207,37 +207,37 @@ def parse_args(argv: list[str] | None = None, *, use_environment: bool = True) -
     parser.add_argument("--config-dir", help="Private directory containing optional job.toml, models.json, auth.json and email.toml.")
     parser.add_argument("--dry-run", action="store_true", help="Print a redacted plan without downloading, installing or starting services.")
     parser.add_argument("--workspace-root", help="Absolute directory containing named research workspaces.")
-    parser.add_argument("--research-agent-repo", default=DEFAULT_REPO)
-    parser.add_argument("--research-agent-ref", default=os.environ.get("RESEARCH_AGENT_INSTALL_REF", "main"))
-    parser.add_argument("--research-agent-commit", help=argparse.SUPPRESS)
+    parser.add_argument("--coragent-repo", default=DEFAULT_REPO)
+    parser.add_argument("--coragent-ref", default=os.environ.get("CORAGENT_INSTALL_REF", "main"))
+    parser.add_argument("--coragent-commit", help=argparse.SUPPRESS)
     parser.add_argument("--source-root", help=argparse.SUPPRESS)
     parser.add_argument('--package-manifest', help='Manifest of a complete local release package; use --source package.')
     parser.add_argument('--package-archive', help='Complete package archive; defaults to the filename in its manifest.')
     web = parser.add_mutually_exclusive_group()
-    web.add_argument("--with-web", dest="with_web", action="store_true", help="Install TS Web.")
-    web.add_argument("--without-web", dest="with_web", action="store_false", help="Skip TS Web installation.")
+    web.add_argument("--with-web", dest="with_web", action="store_true", help="Install CoRAgent Web.")
+    web.add_argument("--without-web", dest="with_web", action="store_false", help="Skip CoRAgent Web installation.")
     parser.set_defaults(with_web=None)
     icons = parser.add_mutually_exclusive_group()
     icons.add_argument(
         "--with-model-icons",
         dest="with_model_icons",
         action="store_true",
-        help="Install the optional ResearchAgent model icon font.",
+        help="Install the optional CoRAgent model icon font.",
     )
     icons.add_argument(
         "--without-model-icons",
         dest="with_model_icons",
         action="store_false",
-        help="Do not install the optional ResearchAgent model icon font.",
+        help="Do not install the optional CoRAgent model icon font.",
     )
     parser.set_defaults(with_model_icons=None)
-    parser.add_argument("--web-port", type=int, help="TS Web HTTP port.")
-    parser.add_argument("--web-host", default="127.0.0.1", help="TS Web listen address.")
-    parser.add_argument("--allow-remote", action="store_true", help="Allow TS Web to listen on a non-loopback address.")
-    parser.add_argument("--web-auth-token-file", help="TS Web token file (must be inside the installation root).")
+    parser.add_argument("--web-port", type=int, help="CoRAgent Web HTTP port.")
+    parser.add_argument("--web-host", default="127.0.0.1", help="CoRAgent Web listen address.")
+    parser.add_argument("--allow-remote", action="store_true", help="Allow CoRAgent Web to listen on a non-loopback address.")
+    parser.add_argument("--web-auth-token-file", help="CoRAgent Web token file (must be inside the installation root).")
     parser.add_argument(
         "--web-auth-token",
-        help="Explicit TS Web token (8-100 URL-safe characters; prefer --web-auth-token-file for secrets).",
+        help="Explicit CoRAgent Web token (8-100 URL-safe characters; prefer --web-auth-token-file for secrets).",
     )
     parser.add_argument("--job-config", help="Unified job.toml to install as etc/job.toml.")
     parser.add_argument(
@@ -264,24 +264,24 @@ def parse_args(argv: list[str] | None = None, *, use_environment: bool = True) -
     )
     parser.add_argument("--service-user", help="Unix account used by systemd services (required for system scope).")
     remote = parser.add_argument_group("remote terminal SSH")
-    remote.add_argument("--remote-host", help="SSH host that owns the remote ResearchAgent Host.")
-    remote.add_argument("--remote-host-socket", help="Absolute Unix socket path of the remote ResearchAgent Host.")
-    remote.add_argument("--remote-proxy-path", help="Absolute path to research-agent-host-proxy.mjs on the remote host.")
+    remote.add_argument("--remote-host", help="SSH host that owns the remote CoRAgent Host.")
+    remote.add_argument("--remote-host-socket", help="Absolute Unix socket path of the remote CoRAgent Host.")
+    remote.add_argument("--remote-proxy-path", help="Absolute path to coragent-host-proxy.mjs on the remote host.")
     remote.add_argument("--ssh-config", help="Absolute OpenSSH config file for the remote terminal.")
     remote.add_argument("--ssh-option", action="append", default=None, help="Additional OpenSSH option; repeatable.")
-    parser.add_argument("--phone-access", choices=("disabled", "link"), help="TS Phone access mode.")
+    parser.add_argument("--phone-access", choices=("disabled", "link"), help="CoRHub access mode.")
     parser.add_argument(
         "--link-relay-root", "--relay-install-root",
-        default=os.environ.get("RESEARCH_AGENT_LINK_RELAY_ROOT"),
-        help="Existing local ResearchAgent Link Relay installation root (auto-detected when omitted).",
+        default=os.environ.get("CORAGENT_LINK_RELAY_ROOT"),
+        help="Existing local CoRAgent Link Relay installation root (auto-detected when omitted).",
     )
-    parser.add_argument("--link-url", "--relay-public-url", default=os.environ.get("RESEARCH_AGENT_LINK_URL") if use_environment else None, help="ResearchAgent Link Relay HTTPS origin.")
+    parser.add_argument("--link-url", "--relay-public-url", default=os.environ.get("CORAGENT_LINK_URL") if use_environment else None, help="CoRAgent Link Relay HTTPS origin.")
     parser.add_argument(
         "--link-enrollment-url",
-        default=os.environ.get("RESEARCH_AGENT_LINK_ENROLLMENT_URL"),
+        default=os.environ.get("CORAGENT_LINK_ENROLLMENT_URL"),
         help="Optional local Relay origin used only while redeeming the Host enrollment code.",
     )
-    parser.add_argument("--link-enrollment-code", help="Single-use Host enrollment code issued by ResearchAgent Link Relay.")
+    parser.add_argument("--link-enrollment-code", help="Single-use Host enrollment code issued by CoRAgent Link Relay.")
     relay = parser.add_mutually_exclusive_group()
     relay.add_argument("--with-link-relay", dest="with_link_relay", action="store_true")
     relay.add_argument("--without-link-relay", dest="with_link_relay", action="store_false")
@@ -290,7 +290,7 @@ def parse_args(argv: list[str] | None = None, *, use_environment: bool = True) -
     parser.add_argument("--relay-listen", default="127.0.0.1")
     parser.add_argument("--relay-port", type=int, default=8788)
     parser.add_argument("--relay-service-scope", choices=("user", "system", "none"), default="user")
-    parser.add_argument("--relay-service-user", default="research-agent-relay")
+    parser.add_argument("--relay-service-user", default="coragent-relay")
     parser.add_argument("--relay-enable-services", dest="relay_enable_services", action="store_true")
     parser.add_argument("--relay-no-enable-services", dest="relay_enable_services", action="store_false")
     parser.add_argument("--relay-start-services", dest="relay_start_services", action="store_true")
@@ -331,34 +331,34 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
         raise RuntimeError("interactive installation requires a TTY; use --non-interactive")
 
     section("Source and destination")
-    args.install_root = args.install_root or ask("Installation directory", str(Path.home() / ".local/share/research-agent"))
+    args.install_root = args.install_root or ask("Installation directory", str(Path.home() / ".local/share/coragent"))
     args.workspace_root = args.workspace_root or ask(
         "Workspace root",
         str(read_workspace_root(Path(args.install_root).expanduser())),
     )
-    field("Repository", args.research_agent_repo)
-    field("Requested revision", args.research_agent_ref)
-    if args.research_agent_commit:
-        field("Resolved commit", args.research_agent_commit)
+    field("Repository", args.coragent_repo)
+    field("Requested revision", args.coragent_ref)
+    if args.coragent_commit:
+        field("Resolved commit", args.coragent_commit)
 
     section("Core")
-    field("ResearchAgent terminal client", "required", tone="success")
+    field("CoRAgent terminal client", "required", tone="success")
     field("Control runtime", "required", tone="success")
     field("Scientific execution", "prepare selected environments and verify Jobs", tone="muted")
     field("Pi App Server runtime", "required", tone="success")
 
     section("Optional components")
     if args.with_web is None:
-        args.with_web = ask_yes_no("Install TS Web", True)
+        args.with_web = ask_yes_no("Install CoRAgent Web", True)
     if args.with_web:
-        args.web_port = _ask_int("TS Web port", args.web_port or 8766, minimum=1, maximum=65535)
-        args.web_host = ask("TS Web listen address", args.web_host or "127.0.0.1")
+        args.web_port = _ask_int("CoRAgent Web port", args.web_port or 8766, minimum=1, maximum=65535)
+        args.web_host = ask("CoRAgent Web listen address", args.web_host or "127.0.0.1")
         if args.web_host not in {"127.0.0.1", "::1", "localhost"}:
-            args.allow_remote = ask_yes_no("Allow remote TS Web clients", False)
-        if args.web_auth_token is None and ask_yes_no("Use a custom TS Web access token", False):
+            args.allow_remote = ask_yes_no("Allow remote CoRAgent Web clients", False)
+        if args.web_auth_token is None and ask_yes_no("Use a custom CoRAgent Web access token", False):
             args.web_auth_token = _ask_web_auth_token()
     if args.with_model_icons is None:
-        args.with_model_icons = ask_yes_no("Install ResearchAgent model icon font", True)
+        args.with_model_icons = ask_yes_no("Install CoRAgent model icon font", True)
     section("Job platforms")
     args.job_config = ask(
         "Job platform TOML path (blank preserves existing configuration)",
@@ -371,10 +371,10 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
     section("Phone connection")
     existing_link = _existing_link_configuration(Path(args.install_root))
     if args.phone_access is None:
-        args.phone_access = "link" if ask_yes_no("Enable TS Phone through ResearchAgent Link Relay", existing_link is not None) else "disabled"
+        args.phone_access = "link" if ask_yes_no("Enable CoRHub through CoRAgent Link Relay", existing_link is not None) else "disabled"
     if args.phone_access == "link":
         args.link_url = ask(
-            "ResearchAgent Link Relay URL",
+            "CoRAgent Link Relay URL",
             args.link_url or (existing_link[0] if existing_link else ""),
         ).strip()
         token_exists = (Path(args.install_root) / "var/state/host/host.token").is_file()
@@ -404,7 +404,7 @@ def _load_existing_menu_defaults(args: argparse.Namespace) -> None:
     if args.workspace_root is None:
         args.workspace_root = str(read_workspace_root(root))
     if args.with_web is None:
-        args.with_web = (root / "TSWeb").exists() or not (root / "var/state/installation/install-state.json").is_file()
+        args.with_web = (root / "coragent-web").exists() or not (root / "var/state/installation/install-state.json").is_file()
     if args.web_port is None:
         args.web_port = 8766
     if args.with_model_icons is None:
@@ -436,7 +436,7 @@ def _load_existing_menu_defaults(args: argparse.Namespace) -> None:
         # but never choose it implicitly for a user installation.
         args.service_scope = DEFAULT_SERVICE_SCOPE
     if args.service_scope == "system" and not args.service_user:
-        unit = Path("/etc/systemd/system/ts-app-server-research-agent.service")
+        unit = Path("/etc/systemd/system/coragent.service")
         try:
             for line in unit.read_text(encoding="utf-8").splitlines():
                 if line.startswith("User=") and line.removeprefix("User=").strip():
@@ -445,7 +445,7 @@ def _load_existing_menu_defaults(args: argparse.Namespace) -> None:
         except OSError:
             pass
     if args.service_scope != "none":
-        # research-agent is a client of the installation Host.  Enabling the
+        # coragent is a client of the installation Host.  Enabling the
         # unit without starting it leaves a freshly installed CLI unusable.
         args.enable_services = True
         args.start_services = True
@@ -502,7 +502,7 @@ def _menu_choice(args: argparse.Namespace) -> str:
     section("Installer menu")
     field("Installation", args.install_root, tone="accent")
     field("Workspace", args.workspace_root or "not set")
-    field("TS Web", "enabled" if args.with_web else "disabled")
+    field("CoRAgent Web", "enabled" if args.with_web else "disabled")
     field("Phone", "Link Relay" if args.phone_access == "link" else "disabled")
     field("Services", args.service_scope or "none")
     field("Email", args.email_binding or ("configured" if (root / "etc/email.toml").is_file() else "not configured"))
@@ -510,7 +510,7 @@ def _menu_choice(args: argparse.Namespace) -> str:
     field("Chemical name resolver", "configured" if (root / "etc/name-resolver.toml").is_file() else "not configured")
     print()
     print("  1) Installation and workspace")
-    print("  2) TS Web")
+    print("  2) CoRAgent Web")
     print("  3) Job platforms")
     print("  4) Phone connection")
     print("  5) Runtime and services")
@@ -522,19 +522,19 @@ def _menu_choice(args: argparse.Namespace) -> str:
 
 
 def _configure_menu_web(args: argparse.Namespace) -> None:
-    args.with_web = ask_yes_no("Install TS Web", bool(args.with_web))
+    args.with_web = ask_yes_no("Install CoRAgent Web", bool(args.with_web))
     if not args.with_web:
         args.web_port = None
         args.web_auth_token = None
         args.allow_remote = False
         return
-    args.web_port = _ask_int("TS Web port", args.web_port or 8766, minimum=1, maximum=65535)
-    args.web_host = ask("TS Web listen address", args.web_host or "127.0.0.1")
+    args.web_port = _ask_int("CoRAgent Web port", args.web_port or 8766, minimum=1, maximum=65535)
+    args.web_host = ask("CoRAgent Web listen address", args.web_host or "127.0.0.1")
     if args.web_host not in {"127.0.0.1", "::1", "localhost"}:
-        args.allow_remote = ask_yes_no("Allow remote TS Web clients", bool(args.allow_remote))
+        args.allow_remote = ask_yes_no("Allow remote CoRAgent Web clients", bool(args.allow_remote))
     else:
         args.allow_remote = False
-    if ask_yes_no("Replace the TS Web access token", False):
+    if ask_yes_no("Replace the CoRAgent Web access token", False):
         args.web_auth_token = _ask_web_auth_token()
 
 
@@ -564,7 +564,7 @@ def _ask_int(
 
 
 def _configure_menu_phone(args: argparse.Namespace) -> None:
-    enabled = ask_yes_no("Enable TS Phone through ResearchAgent Link Relay", args.phone_access == "link")
+    enabled = ask_yes_no("Enable CoRHub through CoRAgent Link Relay", args.phone_access == "link")
     if not enabled:
         args.phone_access = "disabled"
         args.link_url = None
@@ -573,7 +573,7 @@ def _configure_menu_phone(args: argparse.Namespace) -> None:
         return
     args.phone_access = "link"
     existing_link = _existing_link_configuration(Path(args.install_root))
-    args.link_url = ask("ResearchAgent Link Relay URL", args.link_url or (existing_link[0] if existing_link else "")).strip()
+    args.link_url = ask("CoRAgent Link Relay URL", args.link_url or (existing_link[0] if existing_link else "")).strip()
     token_file = Path(args.install_root) / "var/state/host/host.token"
     enrolled_for_url = token_file.is_file() and existing_link is not None and args.link_url.rstrip("/") == existing_link[0]
     if not enrolled_for_url:
@@ -608,7 +608,7 @@ def _initialize_interactive_menu(args: argparse.Namespace) -> None:
         return
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise RuntimeError("interactive installation requires a TTY; use --non-interactive")
-    args.install_root = args.install_root or ask("Installation directory", str(Path.home() / ".local/share/research-agent"))
+    args.install_root = args.install_root or ask("Installation directory", str(Path.home() / ".local/share/coragent"))
     args.install_root = str(Path(args.install_root).expanduser())
     _load_existing_menu_defaults(args)
     if args.phone_access == "link" and not _link_host_enrolled_for_url(args):
@@ -662,7 +662,7 @@ def interactive_menu_options(args: argparse.Namespace) -> argparse.Namespace:
         elif choice == "6":
             configure_email_interactively(args, force=True)
         elif choice == "7":
-            args.with_model_icons = ask_yes_no("Install ResearchAgent model icon font", bool(args.with_model_icons))
+            args.with_model_icons = ask_yes_no("Install CoRAgent model icon font", bool(args.with_model_icons))
         else:
             note("Choose a menu number from 1 to 9.", tone="warning")
 
@@ -702,7 +702,7 @@ def configure_email_interactively(args: argparse.Namespace, *, force: bool = Fal
     args.email_security = ask("SMTP security (ssl or starttls)", getattr(args, "email_security", None) or "ssl").lower()
     args.email_username = _ask_email_address("SMTP sender email address", getattr(args, "email_username", None) or "")
     if ask_yes_no("Read SMTP authorization code from an environment variable", False):
-        args.email_password_env = ask("Password environment variable", "RESEARCH_AGENT_EMAIL_PASSWORD")
+        args.email_password_env = ask("Password environment variable", "CORAGENT_EMAIL_PASSWORD")
         args.email_password_file = None
         return
     default_password_file = root / "etc/secrets" / "smtp-password"
@@ -749,28 +749,28 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     if installation["release_id"]:
         field("Current release", installation["release_id"])
     field("Installation root", args.install_root, tone="accent")
-    field("ResearchAgent revision", args.research_agent_ref)
-    if args.research_agent_commit:
-        field("Resolved commit", args.research_agent_commit)
+    field("CoRAgent revision", args.coragent_ref)
+    if args.coragent_commit:
+        field("Resolved commit", args.coragent_commit)
     field("Workspace root", args.workspace_root)
     field("Conda root", args.conda_root or "auto-detect")
     if args.service_scope == "system":
         field("Installation owner", f"{args.service_user} (private package/runtime/state tree)", tone="warning")
-    field("Phone access", "ResearchAgent Link Relay" if args.phone_access == "link" else "disabled", tone="success" if args.phone_access == "link" else "muted")
+    field("Phone access", "CoRAgent Link Relay" if args.phone_access == "link" else "disabled", tone="success" if args.phone_access == "link" else "muted")
     if args.phone_access == "link":
-        field("ResearchAgent Link Relay", args.link_url, tone="success")
+        field("CoRAgent Link Relay", args.link_url, tone="success")
         if getattr(args, "_defer_link_enrollment", False):
             field("Host enrollment", "request after core installation", tone="warning")
         field("Phone tool access", "same Agent and tools as terminal", tone="success")
     field(
         "Model icon font",
-        "install optional ResearchAgent font" if args.with_model_icons else "use Nerd Font/Unicode fallback",
+        "install optional CoRAgent font" if args.with_model_icons else "use Nerd Font/Unicode fallback",
         tone="success" if args.with_model_icons else "muted",
     )
 
     root = Path(args.install_root)
     section("Core")
-    field("research-agent terminal client", f"install - {root / 'research-agent'}", tone="success")
+    field("coragent terminal client", f"install - {root / 'coragent'}", tone="success")
     field("Control runtime", "install from explicit lock and verify", tone="success")
     field("Scientific execution", "verify configured targets and declared dependencies", tone="muted")
     field("Pi App Server", "install pinned runtime and verify", tone="success")
@@ -811,14 +811,14 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
         credential = args.email_password_env or args.email_password_file
         field("Credential", credential)
 
-    section("TS Web")
+    section("CoRAgent Web")
     field(
         "Install",
         "yes" if args.with_web else "no",
         tone="success" if args.with_web else "muted",
     )
     if args.with_web:
-        field("Launcher", root / "TSWeb")
+        field("Launcher", root / "coragent-web")
         field("Listen", f"http://{args.web_host}:{args.web_port}")
         field("Workspace root", args.workspace_root)
         field("State directory", root / "var/state/web")
@@ -841,7 +841,7 @@ def _ask_web_auth_token() -> str | None:
     """Read a custom token without delaying validation until installation."""
 
     while True:
-        value = _read_secret("TS Web access token (8-100 URL-safe characters; blank generates one)").strip()
+        value = _read_secret("CoRAgent Web access token (8-100 URL-safe characters; blank generates one)").strip()
         if not value:
             return None
         if WEB_TOKEN_PATTERN.fullmatch(value):
@@ -872,10 +872,10 @@ def _service_plan(args: argparse.Namespace, *, template: bool = False) -> str:
 
 
 def validate_options(args: argparse.Namespace) -> None:
-    validate_repo(args.research_agent_repo)
-    validate_ref(args.research_agent_ref)
-    if args.research_agent_commit:
-        validate_commit(args.research_agent_commit)
+    validate_repo(args.coragent_repo)
+    validate_ref(args.coragent_ref)
+    if args.coragent_commit:
+        validate_commit(args.coragent_commit)
     if not args.install_root:
         raise ValueError("--install-root is required in non-interactive mode")
     args.install_root = str(validate_install_root(Path(args.install_root)))
@@ -965,7 +965,7 @@ def validate_options(args: argparse.Namespace) -> None:
     if args.service_scope == "none" and (args.enable_services or args.start_services):
         raise ValueError("--enable-services and --start-services require a service scope")
     if args.service_scope != "none":
-        # A normal installation must leave research-agent with a usable Host.
+        # A normal installation must leave coragent with a usable Host.
         args.enable_services = True
         args.start_services = True
     if args.service_scope == "system" and os.geteuid() != 0:
@@ -995,7 +995,7 @@ def validate_options(args: argparse.Namespace) -> None:
         token_file = Path(args.install_root) / "var/state/host/host.token"
         enrolled_for_url = token_file.is_file() and existing_link is not None and existing_link[0] == args.link_url
         if not enrolled_for_url and not args.link_enrollment_code and not getattr(args, "_defer_link_enrollment", False):
-            raise ValueError("--link-enrollment-code is required when enrolling a new ResearchAgent Host")
+            raise ValueError("--link-enrollment-code is required when enrolling a new CoRAgent Host")
     elif args.link_url or args.link_enrollment_code or args.link_enrollment_url:
         raise ValueError("Link Relay options require --phone-access link")
     if args.service_scope != "none" and shutil.which("systemctl") is None:
@@ -1038,7 +1038,7 @@ def configure_workspace_root(args: argparse.Namespace) -> dict[str, str]:
     if not workspace_root.is_dir():
         raise ValueError(f"workspace root is not a directory: {workspace_root}")
     workspace_root.chmod(0o700)
-    catalog_directory = workspace_root / ".research-agent-catalog"
+    catalog_directory = workspace_root / ".coragent-catalog"
     if catalog_directory.is_symlink():
         raise ValueError("workspace catalog cannot be a symbolic link")
     catalog_directory.mkdir(mode=0o700, exist_ok=True)
@@ -1054,12 +1054,12 @@ def configure_service_runtime(args: argparse.Namespace) -> dict[str, str | None]
     if scope == "none":
         runtime_dir: str | None = None
     elif scope == "system":
-        runtime_dir = "/run/research-agent"
+        runtime_dir = "/run/coragent"
     else:
         service_user = getattr(args, "service_user", None) or pwd.getpwuid(os.getuid()).pw_name
         service_uid = pwd.getpwnam(service_user).pw_uid
         runtime_parent = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{service_uid}"
-        runtime_dir = str(Path(runtime_parent) / "ra")
+        runtime_dir = str(Path(runtime_parent) / "coragent")
     document = {
         "schema_version": SERVICE_CONFIG_SCHEMA,
         "scope": scope,
@@ -1100,7 +1100,7 @@ def _existing_link_configuration(root: Path) -> tuple[str, str] | None:
         value = json.loads(manifest.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
-    if not isinstance(value, dict) or value.get("schema_version") != "research-agent-link/1":
+    if not isinstance(value, dict) or value.get("schema_version") != "coragent-link/1":
         return None
     relay_url = value.get("relay_url")
     host_id = value.get("host_id")
@@ -1138,12 +1138,12 @@ def _link_host_enrolled_for_url(args: argparse.Namespace) -> bool:
 
 def _validate_link_url(value: object) -> str:
     if not isinstance(value, str) or not value or len(value) > 512:
-        raise ValueError("--link-url must be a ResearchAgent Link Relay origin")
+        raise ValueError("--link-url must be a CoRAgent Link Relay origin")
     try:
         parsed = urllib.parse.urlsplit(value)
         _ = parsed.port
     except ValueError as exc:
-        raise ValueError("--link-url must be a ResearchAgent Link Relay origin") from exc
+        raise ValueError("--link-url must be a CoRAgent Link Relay origin") from exc
     loopback = parsed.hostname in {"127.0.0.1", "::1", "localhost"}
     if not parsed.hostname or (parsed.scheme != "https" and not (loopback and parsed.scheme == "http")):
         raise ValueError("--link-url must use HTTPS except on loopback")
@@ -1452,7 +1452,7 @@ def _validate_job_config(parsed: dict[str, object]) -> dict:
     contract.validate_job_config(parsed)
     # Bootstrap must work before jsonschema/packaging are installed. Full
     # catalog and dependency validation runs in the prepared Host interpreter.
-    declarations = json.loads((ROOT / 'package.json').read_text())['researchAgent']['execution']
+    declarations = json.loads((ROOT / 'package.json').read_text())['coragent']['execution']
     catalogs = [json.loads((ROOT / path).read_text()) for path in declarations]
     return contract.validate_catalog_bindings(parsed, catalogs)
 
@@ -1468,7 +1468,7 @@ def verify_job_bindings(args, installed, backend_configs):
     python = installed.get("runtime", {}).get("python_executable")
     if not python:
         raise RuntimeError("environment verification requires the installed Python runtime")
-    environment = {**os.environ, "RESEARCH_AGENT_PACKAGE_ROOT": str(Path(installed["package_root"]) / "agent")}
+    environment = {**os.environ, "CORAGENT_PACKAGE_ROOT": str(Path(installed["package_root"]) / "agent")}
     completed = subprocess.run([python, "-m", "research_agent.application.environment_check", "--config", job["path"]],
                                env=environment, text=True, capture_output=True, check=False)
     if completed.returncode:
@@ -1519,7 +1519,7 @@ def _validate_name_resolver_config(parsed: object) -> None:
         cache_dir = value.get("cache_dir")
         if cache_dir is not None and (not isinstance(cache_dir, str) or not Path(cache_dir).is_absolute()):
             raise ValueError(f"name-resolver backends.{name}.cache_dir must be an absolute path")
-        user_agent = value.get("user_agent", "ResearchAgent-chemical-name-resolver/1")
+        user_agent = value.get("user_agent", "CoRAgent-chemical-name-resolver/1")
         if not isinstance(user_agent, str) or not user_agent.strip() or len(user_agent) > 256:
             raise ValueError(f"name-resolver backends.{name}.user_agent must be a non-empty string")
 
@@ -1600,9 +1600,9 @@ def _bind_local_name_resolver(job: dict, resolver: Path) -> None:
             continue
         variables = structure.setdefault("environment", {})
         # Explicit paths (including a target-specific installation root) win.
-        if {"RESEARCH_AGENT_NAME_RESOLVER_CONFIG", "RESEARCH_AGENT_INSTALL_ROOT"} & variables.keys():
+        if {"CORAGENT_NAME_RESOLVER_CONFIG", "CORAGENT_INSTALL_ROOT"} & variables.keys():
             continue
-        variables["RESEARCH_AGENT_NAME_RESOLVER_CONFIG"] = str(resolver)
+        variables["CORAGENT_NAME_RESOLVER_CONFIG"] = str(resolver)
         changed.append(name)
     if not changed:
         return
@@ -1708,11 +1708,11 @@ def run_logged_install(
     stderr_lines: list[str] = []
     stdout = ""
     returncode = 1
-    activity = Spinner("Starting the ResearchAgent package installation", stream=sys.stderr, enabled=show_progress)
+    activity = Spinner("Starting the CoRAgent package installation", stream=sys.stderr, enabled=show_progress)
     activity.start()
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as log:
-            log.write("ResearchAgent installation diagnostic log\n")
+            log.write("CoRAgent installation diagnostic log\n")
             log.write(f"started_at_utc={datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')}\n")
             log.write(f"command={shlex.join(command)}\n\n")
             process = subprocess.Popen(
@@ -1767,7 +1767,7 @@ def run_logged_install(
                 else:
                     _append_log_file(_install_log_path(install_root), temporary)
                     temporary.unlink(missing_ok=True)
-                    activity.succeed("ResearchAgent package installed")
+                    activity.succeed("CoRAgent package installed")
                     return result
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
         failure_log = log_root / f"install-failure-{stamp}.log"
@@ -1777,7 +1777,7 @@ def run_logged_install(
         summary = details[-1] if details else f"installer process exited with status {returncode}"
         raise RuntimeError(f"{summary}\nDiagnostic log: {failure_log}")
     except BaseException:
-        activity.fail("ResearchAgent package installation failed")
+        activity.fail("CoRAgent package installation failed")
         if temporary.exists():
             temporary.unlink()
         raise
@@ -1846,17 +1846,17 @@ def run_install(args: argparse.Namespace) -> dict[str, object]:
         sys.executable,
         str(ROOT / "scripts/install_from_github.py"),
         "--repo",
-        args.research_agent_repo,
+        args.coragent_repo,
         "--ref",
-        args.research_agent_ref,
+        args.coragent_ref,
         "--install-root",
         args.install_root,
         "--progress",
         "--json",
         "--prepare-only",
     ]
-    if args.research_agent_commit:
-        command.extend(["--resolved-commit", args.research_agent_commit])
+    if args.coragent_commit:
+        command.extend(["--resolved-commit", args.coragent_commit])
     source_root = getattr(args, "source_root", None)
     if source_root:
         command.extend(["--source-root", source_root])
@@ -1913,7 +1913,7 @@ def snapshot_active_release(root: Path) -> dict[str, object] | None:
         return None
     launchers = {
         name: os.readlink(root / name)
-        for name in ("research-agent", "TSWeb")
+        for name in ("coragent", "coragent-web")
         if (root / name).is_symlink()
     }
     state_bytes = state.read_bytes()
@@ -1956,9 +1956,9 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
     """Capture installer-owned configuration before any install side effect."""
 
     relative_paths = [
-        "research-agent",
+        "coragent",
         "current",
-        "TSWeb",
+        "coragent-web",
         "uninstall.sh",
         "etc/installation.json",
         "etc/remote-host.json",
@@ -1989,7 +1989,7 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
     instances = []
     if getattr(args, "service_scope", "none") != "none":
         unit_dir = _service_unit_directory(args.service_scope)
-        names = ["ts-app-server-research-agent.service", "ts-web-research-agent.service", "ts-app-server-research-agent@.service"]
+        names = ["coragent.service", "coragent-web.service", "coragent@.service"]
         for name in names:
             unit_path = unit_dir / name
             services[str(unit_path)] = {
@@ -2000,7 +2000,7 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
                     name,
                 ),
             }
-        if (unit_dir / "ts-app-server-research-agent@.service").is_file():
+        if (unit_dir / "coragent@.service").is_file():
             scope = [] if args.service_scope == "system" else ["--user"]
             instances = [_service_status(scope, args.service_scope, name)
                          for name in app_server_service_instances(scope)]
@@ -2158,14 +2158,14 @@ def stop_installation_services(args):
     validate_service_ownership(args)
     scope = [] if args.service_scope == "system" else ["--user"]
     unit_dir = _service_unit_directory(args.service_scope)
-    names = [name for name in ("ts-web-research-agent.service", "ts-app-server-research-agent.service")
+    names = [name for name in ("coragent-web.service", "coragent.service")
              if (unit_dir / name).is_file()]
-    if (unit_dir / "ts-app-server-research-agent@.service").is_file():
+    if (unit_dir / "coragent@.service").is_file():
         names.extend(app_server_service_instances(scope))
     for name in names:
         _run_systemctl(scope, "stop", name)
         # systemctl stop waits for the service cgroup, including Pi children.
-        # Do not touch independent research-agent-job units or their result directories.
+        # Do not touch independent coragent-job units or their result directories.
         status = _service_status(scope, args.service_scope, name)
         if status["active"] not in {"inactive", "failed"}:
             raise RuntimeError(f"installation writer did not stop: {name} ({status['active']})")
@@ -2287,10 +2287,10 @@ def prepare_app_server_runtime(root: Path, *, suite_root: Path | None = None, bi
 
 
 def bind_pi_runtime_node_modules(root: Path, source: Path) -> None:
-    """Expose Pi's dependencies to TypeScript loaded from the ResearchAgent release.
+    """Expose Pi's dependencies to TypeScript loaded from the CoRAgent release.
 
-    The published ResearchAgent archive intentionally omits a second ``node_modules``
-    tree. Pi's source resolver loads ResearchAgent Agent Runtime files from the selected
+    The published CoRAgent archive intentionally omits a second ``node_modules``
+    tree. Pi's source resolver loads CoRAgent Agent Runtime files from the selected
     release, so Node's normal upward package lookup must have a release-local
     link to the exact pinned Pi dependency tree.
     """
@@ -2300,7 +2300,7 @@ def bind_pi_runtime_node_modules(root: Path, source: Path) -> None:
     if link.exists() or link.is_symlink():
         if link.is_symlink() and link.resolve() == runtime_modules.resolve():
             return
-        raise RuntimeError(f"ResearchAgent release node_modules path is already occupied: {link}")
+        raise RuntimeError(f"CoRAgent release node_modules path is already occupied: {link}")
     original_mode = stat.S_IMODE(package_root.stat().st_mode)
     try:
         package_root.chmod(original_mode | 0o700)
@@ -2518,7 +2518,7 @@ def ensure_host_identity(root: Path) -> Path:
 
 
 def configure_phone_connection(args: argparse.Namespace) -> dict[str, object]:
-    """Enroll the installation Host and write its private ResearchAgent Link files."""
+    """Enroll the installation Host and write its private CoRAgent Link files."""
 
     root = Path(args.install_root).resolve()
     state = root / "var/state/host"
@@ -2533,7 +2533,7 @@ def configure_phone_connection(args: argparse.Namespace) -> dict[str, object]:
             "status": "disabled",
             "manifest": str(manifest),
             "relay_url": None,
-            "protocol": "research-agent-link.v1",
+            "protocol": "coragent-link.v1",
             "tool_access": "same_as_terminal",
         }
 
@@ -2543,18 +2543,18 @@ def configure_phone_connection(args: argparse.Namespace) -> dict[str, object]:
     if args.link_enrollment_code:
         enrollment_url = getattr(args, "link_enrollment_url", None) or args.link_url
         enrollment = _redeem_link_enrollment(enrollment_url, args.link_enrollment_code, host_id)
-        if enrollment.get("hostId") != host_id or enrollment.get("protocol") != "research-agent-link.v1":
-            raise RuntimeError("ResearchAgent Link Relay returned a mismatched Host enrollment")
+        if enrollment.get("hostId") != host_id or enrollment.get("protocol") != "coragent-link.v1":
+            raise RuntimeError("CoRAgent Link Relay returned a mismatched Host enrollment")
         host_token = enrollment.get("hostToken")
-        if not isinstance(host_token, str) or re.fullmatch(r"rah_[A-Za-z0-9_-]{40,80}", host_token) is None:
-            raise RuntimeError("ResearchAgent Link Relay returned an invalid Host token")
+        if not isinstance(host_token, str) or re.fullmatch(r"cah_[A-Za-z0-9_-]{40,80}", host_token) is None:
+            raise RuntimeError("CoRAgent Link Relay returned an invalid Host token")
         _write_private_text(token_file, host_token + "\n")
     elif not token_file.is_file() or existing is None or existing[0] != args.link_url:
-        raise RuntimeError("a Host enrollment code is required for this ResearchAgent Link Relay")
+        raise RuntimeError("a Host enrollment code is required for this CoRAgent Link Relay")
 
     payload = {
-        "schema_version": "research-agent-link/1",
-        "protocol": "research-agent-link.v1",
+        "schema_version": "coragent-link/1",
+        "protocol": "coragent-link.v1",
         "relay_url": args.link_url,
         "host_id": host_id,
     }
@@ -2564,13 +2564,13 @@ def configure_phone_connection(args: argparse.Namespace) -> dict[str, object]:
         "manifest": str(manifest),
         "relay_url": args.link_url,
         "host_id": host_id,
-        "protocol": "research-agent-link.v1",
+        "protocol": "coragent-link.v1",
         "tool_access": "same_as_terminal",
     }
 
 
 def _redeem_link_enrollment(relay_url: str, code: str, host_id: str) -> dict[str, object]:
-    payload = json.dumps({"code": code, "hostId": host_id, "name": "ResearchAgent Host"}, separators=(",", ":")).encode("utf-8")
+    payload = json.dumps({"code": code, "hostId": host_id, "name": "CoRAgent Host"}, separators=(",", ":")).encode("utf-8")
     request = urllib.request.Request(
         urllib.parse.urljoin(relay_url + "/", "v1/enrollments/redeem"),
         data=payload,
@@ -2585,17 +2585,17 @@ def _redeem_link_enrollment(relay_url: str, code: str, host_id: str) -> dict[str
             detail = json.loads(exc.read(16 * 1024)).get("message", exc.reason)
         except (OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError):
             detail = exc.reason
-        raise RuntimeError(f"ResearchAgent Link Relay rejected Host enrollment ({exc.code}): {detail}") from exc
+        raise RuntimeError(f"CoRAgent Link Relay rejected Host enrollment ({exc.code}): {detail}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise RuntimeError(f"could not reach ResearchAgent Link Relay at {relay_url}: {exc}") from exc
+        raise RuntimeError(f"could not reach CoRAgent Link Relay at {relay_url}: {exc}") from exc
     if len(raw) > 64 * 1024:
-        raise RuntimeError("ResearchAgent Link Relay enrollment response is too large")
+        raise RuntimeError("CoRAgent Link Relay enrollment response is too large")
     try:
         value = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise RuntimeError("ResearchAgent Link Relay returned invalid enrollment JSON") from exc
+        raise RuntimeError("CoRAgent Link Relay returned invalid enrollment JSON") from exc
     if not isinstance(value, dict):
-        raise RuntimeError("ResearchAgent Link Relay enrollment response must be an object")
+        raise RuntimeError("CoRAgent Link Relay enrollment response must be an object")
     return value
 
 
@@ -2613,11 +2613,11 @@ def app_server_unit(args: argparse.Namespace) -> str:
         raise ValueError("service XDG_RUNTIME_DIR must be an absolute path")
     # Host is an internal service entrypoint. Ordinary users manage this unit
     # through systemctl and never need to invoke the Host process directly.
-    command = _systemd_quote(root / "current/agent/libexec/research-agent-host")
+    command = _systemd_quote(root / "current/agent/libexec/coragent-host")
     wanted_by = "multi-user.target" if args.service_scope == "system" else "default.target"
-    runtime_directory = "RuntimeDirectory=research-agent\nRuntimeDirectoryMode=0700" if args.service_scope == "system" else ""
+    runtime_directory = "RuntimeDirectory=coragent\nRuntimeDirectoryMode=0700" if args.service_scope == "system" else ""
     return f"""[Unit]
-Description=ResearchAgent Agent Server (Host API and Pi SDK Harness)
+Description=CoRAgent Agent Server (Host API and Pi SDK Harness)
 After=network-online.target
 
 [Service]
@@ -2628,10 +2628,10 @@ Environment={_systemd_quote('PATH=' + search_path)}
 Environment={_systemd_quote('HOME=' + str(service_home))}
 Environment={_systemd_quote('XDG_RUNTIME_DIR=' + runtime_dir)}
 Environment={_systemd_quote('PI_CODING_AGENT_DIR=' + str(root / 'etc/pi'))}
-Environment=RESEARCH_AGENT_SYSTEMD_HOST=1
-Environment={_systemd_quote("RESEARCH_AGENT_INSTALL_ROOT=" + str(root))}
-Environment={_systemd_quote('RESEARCH_AGENT_WORKSPACE_ROOT=' + str(workspace_root))}
-Environment={_systemd_quote('RESEARCH_AGENT_APP_SERVER_RUNTIME_DIR=' + ('/run/research-agent' if args.service_scope == 'system' else str(Path(runtime_dir) / 'ra')))}
+Environment=CORAGENT_SYSTEMD_HOST=1
+Environment={_systemd_quote("CORAGENT_INSTALL_ROOT=" + str(root))}
+Environment={_systemd_quote('CORAGENT_WORKSPACE_ROOT=' + str(workspace_root))}
+Environment={_systemd_quote('CORAGENT_APP_SERVER_RUNTIME_DIR=' + ('/run/coragent' if args.service_scope == 'system' else str(Path(runtime_dir) / 'coragent')))}
 {f'User={_systemd_value(service_user)}' if args.service_scope == 'system' else ''}
 {f'Group={_systemd_value(args.service_group)}' if getattr(args, 'service_group', None) and args.service_scope == 'system' else ''}
 {_notification_environment_directive(args)}
@@ -2647,9 +2647,9 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ReadWritePaths={_systemd_quote(root / 'var/cache')}
 ReadWritePaths={_systemd_quote(root / 'var/state')}
 ReadWritePaths={_systemd_quote(root / 'var/log')}
-ReadWritePaths={_systemd_quote(Path('/run/research-agent') if args.service_scope == 'system' else Path(runtime_dir) / 'ra')}
+ReadWritePaths={_systemd_quote(Path('/run/coragent') if args.service_scope == 'system' else Path(runtime_dir) / 'coragent')}
 ReadWritePaths={_systemd_quote(root / 'etc/pi')}
-ReadWritePaths={_systemd_quote(Path(runtime_dir) / 'ra')}
+ReadWritePaths={_systemd_quote(Path(runtime_dir) / 'coragent')}
 ReadWritePaths={_systemd_quote(workspace_root)}
 
 [Install]
@@ -2663,7 +2663,7 @@ def web_unit(args: argparse.Namespace) -> str:
     working_directory = _systemd_value(root)
     wanted_by = "multi-user.target" if args.service_scope == "system" else "default.target"
     command_values: list[object] = [
-        root / "TSWeb",
+        root / "coragent-web",
         "--provider",
         root / "current/agent/apps/agent-cli/research_web_bridge.py",
         "serve",
@@ -2679,13 +2679,13 @@ def web_unit(args: argparse.Namespace) -> str:
     command_values.extend(("--port", str(args.web_port), "--workspace-root", workspace_root))
     command = " ".join(_systemd_quote(value) for value in command_values)
     return f"""[Unit]
-Description=ResearchAgent TS Web read-only server
+Description=CoRAgent Web read-only server
 After=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory={working_directory}
-Environment={_systemd_quote("RESEARCH_AGENT_INSTALL_ROOT=" + str(root))}
+Environment={_systemd_quote("CORAGENT_INSTALL_ROOT=" + str(root))}
 ExecStart={command}
 {f'User={_systemd_value(args.service_user)}' if args.service_scope == 'system' else ''}
 {f'Group={_systemd_value(args.service_group)}' if getattr(args, 'service_group', None) and args.service_scope == 'system' else ''}
@@ -2701,7 +2701,7 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ReadWritePaths={_systemd_quote(root / 'var/state/web')}
 ReadWritePaths={_systemd_quote(root / 'etc/web')}
 ReadOnlyPaths={_systemd_quote(workspace_root)}
-ReadWritePaths={_systemd_quote(workspace_root / '.research-agent-catalog')}
+ReadWritePaths={_systemd_quote(workspace_root / '.coragent-catalog')}
 
 [Install]
 WantedBy={wanted_by}
@@ -2736,9 +2736,9 @@ def _systemd_value(value: object) -> str:
 
 
 def _selected_service_names(args: argparse.Namespace) -> list[str]:
-    names = ["ts-app-server-research-agent.service"]
+    names = ["coragent.service"]
     if args.with_web:
-        names.append("ts-web-research-agent.service")
+        names.append("coragent-web.service")
     return names
 
 
@@ -2767,9 +2767,9 @@ def validate_service_ownership(args: argparse.Namespace) -> None:
     unit_dir = _service_unit_directory(args.service_scope)
     expected_root = str(Path(args.install_root)).replace("%", "%%")
     names = [*_selected_service_names(args)]
-    if "ts-web-research-agent.service" not in names:
-        names.append("ts-web-research-agent.service")
-    names.append("ts-app-server-research-agent@.service")
+    if "coragent-web.service" not in names:
+        names.append("coragent-web.service")
+    names.append("coragent@.service")
     for name in names:
         unit = unit_dir / name
         if unit.is_symlink():
@@ -2791,7 +2791,7 @@ def verify_service_units(args: argparse.Namespace, units: list[tuple[str, str]])
     analyzer = shutil.which("systemd-analyze")
     if analyzer is None:
         raise RuntimeError("service configuration requires systemd-analyze to verify generated units")
-    with tempfile.TemporaryDirectory(prefix="research-agent-systemd-verify-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="coragent-systemd-verify-") as temporary:
         unit_root = Path(temporary)
         unit_paths: list[Path] = []
         for name, content in units:
@@ -2802,7 +2802,7 @@ def verify_service_units(args: argparse.Namespace, units: list[tuple[str, str]])
         if args.service_scope == "system":
             dependency_units.extend(["sysinit.target", "local-fs.target"])
         for name in dependency_units:
-            (unit_root / name).write_text("[Unit]\nDescription=ResearchAgent verification dependency\n", encoding="utf-8")
+            (unit_root / name).write_text("[Unit]\nDescription=CoRAgent verification dependency\n", encoding="utf-8")
         environment = dict(os.environ)
         environment["SYSTEMD_UNIT_PATH"] = str(unit_root)
         if args.service_scope == "user" and not environment.get("XDG_RUNTIME_DIR"):
@@ -2828,10 +2828,10 @@ def configure_services(args: argparse.Namespace, *, start: bool | None = None) -
         return []
     validate_service_ownership(args)
     units: list[tuple[str, str]] = [
-        ("ts-app-server-research-agent.service", app_server_unit(args)),
+        ("coragent.service", app_server_unit(args)),
     ]
     if args.with_web:
-        units.append(("ts-web-research-agent.service", web_unit(args)))
+        units.append(("coragent-web.service", web_unit(args)))
     prepare_runtime_dirs(Path(args.install_root))
     align_service_ownership(args)
     verify_service_units(args, units)
@@ -2840,7 +2840,7 @@ def configure_services(args: argparse.Namespace, *, start: bool | None = None) -
     names: list[str] = []
     scope = [] if args.service_scope == "system" else ["--user"]
     if not args.with_web:
-        stale_web = unit_dir / "ts-web-research-agent.service"
+        stale_web = unit_dir / "coragent-web.service"
         if stale_web.exists() or stale_web.is_symlink():
             if stale_web.is_symlink() or not stale_web.is_file():
                 raise ValueError(f"optional web service unit is not a regular file: {stale_web}")
@@ -2851,7 +2851,7 @@ def configure_services(args: argparse.Namespace, *, start: bool | None = None) -
         (unit_dir / name).write_text(content, encoding="utf-8")
         (unit_dir / name).chmod(0o644)
         names.append(name)
-    template_unit = unit_dir / "ts-app-server-research-agent@.service"
+    template_unit = unit_dir / "coragent@.service"
     if template_unit.exists() or template_unit.is_symlink():
         if template_unit.is_symlink() or not template_unit.is_file():
             raise ValueError(f"template service unit is not a regular file: {template_unit}")
@@ -2944,7 +2944,7 @@ def align_service_ownership(args: argparse.Namespace) -> None:
             f"make it accessible to {args.service_user} before installing the system service"
         )
     os.chown(workspace_root, account.pw_uid, account.pw_gid)
-    catalog = workspace_root / ".research-agent-catalog"
+    catalog = workspace_root / ".coragent-catalog"
     if catalog.is_dir() and not catalog.is_symlink():
         os.chown(catalog, account.pw_uid, account.pw_gid)
         for entry in catalog.iterdir():
@@ -2955,7 +2955,7 @@ def align_service_ownership(args: argparse.Namespace) -> None:
 def app_server_service_instances(scope: list[str]) -> list[str]:
     """Return loaded concrete instances of the retired per-workspace unit."""
     completed = subprocess.run(
-        ["systemctl", *scope, "list-units", "--all", "--plain", "--no-legend", "ts-app-server-research-agent@*.service"],
+        ["systemctl", *scope, "list-units", "--all", "--plain", "--no-legend", "coragent@*.service"],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -2966,7 +2966,7 @@ def app_server_service_instances(scope: list[str]) -> list[str]:
     instances: list[str] = []
     for line in completed.stdout.splitlines():
         name = line.split(None, 1)[0] if line.strip() else ""
-        if name.startswith("ts-app-server-research-agent@") and name.endswith(".service") and "/" not in name:
+        if name.startswith("coragent@") and name.endswith(".service") and "/" not in name:
             instances.append(name)
     return instances
 
@@ -3027,7 +3027,7 @@ def build_component_summary(
     return {
         "agent": {
             "status": "ready",
-            "launcher": str(root / "research-agent"),
+            "launcher": str(root / "coragent"),
         },
         "runtime": {
             "status": "ready" if probe.get("ok") is True else "not_probed",
@@ -3037,9 +3037,9 @@ def build_component_summary(
             "capabilities": probe.get("capabilities", {}),
         },
         "app_server": {
-            "status": "configured" if args.service_scope == "none" else _service_readiness(service_by_name.get("ts-app-server-research-agent.service"), probed=args.start_services),
+            "status": "configured" if args.service_scope == "none" else _service_readiness(service_by_name.get("coragent.service"), probed=args.start_services),
             "runtime": str(app_server_runtime),
-            "service": service_by_name.get("ts-app-server-research-agent.service"),
+            "service": service_by_name.get("coragent.service"),
             "server_id": str(server_id_path),
             "server_uuid": server_id,
             "server_id_path": str(server_id_path),
@@ -3047,13 +3047,13 @@ def build_component_summary(
             "workspace_root": str(workspace_root),
             "start": "systemctl "
             + ("" if args.service_scope == "system" else "--user ")
-            + "start ts-app-server-research-agent.service",
+            + "start coragent.service",
         },
         "phone": phone_connection or {
             "status": "disabled",
             "manifest": str(root / "var/state/host/link.json"),
             "relay_url": args.link_url,
-            "protocol": "research-agent-link.v1",
+            "protocol": "coragent-link.v1",
             "tool_access": "same_as_terminal",
         },
         "model_icons": model_icons or {
@@ -3068,13 +3068,13 @@ def build_component_summary(
         },
         "web": (
             {
-                "status": "configured" if args.service_scope == "none" else _service_readiness(service_by_name.get("ts-web-research-agent.service"), probed=args.start_services),
-                "launcher": str(root / "TSWeb"),
+                "status": "configured" if args.service_scope == "none" else _service_readiness(service_by_name.get("coragent-web.service"), probed=args.start_services),
+                "launcher": str(root / "coragent-web"),
                 "url": f"http://{args.web_host}:{args.web_port}",
                 "state_directory": str(root / "var/state/web"),
                 "workspace_root": str(workspace_root),
                 "credential": credentials.get("web_http"),
-                "service": service_by_name.get("ts-web-research-agent.service"),
+                "service": service_by_name.get("coragent-web.service"),
             }
             if args.with_web
             else None
@@ -3111,7 +3111,7 @@ def show_installed_summary(
     section("Installation")
     field("Installation root", root, tone="accent")
     field("Release", installed.get("release_id") or "package")
-    field("ResearchAgent commit", installed.get("commit") or "unknown")
+    field("CoRAgent commit", installed.get("commit") or "unknown")
     field("Workspace root", args.workspace_root)
     field("Uninstaller", installed.get("uninstaller") or "not installed")
     field("Install log", _install_log_path(root))
@@ -3119,7 +3119,7 @@ def show_installed_summary(
     runtime = components["runtime"]
     assert isinstance(runtime, dict)
     section("Core")
-    field("research-agent terminal client", f"ready - {root / 'research-agent'}", tone="success")
+    field("coragent terminal client", f"ready - {root / 'coragent'}", tone="success")
     field(
         "Control runtime",
         f"{runtime['status']} - {runtime.get('environment') or 'unavailable'}",
@@ -3152,12 +3152,12 @@ def show_installed_summary(
     field("Runtime", app_server["runtime"])
     field("Manual start", app_server["start"])
     field("Server ID", app_server.get("server_uuid") or f"not initialized - {app_server['server_id_path']}")
-    field("ResearchAgent Link Relay", app_server.get("link_url", "not configured"))
+    field("CoRAgent Link Relay", app_server.get("link_url", "not configured"))
     field("Workspace root", app_server["workspace_root"])
     _show_service(app_server.get("service"))
-    note("One Host serves all workspaces below the workspace root. The terminal and TS Phone attach once and switch projects.")
+    note("One Host serves all workspaces below the workspace root. The terminal and CoRHub attach once and switch projects.")
 
-    section("TS Web")
+    section("CoRAgent Web")
     web = components["web"]
     if not isinstance(web, dict):
         field("Status", "not installed", tone="muted")
@@ -3170,14 +3170,14 @@ def show_installed_summary(
         _show_service(web.get("service"))
         _show_credential("HTTP token", credentials["web_http"], reveal=True)
 
-    note("TS Phone is a separate App Server client and is no longer installed as a local service.")
-    note("Phone pairing uses a short-lived ResearchAgent Link code; it is distinct from the TS Web HTTP token.")
+    note("CoRHub is a separate App Server client and is no longer installed as a local service.")
+    note("Phone pairing uses a short-lived CoRAgent Link code; it is distinct from the CoRAgent Web HTTP token.")
     phone = components.get("phone")
     if isinstance(phone, dict):
         field("Phone connection manifest", phone.get("manifest", "not configured"))
         field("Phone tool access", phone.get("tool_access", "same_as_terminal"))
     if isinstance(web, dict):
-        note("Token values are not printed. Read the owner-only TS Web token file when pairing a browser.")
+        note("Token values are not printed. Read the owner-only CoRAgent Web token file when pairing a browser.")
 
     job_config = components.get("job")
     if isinstance(job_config, dict):
@@ -3185,7 +3185,7 @@ def show_installed_summary(
         field("Unified config", job_config.get("path", "not configured"))
         field("Status", job_config.get("status", "not configured"), tone="success" if job_config.get("status") in {"configured", "preserved"} else "warning")
         readiness = job_config.get('readiness', {})
-        if readiness.get('schema_version') == 'research-agent-job-readiness/1':
+        if readiness.get('schema_version') == 'coragent-job-readiness/1':
             for name, target in readiness['targets'].items():
                 field(name, target['status'], tone='success' if target['status'] == 'execution_verified' else 'warning')
                 if target.get('untested_backends'):
@@ -3294,8 +3294,8 @@ def show_dry_run(args: argparse.Namespace) -> None:
     _validate_job_config(scientific['settings'])
     validate_email_options(args)
     plan = {key: getattr(args, key) for key in (
-        "install_root", "config_dir", "workspace_root", "source_root", "research_agent_repo",
-        "research_agent_ref", "research_agent_commit", "job_config", "agent_config_dir",
+        "install_root", "config_dir", "workspace_root", "source_root", "coragent_repo",
+        "coragent_ref", "coragent_commit", "job_config", "agent_config_dir",
         "with_web", "with_link_relay", "service_scope", "phone_access",
     )}
     plan["email"] = "configured" if args.email_binding else "preserve existing or disabled"
@@ -3334,8 +3334,8 @@ def main(argv: list[str] | None = None) -> int:
         if interactive:
             if not sys.stdin.isatty() or not sys.stdout.isatty():
                 raise RuntimeError("interactive installation requires a TTY; use --non-interactive")
-            if os.environ.get("RESEARCH_AGENT_INSTALL_BOOTSTRAPPED") != "1":
-                title("ResearchAgent Installer", "Configure a reproducible ResearchAgent installation.")
+            if os.environ.get("CORAGENT_INSTALL_BOOTSTRAPPED") != "1":
+                title("CoRAgent Installer", "Configure a reproducible CoRAgent installation.")
         checks = collect_preflight()
         if interactive:
             show_preflight(checks, require_conda=False)
@@ -3469,7 +3469,7 @@ def main(argv: list[str] | None = None) -> int:
         }
         append_install_log(
             Path(args.install_root),
-            "ResearchAgent installer final summary",
+            "CoRAgent installer final summary",
             f"completed_at_utc={datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')}",
             f"operation={installation['operation']}",
             f"install_root={args.install_root}",
@@ -3524,7 +3524,7 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 append_install_log(
                     installation_root,
-                    "ResearchAgent installer failure",
+                    "CoRAgent installer failure",
                     f"failed_at_utc={datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')}",
                     f"install_root={installation_root}",
                     f"error={error}",
@@ -3532,7 +3532,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
             except (OSError, RuntimeError, ValueError):
                 pass
-        failure(f"ResearchAgent installation failed: {error}")
+        failure(f"CoRAgent installation failed: {error}")
         return 1
     finally:
         writer_guard.close()

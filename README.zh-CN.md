@@ -1,8 +1,12 @@
-# ResearchAgent
+# CoRAgent
+
+CoRAgent 全称 Computational Research Agent（计算科研智能体）。
+
+0.19 版本进行不兼容的身份切换。已有部署请先阅读[切换指南](docs/CORAGENT_CUTOVER.zh-CN.md)；旧客户端和旧令牌不能连接新服务。
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-ResearchAgent 是一个 AI 科研助手：帮助你制定研究方案、运行计算、分析结果，并整理成可追溯的研究报告。
+CoRAgent 是一个 AI 科研助手：帮助你制定研究方案、运行计算、分析结果，并整理成可追溯的研究报告。
 目前主要提供计算化学技能，涵盖分子结构、过渡态搜索、反应路径分析和能量比较。
 研究记录与计算结果保存在工作区中，可以随时继续研究。
 
@@ -11,7 +15,7 @@ ResearchAgent 是一个 AI 科研助手：帮助你制定研究方案、运行�
 - 根据研究问题选择方法、准备输入，在本机或配置好的远程计算平台运行任务。
 - 分析结构、频率和反应路径，记录结论、依据与尚未解决的问题。
 - 整理包含分子图、数据表和能量曲线的报告；具体内容取决于已有计算证据。
-- 在终端中交互，通过 TS Phone 连接同一工作区，或用可选的 TS Web 浏览研究记录。
+- 在终端中交互，通过 CoRHub 连接同一工作区，或用可选的 CoRAgent Web 浏览研究记录。
 
 项目仍在积极开发。计算需要相应的科学软件及环境配置，详见[科学计算指南](docs/SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。
 
@@ -20,8 +24,8 @@ ResearchAgent 是一个 AI 科研助手：帮助你制定研究方案、运行�
 准备 Git、Python 3.11+、Node.js 22.19+、Conda/Mamba 和模型访问凭据，然后运行：
 
 ```bash
-git clone https://github.com/iawnix/TSPi.git
-cd TSPi
+git clone https://github.com/iawnix/coragent.git
+cd coragent
 ./install.sh
 ```
 
@@ -29,7 +33,7 @@ cd TSPi
 
 ```bash
 ./install.sh --source local --config-dir "$PWD/config" \
-  --install-root "$HOME/ResearchAgent" --non-interactive --yes
+  --install-root "$HOME/CoRAgent" --non-interactive --yes
 ```
 
 安装、模型配置、远程计算、手机连接和服务管理见[安装与运维](docs/INSTALLATION.zh-CN.md)（[English](docs/INSTALLATION.md)）。
@@ -39,17 +43,17 @@ cd TSPi
 打开一个工作区：
 
 ```bash
-./research-agent --workspace reaction-study
+./coragent --workspace reaction-study
 ```
 
 在终端中直接描述研究问题、已有材料和希望得到的结果。之后可以继续最近的会话：
 
 ```bash
-./research-agent --workspace reaction-study -c
+./coragent --workspace reaction-study -c
 ```
 
 工作区服务由安装器配置。会话切换与终端操作见[终端文档](docs/TERMINAL.zh-CN.md)，
-手机连接见 [ResearchAgent Link](docs/RESEARCH_AGENT_LINK.zh-CN.md)。
+手机连接见 [CoRAgent Link](docs/CORAGENT_LINK.zh-CN.md)。
 
 ## 文档
 

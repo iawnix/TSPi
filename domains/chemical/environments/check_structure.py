@@ -6,9 +6,9 @@ import tomllib
 
 from rdkit import Chem
 
-path = os.environ.get('RESEARCH_AGENT_NAME_RESOLVER_CONFIG')
-if not path and os.environ.get('RESEARCH_AGENT_INSTALL_ROOT'):
-    path = str(Path(os.environ['RESEARCH_AGENT_INSTALL_ROOT']) / 'etc/name-resolver.toml')
+path = os.environ.get('CORAGENT_NAME_RESOLVER_CONFIG')
+if not path and os.environ.get('CORAGENT_INSTALL_ROOT'):
+    path = str(Path(os.environ['CORAGENT_INSTALL_ROOT']) / 'etc/name-resolver.toml')
 if not path:
     raise RuntimeError('resolver configuration is not bound to this Job')
 with Path(path).open('rb') as stream:

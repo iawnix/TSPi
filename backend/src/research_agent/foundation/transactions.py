@@ -84,7 +84,7 @@ def _safe_path(root: Path, relative: str) -> Path:
 def _safe_write_path(root: Path, relative: str) -> Path:
     path = _safe_path(root, relative)
     canonical = path.relative_to(root).as_posix()
-    if (canonical == ".research-agent-workspace.lock" or canonical == "operations/transactions"
+    if (canonical == ".coragent-workspace.lock" or canonical == "operations/transactions"
             or canonical.startswith("operations/transactions/")):
         raise TransactionError("transaction_reserved_path")
     return path
@@ -166,7 +166,7 @@ class TransactionCoordinator:
             yield False
             return
         self.root.mkdir(parents=True, exist_ok=True)
-        path = _safe_path(self.root, ".research-agent-workspace.lock")
+        path = _safe_path(self.root, ".coragent-workspace.lock")
         descriptor = os.open(path, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
         try:
             if not stat.S_ISREG(os.fstat(descriptor).st_mode):

@@ -33,8 +33,8 @@ const MODULES = Object.freeze({
 });
 
 export function piSourceRoot() {
-  const root = process.env.RESEARCH_AGENT_PI_RUNTIME_ROOT;
-  if (!root) throw new Error("RESEARCH_AGENT_PI_RUNTIME_ROOT is required");
+  const root = process.env.CORAGENT_PI_RUNTIME_ROOT;
+  if (!root) throw new Error("CORAGENT_PI_RUNTIME_ROOT is required");
   return resolve(root);
 }
 

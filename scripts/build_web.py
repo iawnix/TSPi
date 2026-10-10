@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the independent TS Web component archive and manifest."""
+"""Build the independent CoRAgent Web component archive and manifest."""
 
 from __future__ import annotations
 
@@ -40,12 +40,12 @@ except ImportError:
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WEB_ROOT = ROOT / "components" / "ts-web"
-MANIFEST_NAME = "ts-web-component-release.json"
+WEB_ROOT = ROOT / "components" / "coragent-web"
+MANIFEST_NAME = "coragent-web-component-release.json"
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Build a validated independent TS Web component.")
+    parser = argparse.ArgumentParser(description="Build a validated independent CoRAgent Web component.")
     parser.add_argument("--output-dir", default="dist/web")
     parser.add_argument("--allow-dirty", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = build_web(output_dir.resolve(), allow_dirty=args.allow_dirty)
     except (OSError, RuntimeError, SuiteReleaseError, ValueError, json.JSONDecodeError) as error:
-        print(f"TS Web component build failed: {error}", file=sys.stderr)
+        print(f"CoRAgent Web component build failed: {error}", file=sys.stderr)
         return 1
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
@@ -93,13 +93,13 @@ def build_web(output_dir: Path, *, allow_dirty: bool) -> dict[str, object]:
             )
         )
 
-    with tempfile.TemporaryDirectory(prefix="ts-web-build-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="coragent-web-build-") as temporary:
         temporary_archive = Path(temporary) / "component.tgz"
         write_deterministic_archive(temporary_archive, "component", records)
         archive_digest = sha256_file(temporary_archive)
         content = temporary_archive.read_bytes()
         release_id = f"{version}-sha256-{archive_digest[:16]}"
-        archive_name = f"ts-web-component-{release_id}.tgz"
+        archive_name = f"coragent-web-component-{release_id}.tgz"
         output_dir.mkdir(parents=True, exist_ok=True)
         archive_path = output_dir / archive_name
         if archive_path.exists():
@@ -111,9 +111,9 @@ def build_web(output_dir: Path, *, allow_dirty: bool) -> dict[str, object]:
     manifest = {
         "schema_version": WEB_SCHEMA_VERSION,
         "release_id": release_id,
-        "component": {"name": "ts-web", "version": version},
+        "component": {"name": "coragent-web", "version": version},
         "protocols": dict(package.get("protocols") or {}),
-        "entrypoint": {"path": "bin/ts-web"},
+        "entrypoint": {"path": "bin/coragent-web"},
         "archive": {
             "filename": archive_name,
             "sha256": archive_digest,
@@ -156,7 +156,7 @@ def git_source() -> tuple[str, bool]:
             "--porcelain=v1",
             "--untracked-files=normal",
             "--",
-            "components/ts-web",
+            "components/coragent-web",
         ],
         cwd=ROOT,
         text=True,

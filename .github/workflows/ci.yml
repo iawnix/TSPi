@@ -16,7 +16,7 @@ jobs:
       matrix:
         suite: [static, fast, node-fast, integration, native-pi, package, source, system-services]
     env:
-      RESEARCH_AGENT_TEST_ENV_ROOT: ${{ runner.temp }}/ra
+      CORAGENT_TEST_ENV_ROOT: ${{ runner.temp }}/ra
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,16 +36,16 @@ jobs:
         if: matrix.suite == 'system-services'
         shell: bash
         run: |
-          mkdir -p "$RESEARCH_AGENT_TEST_ENV_ROOT/registry"
+          mkdir -p "$CORAGENT_TEST_ENV_ROOT/registry"
           unit="user@$(id -u).service"
           if ! systemctl is-active --quiet "$unit"; then
             sudo systemctl start "$unit"
-            touch "$RESEARCH_AGENT_TEST_ENV_ROOT/registry/ci-owns-user-manager"
+            touch "$CORAGENT_TEST_ENV_ROOT/registry/ci-owns-user-manager"
           fi
       - name: Prepare locked dependencies
         shell: bash -el {0}
         run: |
-          export RESEARCH_AGENT_TEST_CONDA="$(command -v conda)"
+          export CORAGENT_TEST_CONDA="$(command -v conda)"
           python3 tools/test/runner.py prepare
       - name: Isolated suite
         shell: bash -el {0}
@@ -58,7 +58,7 @@ jobs:
         if: always() && matrix.suite == 'system-services'
         shell: bash
         run: |
-          marker="$RESEARCH_AGENT_TEST_ENV_ROOT/registry/ci-owns-user-manager"
+          marker="$CORAGENT_TEST_ENV_ROOT/registry/ci-owns-user-manager"
           if test -f "$marker"; then
             sudo systemctl stop "user@$(id -u).service"
             rm "$marker"

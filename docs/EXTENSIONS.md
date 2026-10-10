@@ -25,8 +25,8 @@ instructions unchanged. See the [Skill catalog](../skills/README.md).
 
 ## System prompt
 
-`apps/agent/pi/setup.mjs` assembles the working directory, `prompts/research-agent.md`,
-and discovered Skill descriptions into the system prompt. `prompts/research-agent.zh-CN.md`
+`apps/agent/pi/setup.mjs` assembles the working directory, `prompts/coragent.md`,
+and discovered Skill descriptions into the system prompt. `prompts/coragent.zh-CN.md`
 is a translation for maintenance; it is not injected alongside English or selected by
 conversation language. `/sys-prompt` inspects the current worker's actual prompt and sources.
 
@@ -44,7 +44,7 @@ actual spending limits and execution permissions.
 
 ## What execution.json does
 
-Root `package.json.researchAgent.execution` points to
+Root `package.json.coragent.execution` points to
 `domains/chemical/execution.json`. Python independently loads and validates it in
 `backend/src/research_agent/application/execution_catalog.py`. It declares:
 

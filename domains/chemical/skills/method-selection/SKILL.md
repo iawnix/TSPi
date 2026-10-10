@@ -3,7 +3,7 @@ name: method-selection
 description: Prepare a scientific method and named compute environment for execution, including when the user has already fixed the method.
 ---
 
-# ResearchAgent Method Selection
+# CoRAgent Method Selection
 
 [Chinese version](SKILL.zh-CN.md)
 

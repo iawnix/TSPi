@@ -15,7 +15,7 @@ def test_unit_guardian_removes_service_after_owner_is_killed(tmp_path):
     run=tmp_path/'owner'
     for path in ('logs','report','source/tools/test'): (run/path).mkdir(parents=True)
     (run/'source/tools/test/units.py').symlink_to(REPO_ROOT/'tools/test/units.py')
-    unit='research-agent-test-guardian-'+uuid.uuid4().hex+'.service'
+    unit='coragent-test-guardian-'+uuid.uuid4().hex+'.service'
     ready=run/'ready'
     program=('import os,time;from pathlib import Path;from tools.test.units import prepare_units,launch;'
              f'run=Path({str(run)!r});env=dict(os.environ);prepare_units(run,env);os.environ.update(env);'

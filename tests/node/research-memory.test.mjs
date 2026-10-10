@@ -24,7 +24,7 @@ test('research tools preserve Nodes, results and original tasks through a restar
     const task=await bridge.execute_command('research.source',{session_id:'s',message_id:'m',text:'Compare two pathways, retain uncertainties.'});
     let tools=createResearchTools({commandBridge:bridge});
     assert.deepEqual(tools.map(t=>t.name),['research_read','research_search','research_create','research_update','research_result']);
-    const api={callId:'create1',researchAgent:{workspace_root:root,session_id:'s',principal:'root_agent'}};
+    const api={callId:'create1',coragent:{workspace_root:root,session_id:'s',principal:'root_agent'}};
     const run=async(name,args,callId)=> (await tools.find(t=>t.name===name).execute(args,{...api,callId})).details.result;
     const created=await run('research_create',{goal:'Compare pathways',plan:'Calculate both pathways.'},'create1');
     const nodeId=created.node.id;
@@ -34,7 +34,7 @@ test('research tools preserve Nodes, results and original tasks through a restar
     const published=await run('research_result',{node_id:nodeId,conclusion:'The fixture does not establish a preferred pathway.',as_assessment:true},'result1');
     assert.equal(published.result_saved,true);
     assert.equal(published.assessment_selected,true);
-    await assert.rejects(tools.find(t=>t.name==='research_update').execute({node_id:nodeId,note:'forged'},{...api,researchAgent:{...api.researchAgent,principal:'guest'}}),/principal/);
+    await assert.rejects(tools.find(t=>t.name==='research_update').execute({node_id:nodeId,note:'forged'},{...api,coragent:{...api.coragent,principal:'guest'}}),/principal/);
     await bridge.close();
     bridge=create_python_runtime_bridge({workspace_root:root,workspace_id:'memory'});
     tools=createResearchTools({commandBridge:bridge});
@@ -82,7 +82,7 @@ test('tools acknowledge returned revisions and bind writes to their trusted sess
     return {};
   }};
   const tools=createResearchTools({commandBridge:bridge});
-  const run=(name,args,session='s')=>tools.find(t=>t.name===name).execute(args,{callId:'call',researchAgent:{workspace_root:'/tmp/memory',session_id:session,principal:'root_agent'}});
+  const run=(name,args,session='s')=>tools.find(t=>t.name===name).execute(args,{callId:'call',coragent:{workspace_root:'/tmp/memory',session_id:session,principal:'root_agent'}});
   await run('research_read',{ref:'node_A'});
   await run('research_read',{ref:'node_B'});
   await run('research_update',{node_id:'node_A',note:'interpret A'});
@@ -109,7 +109,7 @@ test('oversized Unicode replies preserve saved outcomes without acknowledging om
   const result={accepted:true,node,result:{id:'result_large',node_id:node.id,conclusion:'结果'.repeat(12000)},result_saved:true,assessment_selected:true,conflict:null,read_basis:'read_unseen'};
   const tools=createResearchTools({commandBridge:{async execute_command(command,params){calls.push({command,params});return result;}}});
   const tool=tools.find(t=>t.name==='research_result');
-  const response=await tool.execute({node_id:node.id,conclusion:'Published outcome'},{callId:'large',researchAgent:{workspace_root:'/tmp/memory',session_id:'s',principal:'root_agent'}});
+  const response=await tool.execute({node_id:node.id,conclusion:'Published outcome'},{callId:'large',coragent:{workspace_root:'/tmp/memory',session_id:'s',principal:'root_agent'}});
   assert.deepEqual(calls.map(call=>call.command),['research.result']);
   const visible=JSON.parse(response.content[0].text);
   assert.equal(visible.content_omitted,true);
@@ -133,7 +133,7 @@ test('an oversized committed Node reply cannot silently advance its read revisio
     await workspaces.admit_workspace(root);
     bridge=create_python_runtime_bridge({workspace_root:root,workspace_id:'large'});
     const tools=createResearchTools({commandBridge:bridge});
-    const run=async(name,args,callId)=>(await tools.find(t=>t.name===name).execute(args,{callId,researchAgent:{workspace_root:root,session_id:'large-session',principal:'root_agent'}})).details.result;
+    const run=async(name,args,callId)=>(await tools.find(t=>t.name===name).execute(args,{callId,coragent:{workspace_root:root,session_id:'large-session',principal:'root_agent'}})).details.result;
     const created=await run('research_create',{goal:'g'.repeat(7900),proposal:'研'.repeat(5300),plan:'究'.repeat(5300)},'create');
     assert.ok(created.read_basis);
     const nodeId=created.node.id;

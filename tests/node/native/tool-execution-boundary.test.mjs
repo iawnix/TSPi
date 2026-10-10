@@ -20,8 +20,8 @@ test("Durable tools receive one bound policy context and the native asynchronous
   const progress = [];
   const tool = wrapToolForHarness(definition(async (params, execution, current) => {
     assert.equal(params.value, 7);
-    assert.equal(execution.researchAgent.operation_id, "submission_1");
-    assert.equal(execution.researchAgent.principal, "root_agent");
+    assert.equal(execution.coragent.operation_id, "submission_1");
+    assert.equal(execution.coragent.principal, "root_agent");
     assert.equal(current, context);
     await execution.details({ step: 1 }, current);
     return { content: [{ type: "text", text: "saved" }] };

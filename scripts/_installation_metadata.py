@@ -1,4 +1,4 @@
-"""Validate and write metadata that binds a ResearchAgent installation to its root."""
+"""Validate and write metadata that binds a CoRAgent installation to its root."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ import tempfile
 from pathlib import Path
 
 
-INSTALLATION_MARKER_SCHEMA = "research-agent-installation/2"
-PACKAGE_STATE_SCHEMA = "research-agent-package-install/1"
-WORKSPACE_ROOT_SCHEMA = "research-agent-workspace-root/1"
+INSTALLATION_MARKER_SCHEMA = "coragent-installation/2"
+PACKAGE_STATE_SCHEMA = "coragent-package-install/1"
+WORKSPACE_ROOT_SCHEMA = "coragent-workspace-root/1"
 RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
@@ -58,7 +58,7 @@ def read_installation_metadata(
 
     if require_ownership and not marker_valid and not state_valid:
         raise ValueError(
-            f"does not contain trusted ResearchAgent installation metadata: {root}; "
+            f"does not contain trusted CoRAgent installation metadata: {root}; "
             "refusing to treat a source checkout or arbitrary directory as an installation"
         )
     return {

@@ -2,8 +2,8 @@
 
 [English](INSTALLATION.md) | 简体中文
 
-本指南安装 ResearchAgent Agent、可选的 TS Web 只读浏览器，以及按需安装的公网 ResearchAgent Link Relay。
-TS Phone 是独立的 Flutter 应用。Relay 仍然是独立服务和独立安装目录，但主安装器可以
+本指南安装 CoRAgent Agent、可选的 CoRAgent Web 只读浏览器，以及按需安装的公网 CoRAgent Link Relay。
+CoRHub 是独立的 Flutter 应用。Relay 仍然是独立服务和独立安装目录，但主安装器可以
 在一次安装中部署 Relay 并完成 Host 注册。
 
 ## 前置条件
@@ -11,38 +11,38 @@ TS Phone 是独立的 Flutter 应用。Relay 仍然是独立服务和独立安�
 - Linux、Git 和 Node.js 22.19+。
 - Python 3.11+、Conda/Mamba，以及可写的用户安装目录。
 - `config/pi-source.json` 指定版本的 Pi 源码 checkout；安装器也可以自动下载并修补。
-- 正常安装需要 systemd user 或 system service；TS Web 端口是可选的。创建受管控制运行时需要
+- 正常安装需要 systemd user 或 system service；CoRAgent Web 端口是可选的。创建受管控制运行时需要
   Conda/Mamba；它不是可选的后端依赖。
 
 启动脚本默认使用公开 HTTPS 仓库；Git 传输中断时会有限重试，仍失败则回退到普通
-浅克隆。私有 GitHub 仓库可显式传入 SSH 地址，不需要 TS Phone 仓库：
+浅克隆。私有 GitHub 仓库可显式传入 SSH 地址，不需要 CoRHub 仓库：
 
 ```bash
-./install.sh --research-agent-repo git@github.com:your-org/ResearchAgent.git
+./install.sh --coragent-repo git@github.com:your-org/coragent.git
 ```
 
 ## 安装或选择版本
 
-运行 `./install.sh`，确认安装目录、ResearchAgent revision、workspace root、Conda root、
-可选 TS Web 组件和服务策略。Core Agent 和控制运行时始终安装；首次安装没有提供
+运行 `./install.sh`，确认安装目录、CoRAgent revision、workspace root、Conda root、
+可选 CoRAgent Web 组件和服务策略。Core Agent 和控制运行时始终安装；首次安装没有提供
 job.toml 时，还会自动准备本地 structure/validation 环境。其他科研环境显式选择，
 已有绑定保持不变。
 
 根目录只提供 `install.sh` 和 `uninstall.sh` 两个入口。`install.sh` 默认从 GitHub
 选择版本；`--source local` 使用当前 checkout，`--source-root /绝对路径` 可选择另一个
-本地 checkout。GitHub 分支、标签或提交由 `--research-agent-ref` 选择。本地安装使用 HEAD，
+本地 checkout。GitHub 分支、标签或提交由 `--coragent-ref` 选择。本地安装使用 HEAD，
 未提交修改默认拒绝；本机验证可显式使用 `--allow-dirty`。
 
 统一的配置目录入口为：
 
 ```bash
 ./install.sh --source local --config-dir "$PWD/config" \
-  --install-root "$HOME/ResearchAgent" --non-interactive --yes
+  --install-root "$HOME/CoRAgent" --non-interactive --yes
 ```
 
 配置目录可提供 `job.toml`、`models.json`、`auth.json`、`email.toml` 和
 `name-resolver.toml`；没有的配置沿用安装器默认值或已有安装状态。命令行参数优先于
-`RESEARCH_AGENT_*` 环境默认值和配置目录。添加 `--dry-run` 可查看脱敏计划，不下载、
+`CORAGENT_*` 环境默认值和配置目录。添加 `--dry-run` 可查看脱敏计划，不下载、
 复制凭据或启动服务。GitHub 安装也从调用者指定的本机目录读取凭据，不会把该目录上传。
 
 Phone/Relay 不会自动启用。需要本机 Relay 时，显式传入 `--with-link-relay --link-url https://你的域名`。
@@ -55,7 +55,7 @@ Phone/Relay 不会自动启用。需要本机 Relay 时，显式传入 `--with-l
 单独安装和卸载使用 `./install.sh relay`、`./uninstall.sh relay`，选项见各自的 `--help`。
 
 非交互安装可使用 `--workspace-root /absolute/path`；默认值为
-`<install>/workspaces`。Host、终端、TS Web 和卸载器共享
+`<install>/workspaces`。Host、终端、CoRAgent Web 和卸载器共享
 `etc/installation.json` 中记录的值。
 
 交互安装器中的 `Review and install` 会显示完整安装计划。按 Enter 或输入 `Y` 开始安装；
@@ -68,32 +68,32 @@ Phone/Relay 不会自动启用。需要本机 Relay 时，显式传入 `--with-l
 <install>/current -> releases/<release-id>
 ```
 
-只有选中的 release 会暴露给 `ResearchAgent` 启动器；安装器记录校验和，不执行该 release
+只有选中的 release 会暴露给 `coragent` 启动器；安装器记录校验和，不执行该 release
 之外的源码。
 
 ### 可选模型图标字体
 
 可选模型图标字体可通过 `--with-model-icons` 安装，使用
 `--without-model-icons` 禁用。字体属于用户数据目录，不是科学运行时依赖；
-`RESEARCH_AGENT_ICON_STYLE=unicode` 或 `nerd` 可显式覆盖选择。模型字形使用补充私用区，避免被
+`CORAGENT_ICON_STYLE=unicode` 或 `nerd` 可显式覆盖选择。模型字形使用补充私用区，避免被
 终端主 Nerd Font 中已有的同码位字形遮蔽。
 
 交互安装默认询问并选择启用；非交互安装默认禁用，明确传入参数才会安装：
 
 ```bash
 ./install.sh --non-interactive --yes --with-model-icons \
-  --install-root "$HOME/.local/share/research-agent"
+  --install-root "$HOME/.local/share/coragent"
 ```
 
-字体安装在用户数据目录（`$XDG_DATA_HOME/fonts/research-agent` 或
-`$HOME/.local/share/fonts/research-agent`），所选 release 在
+字体安装在用户数据目录（`$XDG_DATA_HOME/fonts/coragent` 或
+`$HOME/.local/share/fonts/coragent`），所选 release 在
 `<install>/etc/model-icons.json` 保存私有标记。无需另装 Nerd Font；其他图标沿用
-已有 Nerd Font，设置 `RESEARCH_AGENT_ICON_STYLE=unicode` 时回退到普通 Unicode。安装器在可用时刷新
+已有 Nerd Font，设置 `CORAGENT_ICON_STYLE=unicode` 时回退到普通 Unicode。安装器在可用时刷新
 fontconfig 缓存；已打开的终端可能需要重启才能加载回退字体。
 
 ## 受管 Python 运行时
 
-Host Python 环境默认位于 `~/soft/research-agent/host-envs/<installation-id>`，元数据位于
+Host Python 环境默认位于 `~/soft/coragent/host-envs/<installation-id>`，元数据位于
 `<install>/var/state/installation/python`；缓存位于 `<install>/var/cache`，可删除后
 重建而不会影响工作区。Host 通过 `environment.lock.txt` 安装固定 Conda 构建，
 不按 `environment.yml` 重新求解。基础环境身份包含 YAML 和显式锁摘要，Python overlay
@@ -107,7 +107,7 @@ scripts/prepare_pi_source.py --install <root>
 
 能力发现、Job 取消与恢复和选择性远程或模型 smoke 命令见
 [科学能力运维](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。同一步会验证固定版本的 Pi
-运行时及文档列出的 ResearchAgent 补丁集；运行时使用下文说明的按 workspace 隔离的 SQLite session
+运行时及文档列出的 CoRAgent 补丁集；运行时使用下文说明的按 workspace 隔离的 SQLite session
 布局。
 
 ## 配置计算后端
@@ -118,7 +118,7 @@ scripts/prepare_pi_source.py --install <root>
 
 复制 `config/job.example.toml` 并修改目标路径与绑定，再通过
 `--job-config /absolute/path/job.toml` 交给安装器。安装管理的私有副本位于
-`<install>/etc/job.toml`。SSH 凭据仍保留在 SSH 配置中。ResearchAgent 不安装站点管理的
+`<install>/etc/job.toml`。SSH 凭据仍保留在 SSH 配置中。CoRAgent 不安装站点管理的
 Gaussian 或 xTB 原生程序。
 
 主安装器根据 domain 的 `environments/manifest.json` 自动准备科研环境。首次安装没有
@@ -127,13 +127,13 @@ Gaussian 或 xTB 原生程序。
 原生 Gaussian/xTB 软件需在目标机器上预先安装。
 
 ```bash
-./install.sh --source local --install-root "$HOME/ResearchAgent" \
+./install.sh --source local --install-root "$HOME/CoRAgent" \
   --job-profile local:structure --job-profile local:pyscf \
-  --job-software-root local=/home/iaw/soft/research-agent/job-envs/my-install \
+  --job-software-root local=/home/iaw/soft/coragent/job-envs/my-install \
   --non-interactive --yes
 ```
 
-本地环境默认位于 `~/soft/research-agent/job-envs/<installation-id>`。
+本地环境默认位于 `~/soft/coragent/job-envs/<installation-id>`。
 `--without-default-job-environment` 可创建仅含控制服务的新安装。
 `--job-offline` 使用预先准备的 Conda/pip 缓存。相同依赖直接复用，锁文件更新时创建新前缀。
 用户修改过的绑定仅核验，不覆盖；锁文件和回执保存在目标的持久目录。
@@ -142,7 +142,7 @@ Gaussian 或 xTB 原生程序。
 
 ```bash
 --job-config /absolute/job.toml --job-profile cluster:structure \
---job-software-root cluster=/remote/shared/research-agent/envs \
+--job-software-root cluster=/remote/shared/coragent/envs \
 --job-conda cluster=/remote/conda/bin/conda
 ```
 
@@ -165,21 +165,21 @@ Host 的模型或邮件凭据；生成的解析缓存使用远端路径。当前
 维护时仍可运行模块导入和版本探测：
 
 ```bash
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.environment_check --config "$RESEARCH_AGENT_JOB_CONFIG"
+"$CORAGENT_PYTHON" -m research_agent.application.environment_check --config "$CORAGENT_JOB_CONFIG"
 ```
 
 完整发布包也使用相同流程，无需下载源码：
 
 ```bash
-./install.sh --source package --package-manifest /absolute/research-agent-package-release.json \
-  --install-root "$HOME/ResearchAgent" --non-interactive --yes
+./install.sh --source package --package-manifest /absolute/coragent-package-release.json \
+  --install-root "$HOME/CoRAgent" --non-interactive --yes
 ```
 
 ## 安装日志
 
 每次安装或更新都会在 `<install>/var/log/install.YYYY.MM.DD.log` 保存仅所有者可读的诊断
 日志。同一天重复运行会用 UTC 分隔线追加。日志记录安装器输出、所选路径、release 和服务
-状态、后端配置状态及失败详情，但不会记录 TS Web token、SMTP 授权码或 SSH 密钥。失败的
+状态、后端配置状态及失败详情，但不会记录 CoRAgent Web token、SMTP 授权码或 SSH 密钥。失败的
 package 步骤还会在同一目录保留独立的 `install-failure-<timestamp>.log`。
 
 ## 配置通知
@@ -200,12 +200,12 @@ package 步骤还会在同一目录保留独立的 `install-failure-<timestamp>.
 
 ```bash
 ./install.sh \
-  --install-root "$HOME/.local/share/research-agent" \
+  --install-root "$HOME/.local/share/coragent" \
   --non-interactive --yes --service-scope user \
   --email-binding smtp --email-preset qq \
   --email-recipient receiver@example.com \
   --email-address sender@qq.com \
-  --email-password-file "$HOME/.config/research-agent/qq-smtp-password"
+  --email-password-file "$HOME/.config/coragent/qq-smtp-password"
 ```
 
 非交互安装要求密码文件已经存在且权限为 `0600`。交互流程会隐藏输入授权码，并在私有安装
@@ -218,7 +218,7 @@ provider = "smtp"
 preset = "qq"                 # "163"、"qq" 或 "custom"
 recipient = "receiver@example.com"
 username = "sender@qq.com"
-password_env = "RESEARCH_AGENT_EMAIL_PASSWORD"
+password_env = "CORAGENT_EMAIL_PASSWORD"
 ```
 
 SMTP 预设默认使用 `smtp.163.com` 或 `smtp.qq.com`、465 端口和隐式 TLS。自定义服务器可用
@@ -226,29 +226,29 @@ SMTP 预设默认使用 `smtp.163.com` 或 `smtp.qq.com`、465 端口和隐式 T
 `--email-security`。使用 `--email-password-env NAME` 时，若安装环境中存在该变量，安装器
 会创建私有 systemd `EnvironmentFile`；否则请在启动 Host 前创建
 `<install>/etc/secrets/service.env`。使用私有的 `0600` `password_file` 可免去服务环境配置。
-ResearchAgent 通知只发送邮件，不需要 POP3 或 IMAP。
+CoRAgent 通知只发送邮件，不需要 POP3 或 IMAP。
 
 ## 启动安装级 Host
 
-一个安装为 workspace root 下所有已验证工作区拥有唯一 ResearchAgent Host。Host 是 control plane；
+一个安装为 workspace root 下所有已验证工作区拥有唯一 CoRAgent Host。Host 是 control plane；
 安装级 Pi App Server 为每个活动 session 管理一个固定版本的 `SessionWorker`/`durable Harness`
 lane。安装器会在报告成功前启用并启动 Host；普通终端启动时直接附着到该服务：
 
 ```bash
-./research-agent --workspace reaction-a
+./coragent --workspace reaction-a
 ```
 
 user scope 安装使用：
 
 ```bash
-systemctl --user status ts-app-server-research-agent.service
-systemctl --user restart ts-app-server-research-agent.service
-systemctl --user stop ts-app-server-research-agent.service
+systemctl --user status coragent.service
+systemctl --user restart coragent.service
+systemctl --user stop coragent.service
 ```
 
 system scope 安装省略 `--user`。Host 是终端、Phone 和后台 Monitor 的必需依赖；`service scope = none`
-仅用于底层包暂存或测试，普通 workspace 入口不可用。生成的 unit 调用 ResearchAgent 内部服务入口，普通
-用户不应运行 `research-agent --host`。
+仅用于底层包暂存或测试，普通 workspace 入口不可用。生成的 unit 调用 CoRAgent 内部服务入口，普通
+用户不应运行 `coragent --host`。
 
 默认且推荐的 scope 是 systemd user unit。system unit 必须提供显式的 `--service-user`；安装器
 会设置 `HOME`、`PI_CODING_AGENT_DIR` 和私有运行时目录，确保 Host 身份和本地 Pi 连接使用
@@ -261,36 +261,36 @@ Package release。
 
 | 组件 | unit | 创建条件 |
 | --- | --- | --- |
-| ResearchAgent Host | `ts-app-server-research-agent.service` | `--service-scope user` 或 `system` |
-| TS Web | `ts-web-research-agent.service` | `--with-web` 且 Host 使用 service scope |
-| Link Relay | `research-agent-relay.service` | `--with-link-relay` 且 `--relay-service-scope user` 或 `system` |
+| CoRAgent Host | `coragent.service` | `--service-scope user` 或 `system` |
+| CoRAgent Web | `coragent-web.service` | `--with-web` 且 Host 使用 service scope |
+| Link Relay | `coragent-relay.service` | `--with-link-relay` 且 `--relay-service-scope user` 或 `system` |
 
 使用 `--*-service-scope none` 时只安装文件和配置，不注册对应的 systemd unit。Host
-会管理 Monitor 和 session worker，它们不是额外的常驻 unit。TS Phone 是独立的 Flutter
+会管理 Monitor 和 session worker，它们不是额外的常驻 unit。CoRHub 是独立的 Flutter
 客户端，不会在安装主机上创建服务。
 
-## research-agent 与内部 App Server
+## coragent 与内部 App Server
 
-`research-agent` 打开连接安装级 Agent Server 的终端。服务由 systemd 管理：
+`coragent` 打开连接安装级 Agent Server 的终端。服务由 systemd 管理：
 
 ```bash
-systemctl --user start ts-app-server-research-agent.service
+systemctl --user start coragent.service
 ```
 
-生成的 unit 调用 `current/agent/libexec/research-agent-host` 内部入口，并明确设置安装根目录。
-不再提供公开的 `research-agentServer` 命令。
+生成的 unit 调用 `current/agent/libexec/coragent-host` 内部入口，并明确设置安装根目录。
+不再提供公开的 `coragentServer` 命令。
 Host API、Pi SDK Harness、Monitor 和 session worker 都属于同一个 Agent Server。
-Pi 负责 Agent loop、模型/工具调用和持久 transcript，ResearchAgent 负责研究策略与工具。
+Pi 负责 Agent loop、模型/工具调用和持久 transcript，CoRAgent 负责研究策略与工具。
 
 固定的 Pi checkout 位于 `<install>/runtimes/pi/<commit>`。Session 存储由安装
-统一管理；独立 runtime 注入、HTTP session store 和 `.pi/research-agent/server.json`
+统一管理；独立 runtime 注入、HTTP session store 和 `.pi/coragent/server.json`
 配置已删除。
 
 创建新会话或继续项目中的最新会话：
 
 ```bash
-./research-agent --workspace reaction-a
-./research-agent --workspace reaction-a -c
+./coragent --workspace reaction-a
+./coragent --workspace reaction-a -c
 ```
 
 Host 身份位于 `<install>/var/state/host/server-id`；非输入 RPC 回执、内部生产者身份、
@@ -302,16 +302,16 @@ Harness 不接受 workspace `.pi/sessions`。
 PTY scraping。Host 重启会保留 SQLite durable transcript、operation/queue ID、回执和 Monitor outbox；
 重新连接的客户端从新的 Host epoch/cursor 恢复。
 
-TS Phone 通过 ResearchAgent Link 连接该 Host。安装时启用 Phone access，并提供 HTTPS ResearchAgent Link Relay
+CoRHub 通过 CoRAgent Link 连接该 Host。安装时启用 Phone access，并提供 HTTPS CoRAgent Link Relay
 origin 和 Relay 管理员创建的一次性 Host enrollment code。交互式安装会在耗时的运行时安装
 完成后、写入 Phone manifest 前才询问这个短期 code，避免安装超过 code 有效期；非交互式安装
 仍通过 `--link-enrollment-code` 直接提供。安装器写入
 `var/state/host/link.json` 及仅所有者可读的 `var/state/host/host.token`；Host
 只向 Relay 建立出站 WSS，不会向 Relay 或互联网暴露 App Server 端口。
 
-如果本机已经单独安装了 Relay，设置 `RESEARCH_AGENT_WITH_LINK_RELAY=false`，安装器会优先读取已知目录（包括
-`/home/iaw/soft/research-agent-link`）及其 `research-agent-relay.service`，自动填充 Relay URL；也可以显式
-指定 `--link-relay-root /path/to/research-agent-link`。Relay 仍然是独立服务；统一安装器在明确启用
+如果本机已经单独安装了 Relay，设置 `CORAGENT_WITH_LINK_RELAY=false`，安装器会优先读取已知目录（包括
+`/home/iaw/soft/coragent-link`）及其 `coragent-relay.service`，自动填充 Relay URL；也可以显式
+指定 `--link-relay-root /path/to/coragent-link`。Relay 仍然是独立服务；统一安装器在明确启用
 Relay 时负责其生命周期，Host 安装器只负责兑换 enrollment code。
 
 统一安装器会在 `<install>/etc/link-relay.json` 写入所有权标记。卸载时默认停止并移除该
@@ -321,24 +321,24 @@ Relay 时负责其生命周期，Host 安装器只负责兑换 enrollment code�
 Host 上线后使用以下命令管理 Phone 授权：
 
 ```bash
-./research-agent phone pair
-./research-agent phone devices
-./research-agent phone revoke <device-id>
+./coragent phone pair
+./coragent phone devices
+./coragent phone revoke <device-id>
 ```
 
 内网客户端可以使用 SSH transport 连接远端 Host。远端安装必须包含
 `apps/agent/transport/ssh.mjs`，客户端通过 SSH 为 Host 和 Pi socket 启动该 proxy，
-不监听公网 TCP 端口。SSH host key 校验由 OpenSSH 完成，Host 仍执行 `research-agent-host/2` protocol
+不监听公网 TCP 端口。SSH host key 校验由 OpenSSH 完成，Host 仍执行 `coragent-host/2` protocol
 协商。可用重复的 `--ssh-option` 传入 `-i` 等 OpenSSH 选项。
 
-安装器可以持久化该配置，之后直接运行 `research-agent --workspace`：
+安装器可以持久化该配置，之后直接运行 `coragent --workspace`：
 
 ```bash
 ./scripts/install_wizard.py --non-interactive --yes \
-  --install-root /home/iaw/research-agent \
+  --install-root /home/iaw/coragent \
   --remote-host pi.example \
-  --remote-host-socket /run/user/1000/research-agent/host.sock \
-  --remote-proxy-path /opt/research-agent/apps/agent/transport/ssh.mjs \
+  --remote-host-socket /run/user/1000/coragent/host.sock \
+  --remote-proxy-path /opt/coragent/apps/agent/transport/ssh.mjs \
   --ssh-config /home/user/.ssh/config \
   --ssh-option=-i --ssh-option=/home/user/.ssh/id_ed25519
 ```
@@ -346,8 +346,8 @@ Host 上线后使用以下命令管理 Phone 授权：
 配置会写入 owner-only 的 `etc/remote-host.json`；命令行显式参数只覆盖当前一次启动。
 
 `phone pair` 输出已配置的 Relay URL 和八位配对码。配对码五分钟后失效且只能使用一次；TS
-Phone 将其兑换为平台安全存储中的可撤销设备凭据。Phone 凭据、Host token 和 TS Web HTTP
-token 相互独立。Phone 是普通的交互式 Pi 客户端，与终端共享同一 Harness lane 和工具；TS Web
+Phone 将其兑换为平台安全存储中的可撤销设备凭据。Phone 凭据、Host token 和 CoRAgent Web HTTP
+token 相互独立。Phone 是普通的交互式 Pi 客户端，与终端共享同一 Harness lane 和工具；CoRAgent Web
 仅是只读客户端。
 
 ## Monitor 运维
@@ -368,28 +368,28 @@ session 格式。
 
 ## 工作区初始化
 
-首次运行 `./research-agent --workspace <name>` 时，客户端会在配置的 workspace root 下创建 0700 工作区
-以及 `research_workspace/2` 的 `workspace_manifest.json` 与 Research Memory 存储。Node 按需在 `research/nodes/` 创建，不生成全局 progress 或 lifecycle 文档。Host 的 WorkspaceDirectory 也提供同一操作给 TS Phone。Host 不会创建无名项目；
+首次运行 `./coragent --workspace <name>` 时，客户端会在配置的 workspace root 下创建 0700 工作区
+以及 `research_workspace/2` 的 `workspace_manifest.json` 与 Research Memory 存储。Node 按需在 `research/nodes/` 创建，不生成全局 progress 或 lifecycle 文档。Host 的 WorkspaceDirectory 也提供同一操作给 CoRHub。Host 不会创建无名项目；
 初始化会验证规范协议，遇到旧格式或不完整状态时拒绝而不是重写。
 
-## 运行 TS Web Research Explorer
+## 运行 CoRAgent Web Research Explorer
 
-安装时选择 TS Web 后，可使用只读浏览器：
+安装时选择 CoRAgent Web 后，可使用只读浏览器：
 
 ```bash
-./TSWeb serve \
+./coragent-web serve \
   --state-dir var/state/web \
-  --auth-token-file "$HOME/.local/share/research-agent/etc/web/auth.token" \
+  --auth-token-file "$HOME/.local/share/coragent/etc/web/auth.token" \
   --source-root /configured/workspace-root/reaction-a \
   --label "Reaction A" --host 127.0.0.1 --port 8766
 ```
 
 只有在使用认证 token 文件时，才允许安装配置 `--web-host 0.0.0.0 --allow-remote`；直接运行
-TS Web 时对应 `serve --host 0.0.0.0 --allow-remote`。安装器会拒绝缺少这两个显式设置的
-非回环绑定。TS Web 只读，既不拥有 Pi session，也不提供科学写入路由。
-其 bearer token 与 ResearchAgent Link Host 和 Phone 设备凭据分开。
+CoRAgent Web 时对应 `serve --host 0.0.0.0 --allow-remote`。安装器会拒绝缺少这两个显式设置的
+非回环绑定。CoRAgent Web 只读，既不拥有 Pi session，也不提供科学写入路由。
+其 bearer token 与 CoRAgent Link Host 和 Phone 设备凭据分开。
 
-token 文件不存在时，安装器会生成随机 TS Web token。也可以传入 8--100 个 URL-safe 字符的
+token 文件不存在时，安装器会生成随机 CoRAgent Web token。也可以传入 8--100 个 URL-safe 字符的
 `--web-auth-token`，或在交互隐藏提示中输入。命令行 token 可能出现在 shell history 或进程
 列表中，生产环境应预先创建 `0600` token 文件并使用 `--web-auth-token-file`。
 
@@ -398,7 +398,7 @@ token 文件不存在时，安装器会生成随机 TS Web token。也可以传�
 模型目录和 API adapter 由固定 Pi release 提供。安装时，安装器会把 Host 服务账户
 `~/.pi/agent/` 中已有且安装目录缺失的 `models.json` 与 `auth.json` 复制到私有安装状态
 `<install>/etc/pi/`；升级不会覆盖安装目录中已有的文件。如果没有可导入的配置，必须先
-通过 Pi 或 provider 环境变量配置凭据，再创建 ResearchAgent 会话。终端、TS Phone 和其他客户端连接
+通过 Pi 或 provider 环境变量配置凭据，再创建 CoRAgent 会话。终端、CoRHub 和其他客户端连接
 同一 session，因此共享模型和工具集合；模型兼容性见
 [模型兼容性](MODEL_COMPATIBILITY.zh-CN.md)。
 
@@ -426,14 +426,14 @@ Job 状态。终端或 Phone 重连时首先接收新的 session snapshot；传�
 查看 `<install>/var/log/` 中最新的安装日志，并按安装时的 scope 检查服务：
 
 ```bash
-systemctl --user status ts-app-server-research-agent.service  # user scope
-systemctl status ts-app-server-research-agent.service         # system scope
+systemctl --user status coragent.service  # user scope
+systemctl status coragent.service         # system scope
 ```
 
 ## 卸载
 
 运行 `./uninstall.sh`。默认保留配置的 workspace root、Pi session history、凭据和配置；删除安装
-根目录必须显式确认。卸载器还会在配置的 scope 中停止并删除匹配的 App Server、TS Web 和
+根目录必须显式确认。卸载器还会在配置的 scope 中停止并删除匹配的 App Server、CoRAgent Web 和
 本安装创建的 Link Relay service。共享或没有所有权标记的 Relay 会保留。如果 Relay 目录曾被
 手动删除，请使用它原来的 `--install-root` 调用独立 Relay 卸载器；即使代码路径不存在，也会
 清理残留 unit。

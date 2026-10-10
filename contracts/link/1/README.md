@@ -1,7 +1,7 @@
-# ResearchAgent Link 1
+# CoRAgent Link 1
 
-ResearchAgent Link is the authenticated transport between TS Phone and an installation
-Host. It carries the versioned `research-agent-host/2` NDJSON stream; it is not Pi's
+CoRAgent Link is the authenticated transport between CoRHub and an installation
+Host. It carries the versioned `coragent-host/2` NDJSON stream; it is not Pi's
 experimental remote protocol and it does not define research or session
 ownership.
 
@@ -11,7 +11,7 @@ Both Host and device connect to:
 
 ```text
 wss://<relay>/v1/link
-Sec-WebSocket-Protocol: research-agent-link.v1
+Sec-WebSocket-Protocol: coragent-link.v1
 Authorization: Bearer <role-specific-token>
 ```
 
@@ -25,7 +25,7 @@ Control messages are strict JSON text frames:
 
 Host data frames contain a 16-byte connection UUID followed by one chunk of
 opaque bytes. In the current default client those bytes are UTF-8 NDJSON
-`research-agent-host/2` requests and responses. The Relay preserves order and does not
+`coragent-host/2` requests and responses. The Relay preserves order and does not
 parse, authorize, or deduplicate the application messages.
 
 ## Enrollment and pairing

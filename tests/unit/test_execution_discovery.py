@@ -69,7 +69,7 @@ def test_selected_gaussian_help_uses_runner_contract_without_target_access(monke
 
 
 def test_gaussian_recipes_check_wrapper_and_program_on_selected_local_target():
-    settings = load_job_config(os.environ['RESEARCH_AGENT_JOB_CONFIG'])
+    settings = load_job_config(os.environ['CORAGENT_JOB_CONFIG'])
     backends = settings['environments']['local']['backends']
     backends['gaussian'] = {**copy.deepcopy(backends['validation']), 'command': '/bin/true'}
     settings['environments']['cluster'] = targets()['environments']['cluster']
@@ -155,7 +155,7 @@ def test_missing_recipe_binding_and_failed_probe_are_distinct(tmp_path, monkeypa
 def test_generic_bindings_can_be_checked_without_loading_recipes(monkeypatch):
     monkeypatch.setattr(environment_check, 'installed_catalogs', lambda: pytest.fail('backend checks need no catalog'))
     assert environment_check.check_target(targets(), 'local', backend='shell')['status'] == 'verified'
-    settings = load_job_config(os.environ['RESEARCH_AGENT_JOB_CONFIG'])
+    settings = load_job_config(os.environ['CORAGENT_JOB_CONFIG'])
     python = copy.deepcopy(settings['environments']['local']['backends']['validation'])
     settings['environments']['local']['backends'] = {'custom': {**python, 'command': '/bin/true'}}
     report = environment_check.check_target(settings, 'local', backend='custom', details=True)
@@ -165,7 +165,7 @@ def test_generic_bindings_can_be_checked_without_loading_recipes(monkeypatch):
 
 
 def test_recipe_checks_dependencies_and_command_compatibility(monkeypatch):
-    settings = load_job_config(os.environ['RESEARCH_AGENT_JOB_CONFIG'])
+    settings = load_job_config(os.environ['CORAGENT_JOB_CONFIG'])
     entry = {'id': 'external.analysis', 'version': '1', 'backend': 'validation',
         'runtime': 'python', 'argv': ['{entry}', '{args}'],
         'requirements': {'packages': {'numpy': '>=9999'}}}

@@ -26,10 +26,10 @@ except ImportError:
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_NAME = "@iawnix/research-agent"
+PACKAGE_NAME = "@iawnix/coragent"
 PACKAGE_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 PROJECT_LICENSE = "Apache-2.0"
-THEME_ENTRIES = ["./apps/agent/terminal/themes/research-agent.json"]
+THEME_ENTRIES = ["./apps/agent/terminal/themes/coragent.json"]
 EXTENSION_ENTRIES: list[str] = []
 REMOVED_PREFIXES = (
     "agent-core/",
@@ -48,7 +48,7 @@ REMOVED_PREFIXES = (
     "ts_runtime/",
     "ts_structures/",
     "ts_validation/",
-    "ts_web/",
+    "coragent_web/",
     "workspace/",
 )
 FORBIDDEN_PARTS = {
@@ -70,7 +70,7 @@ FORBIDDEN_RUNTIME_FILES = {
     "scripts/check_package.py",
     "scripts/test_source.py",
 }
-REQUIRED_EXECUTABLE_FILES = {"research-agent", "libexec/research-agent-host", "apps/agent-cli/research_web_bridge.py"}
+REQUIRED_EXECUTABLE_FILES = {"coragent", "libexec/coragent-host", "apps/agent-cli/research_web_bridge.py"}
 
 
 class PackageCheckError(RuntimeError):
@@ -149,7 +149,7 @@ def validate_python_project() -> None:
     project = tomllib.loads((ROOT / "backend/pyproject.toml").read_text(encoding="utf-8"))
     metadata = project["project"]
     setuptools = project["tool"]["setuptools"]
-    if metadata["name"] != "research-agent" or metadata["license"] != PROJECT_LICENSE:
+    if metadata["name"] != "coragent" or metadata["license"] != PROJECT_LICENSE:
         raise PackageCheckError("Python distribution identity does not match the product")
     if metadata.get("dynamic") != ["version"] or setuptools["dynamic"]["version"] != {"attr": "research_agent._version.__version__"}:
         raise PackageCheckError("Python version must come from the generated product version")
@@ -180,7 +180,7 @@ def validate_runtime_entrypoints() -> None:
 
 
 def npm_pack_files() -> set[str]:
-    with tempfile.TemporaryDirectory(prefix="research-agent-npm-cache-") as cache:
+    with tempfile.TemporaryDirectory(prefix="coragent-npm-cache-") as cache:
         env = dict(os.environ)
         env["npm_config_cache"] = cache
         completed = subprocess.run(

@@ -74,7 +74,7 @@ while not Path('release').exists():time.sleep(.02)
 
 
 def test_host_unit_stop_does_not_kill_its_separately_owned_job(tmp_path):
-    parent_unit = "research-agent-test-host-" + uuid.uuid4().hex + ".service"
+    parent_unit = "coragent-test-host-" + uuid.uuid4().hex + ".service"
     job_unit = None
     cwd = tmp_path / "job"
     cwd.mkdir()

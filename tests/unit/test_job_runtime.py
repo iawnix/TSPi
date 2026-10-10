@@ -93,7 +93,7 @@ kind = \"remote\"
 ssh_host = \"compute.example\"
 ssh_config = \"/tmp/ssh-config\"
 scheduler = \"torque\"
-remote_root = \"/scratch/research-agent\"
+remote_root = \"/scratch/coragent\"
 """,
         encoding="utf-8",
     )

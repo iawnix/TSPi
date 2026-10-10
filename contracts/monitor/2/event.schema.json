@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://research-agent.iawnix.xyz/contracts/monitor/2/event.schema.json",
-  "title": "ResearchAgent Job Monitor Event",
+  "$id": "https://coragent.iawnix.xyz/contracts/monitor/2/event.schema.json",
+  "title": "CoRAgent Job Monitor Event",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -32,7 +32,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "research-agent-job-monitor-event/2"
+      "const": "coragent-job-monitor-event/2"
     },
     "monitor_id": {
       "type": "string",

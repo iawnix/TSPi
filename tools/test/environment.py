@@ -25,8 +25,8 @@ def configure_paths(env_root: Path) -> None:
     root.chmod(0o700)
     for name in ('tmp', 'registry', 'runs', 'evidence', 'builds', 'toolchains'):
         (root / name).mkdir(parents=True, exist_ok=True)
-    os.environ['RESEARCH_AGENT_TEST_ENV_ROOT'] = str(root)
-    os.environ['RESEARCH_AGENT_TEST_ROOT'] = str(root / 'tmp')
+    os.environ['CORAGENT_TEST_ENV_ROOT'] = str(root)
+    os.environ['CORAGENT_TEST_ROOT'] = str(root / 'tmp')
     os.environ['TMPDIR'] = str(root / 'tmp')
     tempfile.tempdir = str(root / 'tmp')
     for variable, directory in (('npm_config_cache','npm'),('PIP_CACHE_DIR','pip'),('CONDA_PKGS_DIRS','conda'),('XDG_CACHE_HOME','xdg')):
@@ -112,9 +112,9 @@ def prepare(package_root: Path, root: Path, components: list[str] | None = None)
                 def run(command, cwd=package_root):
                     subprocess.run(command, cwd=cwd, stdout=log, stderr=subprocess.STDOUT, check=True)
                 if component in ('python','host'):
-                    conda = os.environ.get('RESEARCH_AGENT_TEST_CONDA') or shutil.which('conda')
+                    conda = os.environ.get('CORAGENT_TEST_CONDA') or shutil.which('conda')
                     if not conda:
-                        raise RuntimeError('Set RESEARCH_AGENT_TEST_CONDA to the explicit conda executable')
+                        raise RuntimeError('Set CORAGENT_TEST_CONDA to the explicit conda executable')
                     # Conda embeds its prefix; build at the final path under a lock.
                     # Only the atomic receipt publishes the completed environment.
                     run([conda,'create','--yes','--prefix',str(target),'--file',str(lock_path(package_root) if component=='python' else package_root/'environment.lock.txt')])

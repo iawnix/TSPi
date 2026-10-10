@@ -1,5 +1,5 @@
 {
-  "schema_version": "research-agent-command-results/1",
+  "schema_version": "coragent-command-results/1",
   "definitions": {
     "Author": {
       "type": "object",

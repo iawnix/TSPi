@@ -3,7 +3,7 @@ name: crest
 description: Run and assess CREST conformer searches and preserve ensemble membership, energies, settings, provenance, and selection rationale.
 ---
 
-# ResearchAgent CREST
+# CoRAgent CREST
 
 [Chinese version](SKILL.zh-CN.md)
 

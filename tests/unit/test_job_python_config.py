@@ -110,7 +110,7 @@ def test_installer_refuses_unverified_prefix_and_does_not_publish_bad_receipt(tm
     monkeypatch.setattr('subprocess.run', lambda *a, **k: SimpleNamespace(stdout='@EXPLICIT\nhttps://example.test/wrong.conda\n', returncode=0))
     with pytest.raises(ValueError, match='does not match'):
         installer(b, adopt=True)
-    assert not (prefix / 'research-agent-environment.json').exists()
+    assert not (prefix / 'coragent-environment.json').exists()
 
 
 def test_failed_new_install_removes_only_its_partial_prefix(tmp_path, monkeypatch):
@@ -175,7 +175,7 @@ def test_runtime_and_generated_schema_reject_invalid_remote_settings(mutate):
 
 def test_platform_selection_has_no_implicit_local_or_remote_alias(tmp_path, monkeypatch):
     from research_agent.jobs.config import platforms_from_config
-    monkeypatch.delenv('RESEARCH_AGENT_JOB_CONFIG', raising=False)
+    monkeypatch.delenv('CORAGENT_JOB_CONFIG', raising=False)
     with pytest.raises(ValueError, match='job_config_required'): platforms_from_config()
     path = tmp_path / 'remote.toml'
     path.write_text('default_environment="cluster_a"\n[environments.cluster_a]\nkind="remote"\nssh_host="fixture"\nremote_root="/scratch/jobs"\n')

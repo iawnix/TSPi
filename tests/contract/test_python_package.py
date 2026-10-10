@@ -28,7 +28,7 @@ def test_python_distribution_metadata_matches_pi_release() -> None:
 
     validate_python_project()
     validate_version_surfaces()
-    assert project["project"]["name"] == "research-agent"
+    assert project["project"]["name"] == "coragent"
     assert project["tool"]["setuptools"]["package-dir"] == {"": "src"}
     assert research_agent.__version__ == package["version"] == PACKAGE_VERSION
 
@@ -61,7 +61,7 @@ def test_wheel_build_uses_a_temporary_source_copy(tmp_path: Path) -> None:
 
     wheel = tmp_path / "wheel" / descriptor["filename"]
     assert descriptor == inspect_wheel(wheel)
-    assert descriptor["name"] == "research-agent"
+    assert descriptor["name"] == "coragent"
     assert descriptor["version"] == PACKAGE_VERSION
     assert descriptor["payload_sha256"] == python_payload_sha256(ROOT)
     assert repeated == descriptor
@@ -105,7 +105,7 @@ def test_built_wheel_installs_as_a_self_contained_kernel(tmp_path: Path) -> None
                 "import importlib.metadata,json; from pathlib import Path; import research_agent.application,research_agent.research; "
                 "root=Path(research_agent.application.__file__).resolve().parent; state=Path(research_agent.research.__file__).resolve().parent; "
                 "from research_agent.research.operational_ids import allocate_operational_id; "
-                "print(json.dumps({'version': importlib.metadata.version('research-agent'), "
+                "print(json.dumps({'version': importlib.metadata.version('coragent'), "
                 "'operations_schema': (state/'nodes.py').is_file(), "
                 "'retired_model_export': hasattr(research_agent.research, 'ResearchMap'), "
                 "'research_agent.research': (state/'nodes.py').is_file(), "

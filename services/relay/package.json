@@ -1,12 +1,12 @@
 {
-  "name": "@iawnix/research-agent-relay",
-  "version": "0.18.0",
+  "name": "@iawnix/coragent-relay",
+  "version": "0.19.0",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
-  "description": "Authenticated WebSocket relay for ResearchAgent Hosts and TS Phone devices.",
+  "description": "Authenticated WebSocket relay for CoRAgent Hosts and CoRHub devices.",
   "bin": {
-    "research-agent-relay": "./cli.mjs"
+    "coragent-relay": "./cli.mjs"
   },
   "engines": {
     "node": ">=22.19.0"

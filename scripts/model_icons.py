@@ -1,4 +1,4 @@
-"""Install and describe the optional ResearchAgent model icon font.
+"""Install and describe the optional CoRAgent model icon font.
 
 This module intentionally uses only the Python standard library because it is
 called by the bootstrap installer before the managed runtime is available.
@@ -17,10 +17,10 @@ from pathlib import Path
 from typing import Any
 
 
-MODEL_ICON_FONT_RELATIVE = Path("assets/fonts/research-agent-model-icons.ttf")
+MODEL_ICON_FONT_RELATIVE = Path("assets/fonts/coragent-model-icons.ttf")
 MODEL_ICON_CONFIG_RELATIVE = Path("etc/model-icons.json")
-MODEL_ICON_CONFIG_SCHEMA = "research-agent-model-icons/1"
-MODEL_ICON_FONT_NAME = "ResearchAgent-Model-Icons.ttf"
+MODEL_ICON_CONFIG_SCHEMA = "coragent-model-icons/1"
+MODEL_ICON_FONT_NAME = "CoRAgent-Model-Icons.ttf"
 
 
 def install_model_icon_font(
@@ -33,7 +33,7 @@ def install_model_icon_font(
     """Install the bundled font and write the installation marker.
 
     ``enabled=False`` only changes the marker.  It deliberately leaves a
-    shared user font in place so another ResearchAgent installation is not disrupted.
+    shared user font in place so another CoRAgent installation is not disrupted.
     """
 
     requested_root = install_root.expanduser()
@@ -94,7 +94,7 @@ def _font_directory(home: Path | None = None) -> Path:
             raise ValueError("XDG_DATA_HOME must be an absolute path")
     else:
         path = (home or Path.home()) / ".local" / "share"
-    return path / "fonts" / "research-agent"
+    return path / "fonts" / "coragent"
 
 
 def _require_directory(path: Path, label: str) -> Path:

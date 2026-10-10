@@ -18,7 +18,7 @@ from research_agent.jobs.environment import validate_requirements
 
 _SCHEMA = json.loads(files(__package__).joinpath('execution_schema.json').read_text())
 _VALIDATOR = Draft202012Validator(_SCHEMA)
-_RESERVED = {'spec.json', 'receipt.json', 'status.json', 'input_manifest.json', 'logs', '.research-agent'}
+_RESERVED = {'spec.json', 'receipt.json', 'status.json', 'input_manifest.json', 'logs', '.coragent'}
 
 
 def _relative(value):
@@ -113,7 +113,7 @@ def _module_paths(entry, resources):
 def installed_catalogs(package_root=None):
     package = resolve_package_root(package_root)
     metadata = json.loads((package / 'package.json').read_text())
-    declarations = metadata['researchAgent']['execution']
+    declarations = metadata['coragent']['execution']
     if not isinstance(declarations, list) or any(not isinstance(path, str) for path in declarations) or len(set(declarations)) != len(declarations):
         raise ValueError('execution_catalog_declarations_invalid')
     catalogs, names = [], set()

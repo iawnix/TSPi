@@ -1,9 +1,17 @@
 # Changelog
 
-This file records user-visible changes. Detailed architectural decisions live
-in `docs/archive/adr/`.
+This file records user-visible changes. Current architecture is documented in
+[the architecture guide](docs/ARCHITECTURE.md); earlier designs remain in Git history.
 
 ## Unreleased
+
+- **0.19.0 breaking rename:** the product and repository are CoRAgent / `coragent`.
+  Commands, package identities, services, installation metadata and environment
+  variables use `coragent` / `CORAGENT_`; no legacy aliases or fallback readers.
+  The internal Python import namespace remains `research_agent`.
+- Host/Relay use `coragent-host/2`, `coragent-link.v1`, `cah_` and `cad_`.
+  Deploy the matching CoRHub client and pair again; old tokens cannot be renamed.
+  Existing installations require the [explicit cutover](docs/CORAGENT_CUTOVER.md).
 
 - Updated the pinned Pi runtime and SDK packages to 1.1.0, retaining protocol 8
   and request admission with the new context API and token estimator.

@@ -1,8 +1,8 @@
 import catalog from "./command-catalog.json" with { type: "json" };
 import { Value } from "../pi/typebox.mjs";
 
-if (catalog.schema_version !== "research-agent-command-catalog/1" || !Array.isArray(catalog.commands)) {
-  throw new Error("invalid ResearchAgent command catalog");
+if (catalog.schema_version !== "coragent-command-catalog/1" || !Array.isArray(catalog.commands)) {
+  throw new Error("invalid CoRAgent command catalog");
 }
 
 export const COMMAND_DEFINITIONS = Object.freeze(Object.fromEntries(catalog.commands.map(
@@ -38,7 +38,7 @@ export function createCommandService(transport) {
 
 export function validateCommandInvocation(command, params = {}) {
   const definition = COMMAND_DEFINITIONS[command];
-  if (!definition) throw new Error(`unsupported ResearchAgent command: ${command}`);
+  if (!definition) throw new Error(`unsupported CoRAgent command: ${command}`);
   if (!params || typeof params !== "object" || Array.isArray(params)) {
     throw new Error(`${command} parameters must be an object`);
   }

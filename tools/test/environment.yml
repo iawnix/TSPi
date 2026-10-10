@@ -1,4 +1,4 @@
-name: tspi-test
+name: coragent-test
 channels:
   - conda-forge
   - nodefaults

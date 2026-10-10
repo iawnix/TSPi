@@ -169,7 +169,7 @@ def test_raw_job_submission_resolves_defaults_before_recording_attempt(tmp_path,
     config = tmp_path / 'defaults.toml'
     config.write_text('default_environment="local"\n[environments.local]\nkind="local"\nsupervisor="process"\n'
                       '[environments.local.submission.resources]\ncpus=1\nmemory_mb=256\nwalltime="00:00:15"\n')
-    monkeypatch.setenv('RESEARCH_AGENT_JOB_CONFIG', str(config))
+    monkeypatch.setenv('CORAGENT_JOB_CONFIG', str(config))
     request = {'root': str(root), 'job_id': 'job_defaults',
                'command': ['/bin/true'], 'metadata': {'resources': {'memory_mb': 128}}}
     result = dispatch('start', request)

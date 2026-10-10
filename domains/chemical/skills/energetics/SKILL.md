@@ -3,7 +3,7 @@ name: energetics
 description: Evaluate electronic energies, ZPE and thermal corrections, free and reaction energies, barriers, bounded TST rates, and energy profiles.
 ---
 
-# ResearchAgent Energetics
+# CoRAgent Energetics
 
 [Chinese version](SKILL.zh-CN.md)
 

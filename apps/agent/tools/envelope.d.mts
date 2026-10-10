@@ -1,5 +1,5 @@
-export const TOOL_RESULT_SCHEMA_VERSION: "research-agent-tool-result/1";
-export const TOOL_ERROR_SCHEMA_VERSION: "research-agent-tool-error/1";
+export const TOOL_RESULT_SCHEMA_VERSION: "coragent-tool-result/1";
+export const TOOL_ERROR_SCHEMA_VERSION: "coragent-tool-error/1";
 
 export function withToolResultEnvelope(
   response: any,

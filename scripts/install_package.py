@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install one validated ResearchAgent Core Package and its selected optional components."""
+"""Install one validated CoRAgent Core Package and its selected optional components."""
 
 from __future__ import annotations
 
@@ -114,10 +114,10 @@ except ImportError:
     )
 
 
-INSTALLED_MANIFEST = ".research-agent-package-release.json"
+INSTALLED_MANIFEST = ".coragent-package-release.json"
 LAUNCHER_PATHS = {
-    "research-agent": ("agent", "research-agent"),
-    "TSWeb": ("web", "bin", "ts-web"),
+    "coragent": ("agent", "coragent"),
+    "coragent-web": ("web", "bin", "coragent-web"),
 }
 
 
@@ -132,10 +132,10 @@ from research_agent.foundation.layout import paths
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Install one validated ResearchAgent Package release.")
-    parser.add_argument("--manifest", required=True, help="Path to research-agent-package-release.json.")
+    parser = argparse.ArgumentParser(description="Install one validated CoRAgent Package release.")
+    parser.add_argument("--manifest", required=True, help="Path to coragent-package-release.json.")
     parser.add_argument("--archive", help="Package archive; defaults to the manifest archive filename.")
-    parser.add_argument("--install-root", required=True, help="ResearchAgent installation root.")
+    parser.add_argument("--install-root", required=True, help="CoRAgent installation root.")
     parser.add_argument("--conda", help="Path to conda or mamba executable.")
     parser.add_argument("--conda-root", help="Root directory of an existing Conda or Mamba installation.")
     parser.add_argument(
@@ -174,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
         ValueError,
         tarfile.TarError,
     ) as error:
-        print(f"ResearchAgent Package install failed: {error}", file=sys.stderr)
+        print(f"CoRAgent Package install failed: {error}", file=sys.stderr)
         return 1
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
@@ -199,7 +199,7 @@ def install_package(
     runtime_preparer: Callable[..., PreparedRuntime] | None = None,
     runtime_publisher: Callable[[PreparedRuntime], Path] | None = None,
 ) -> dict[str, Any]:
-    manifest = validate_suite_manifest(read_json_object(manifest_path, "ResearchAgent Package manifest"))
+    manifest = validate_suite_manifest(read_json_object(manifest_path, "CoRAgent Package manifest"))
     if not allow_dirty:
         dirty_components = [
             label
@@ -219,15 +219,15 @@ def install_package(
     archive_descriptor = manifest["archive"]
     resolved_archive = archive_path or (manifest_path.parent / archive_descriptor["filename"])
     if resolved_archive.name != archive_descriptor["filename"]:
-        raise SuiteReleaseError("ResearchAgent Package archive filename does not match the manifest")
-    with tempfile.TemporaryDirectory(prefix="research-agent-package-input-") as input_directory:
+        raise SuiteReleaseError("CoRAgent Package archive filename does not match the manifest")
+    with tempfile.TemporaryDirectory(prefix="coragent-package-input-") as input_directory:
         input_root = Path(input_directory)
         input_root.chmod(0o700)
         captured_archive = copy_verified_file_snapshot(
             resolved_archive,
             input_root / archive_descriptor["filename"],
             archive_descriptor,
-            "ResearchAgent Package archive",
+            "CoRAgent Package archive",
         )
         return _install_captured_package(
             manifest,
@@ -263,7 +263,7 @@ def _install_captured_package(
     if "web" in manifest["components"]:
         expected_suite_files.add(manifest["components"]["web"]["archive"]["path"])
     if suite_files != expected_suite_files:
-        raise SuiteReleaseError("ResearchAgent Package archive does not contain the exact declared component set")
+        raise SuiteReleaseError("CoRAgent Package archive does not contain the exact declared component set")
 
     install_root = prepare_install_root(install_root)
     layout = paths(install_root).initialize()
@@ -310,7 +310,7 @@ def _install_captured_package(
         )
         archived_notification_state = []
         ensure_private_directory(install_root / "workspaces")
-        installed_manifest = read_json_object(target / INSTALLED_MANIFEST, "installed ResearchAgent Package manifest")
+        installed_manifest = read_json_object(target / INSTALLED_MANIFEST, "installed CoRAgent Package manifest")
         state = {
             "schema_version": SUITE_INSTALL_SCHEMA_VERSION,
             "current_release_id": manifest["release_id"],
@@ -346,7 +346,7 @@ def _install_captured_package(
             "release_id": manifest["release_id"],
             "package_root": str(target),
             "current": str(package_home / "current"),
-            "launcher": launchers["research-agent"],
+            "launcher": launchers["coragent"],
             "launchers": launchers,
             "runtime": dict(prepared_runtime.result),
             "services_activated": False,
@@ -533,7 +533,7 @@ def validate_extracted_suite(root: Path, manifest: dict[str, Any]) -> None:
         extract_rooted_archive(web_archive, web_members, web_root)
         validate_web_runtime(web_root, web_descriptor)
         validate_web_component_archive(web_archive.read_bytes(), {
-            "component": {"name": "ts-web", "version": web_descriptor["version"]},
+            "component": {"name": "coragent-web", "version": web_descriptor["version"]},
             "entrypoint": web_descriptor["entrypoint"],
             "protocols": web_descriptor["protocols"],
         })
@@ -542,7 +542,7 @@ def validate_extracted_suite(root: Path, manifest: dict[str, Any]) -> None:
 def validate_existing_suite(target: Path, manifest: dict[str, Any]) -> None:
     if target.is_symlink() or not target.is_dir():
         raise SuiteReleaseError(f"suite release target is not a regular directory: {target}")
-    installed = validate_suite_manifest(read_json_object(target / INSTALLED_MANIFEST, "installed ResearchAgent Package manifest"))
+    installed = validate_suite_manifest(read_json_object(target / INSTALLED_MANIFEST, "installed CoRAgent Package manifest"))
     if suite_identity(installed) != suite_identity(manifest):
         raise SuiteReleaseError(f"existing suite release manifest does not match: {target}")
     validate_installed_suite(target, manifest)
@@ -584,8 +584,8 @@ def inspect_embedded_agent(
         raise SuiteReleaseError(f"embedded Agent archive is invalid: {error}") from error
     # The embedded archive is an Agent release; its manifest contract is
     # represented by the shared wheel/release schema constant.
-    if RELEASE_SCHEMA_VERSION != "research-agent-release/1":
-        raise SuiteReleaseError("only research-agent-release/1 is supported")
+    if RELEASE_SCHEMA_VERSION != "coragent-release/1":
+        raise SuiteReleaseError("only coragent-release/1 is supported")
     required_files = REQUIRED_RUNTIME_FILES
     missing = sorted(required_files - files)
     if missing:
@@ -604,7 +604,7 @@ def inspect_embedded_web(
     archive = verify_archive_descriptor(
         root.joinpath(*PurePosixPath(descriptor["archive"]["path"]).parts),
         descriptor["archive"],
-        "embedded TS Web archive",
+        "embedded CoRAgent Web archive",
     )
     members, files = inspect_rooted_archive(archive, "component")
     validate_web_archive_files(files)
@@ -617,14 +617,14 @@ def validate_web_runtime(root: Path, descriptor: dict[str, Any]) -> None:
     try:
         package = json.loads((root / "package.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
-        raise SuiteReleaseError("installed TS Web package metadata is invalid") from error
-    if package.get("name") != "@iawnix/ts-web" or package.get("version") != descriptor["version"]:
-        raise SuiteReleaseError("installed TS Web package identity does not match the suite manifest")
+        raise SuiteReleaseError("installed CoRAgent Web package metadata is invalid") from error
+    if package.get("name") != "@iawnix/coragent-web" or package.get("version") != descriptor["version"]:
+        raise SuiteReleaseError("installed CoRAgent Web package identity does not match the suite manifest")
     if package.get("protocols") != descriptor["protocols"]:
-        raise SuiteReleaseError("installed TS Web protocols do not match the suite manifest")
+        raise SuiteReleaseError("installed CoRAgent Web protocols do not match the suite manifest")
     entrypoint = root / descriptor["entrypoint"]["path"]
     if not os.access(entrypoint, os.X_OK):
-        raise SuiteReleaseError("installed TS Web entrypoint is not executable")
+        raise SuiteReleaseError("installed CoRAgent Web entrypoint is not executable")
 
 
 def validate_agent_runtime(
@@ -642,7 +642,7 @@ def agent_release_manifest(descriptor: dict[str, Any], created_at_utc: str) -> d
     return {
         "schema_version": RELEASE_SCHEMA_VERSION,
         "release_id": descriptor["release_id"],
-        "package": {"name": "@iawnix/research-agent", "version": descriptor["version"]},
+        "package": {"name": "@iawnix/coragent", "version": descriptor["version"]},
         "python_distribution": descriptor["python_distribution"],
         "archive": {
             "filename": PurePosixPath(archive["path"]).name,
@@ -682,9 +682,9 @@ def install_launchers(
         name: selected_root / Path(*relative)
         for name, relative in paths.items()
     }
-    enabled = {"research-agent"}
+    enabled = {"coragent"}
     if "web" in components:
-        enabled.add("TSWeb")
+        enabled.add("coragent-web")
     for name, target in targets.items():
         link = install_root / name
         if name not in enabled:
@@ -703,9 +703,9 @@ def validate_launcher_slots(
     package_home: Path,
     components: dict[str, Any],
 ) -> None:
-    enabled = {"research-agent"}
+    enabled = {"coragent"}
     if "web" in components:
-        enabled.add("TSWeb")
+        enabled.add("coragent-web")
     conflicts = [
         str(install_root / name)
         for name in LAUNCHER_PATHS

@@ -18,15 +18,15 @@ def catalog(root, monkeypatch):
     root.mkdir()
     (root / "run.sh").write_text('cat "$1" > result.txt\n')
     resources = {"run.sh": "sha256:" + hashlib.sha256((root / "run.sh").read_bytes()).hexdigest()}
-    declaration = {"schema_version": "research-agent-execution/1", "name": "external", "version": "1",
+    declaration = {"schema_version": "coragent-execution/1", "name": "external", "version": "1",
         "executors": [{"id": "external.copy", "version": "3", "backend": "shell",
             "runtime": "native", "argv": ["{command}", "run.sh", "{input:data}", "{args}"],
             "inputs": {"data": "input.txt"}, "outputs": [{"path": "result.txt", "required": True, "min_bytes": 1}],
             "resources": resources}], "validators": [], "acceptance_profiles": []}
     declaration_path = root / "execution.json"
     declaration_path.write_text(json.dumps(declaration))
-    (root / "package.json").write_text(json.dumps({"researchAgent": {"execution": ["execution.json"]}}))
-    monkeypatch.setenv("RESEARCH_AGENT_PACKAGE_ROOT", str(root))
+    (root / "package.json").write_text(json.dumps({"coragent": {"execution": ["execution.json"]}}))
+    monkeypatch.setenv("CORAGENT_PACKAGE_ROOT", str(root))
     return declaration_path
 
 
@@ -133,7 +133,7 @@ def test_task_specific_script_uses_explicit_binding_and_pinned_dependencies(tmp_
     script.write_text("from pathlib import Path\nPath('output.txt').write_text(Path('input.txt').read_text().upper())\n")
     source = tmp_path / "data.txt"
     source.write_text("new research method")
-    request = prepare_script(os.environ["RESEARCH_AGENT_JOB_CONFIG"], "local", "validation", script,
+    request = prepare_script(os.environ["CORAGENT_JOB_CONFIG"], "local", "validation", script,
                              dependencies=[str(source) + "=input.txt"], collect=["output.txt"])
     assert request["metadata"]["execution_binding"]["backend"] == "validation"
     assert "executor" not in request["metadata"]
@@ -164,12 +164,12 @@ def test_validator_on_remote_default_uses_remote_python_and_selected_resources(t
     script = root / "validator.py"
     script.write_text("raise RuntimeError('preparation never executes validators')\n")
     manifest = root / "execution.json"
-    manifest.write_text(json.dumps({"schema_version": "research-agent-execution/1", "name": "external", "version": "1", "executors": [], "acceptance_profiles": [],
+    manifest.write_text(json.dumps({"schema_version": "coragent-execution/1", "name": "external", "version": "1", "executors": [], "acceptance_profiles": [],
         "validators": [{"id": "external.validator", "version": "1", "backend": "validation", "entry": "validator.py",
             "sha256": "sha256:" + hashlib.sha256(script.read_bytes()).hexdigest(),
             "input_contract": {"schema_version": "validator-input/1", "roles": [{"name": "input", "source": "registered_artifact"}]}}]}))
-    (root / "package.json").write_text(json.dumps({"researchAgent": {"execution": ["execution.json"]}}))
-    monkeypatch.setenv("RESEARCH_AGENT_PACKAGE_ROOT", str(root))
+    (root / "package.json").write_text(json.dumps({"coragent": {"execution": ["execution.json"]}}))
+    monkeypatch.setenv("CORAGENT_PACKAGE_ROOT", str(root))
     config = tmp_path / "job.toml"
     config.write_text('''default_environment="cluster"
 [environments.cluster]
@@ -219,7 +219,7 @@ def test_structure_generation_collects_every_output_with_binding_and_attempt(tmp
         inputs, refs = {"spec": spec}, [registered["artifact_id"]]
         arguments = ["--enumerate-stereo", "--conformers", "1"]
         expected = "results/candidate-1-1/ts.gjf"
-    request = prepare(os.environ["RESEARCH_AGENT_JOB_CONFIG"], "local", "chemical." + kind, "1", inputs, arguments, input_artifact_ids=refs)
+    request = prepare(os.environ["CORAGENT_JOB_CONFIG"], "local", "chemical." + kind, "1", inputs, arguments, input_artifact_ids=refs)
     path = tmp_path / "request.json"
     path.write_text(json.dumps(request))
     receipt = execute("job.start", tmp_path, {"request_file": str(path),
@@ -347,7 +347,7 @@ def test_installed_resolver_is_used_by_an_isolated_name_resolution_job(tmp_path,
             root = tmp_path / 'install'
             job = root / 'etc/job.toml'
             job.parent.mkdir(parents=True)
-            settings = tomllib.loads(Path(os.environ['RESEARCH_AGENT_JOB_CONFIG']).read_text())
+            settings = tomllib.loads(Path(os.environ['CORAGENT_JOB_CONFIG']).read_text())
             local = settings['environments']['local']
             local['backends'] = {'structure': local['backends']['structure']}
             job.write_bytes(wizard._job_config_bytes(settings))
@@ -355,11 +355,11 @@ def test_installed_resolver_is_used_by_an_isolated_name_resolution_job(tmp_path,
             resolver.write_text('default_resolver="opsin"\n[backends.opsin]\ncache=false\nendpoint=' +
                                 json.dumps(f'http://127.0.0.1:{server.server_port}/opsin') + '\n')
             wizard.configure_backend_configs(SimpleNamespace(install_root=str(root)))
-            monkeypatch.setenv('RESEARCH_AGENT_JOB_CONFIG', str(job))
+            monkeypatch.setenv('CORAGENT_JOB_CONFIG', str(job))
             # Ambient Host configuration must not substitute for the installed binding.
-            monkeypatch.setenv('RESEARCH_AGENT_NAME_RESOLVER_CONFIG', str(tmp_path/'absent.toml'))
+            monkeypatch.setenv('CORAGENT_NAME_RESOLVER_CONFIG', str(tmp_path/'absent.toml'))
             request = prepare(job, 'local', 'chemical.resolve', '1', {}, ['--name', 'ethanol'])
-            assert request['environment']['RESEARCH_AGENT_NAME_RESOLVER_CONFIG'] == str(resolver)
+            assert request['environment']['CORAGENT_NAME_RESOLVER_CONFIG'] == str(resolver)
             work = tmp_path / 'workspace'
             workspace(work)
             path = work / 'request.json'
@@ -388,7 +388,7 @@ def test_installed_resolver_is_used_by_an_isolated_name_resolution_job(tmp_path,
 def test_name_lookup_fallback_candidates_and_geometry_run_as_managed_jobs(tmp_path):
     import os
     workspace(tmp_path)
-    config = os.environ['RESEARCH_AGENT_JOB_CONFIG']
+    config = os.environ['CORAGENT_JOB_CONFIG']
 
     def run(executor, inputs, arguments=()):
         request = prepare(config, 'local', executor, '1', inputs, arguments)

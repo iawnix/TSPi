@@ -37,13 +37,13 @@ function modelVisibleSkillSection(skills) {
     inputs: visible.map((skill) => skill.filePath),
     text,
     metadata: {
-      schema_version: "research-agent-skill-manifest/1",
+      schema_version: "coragent-skill-manifest/1",
       skills: visible.map((skill) => ({
         name: skill.name,
         description: skill.description,
         location: skill.filePath,
         digest: typeof skill.digest === "string" ? skill.digest : null,
-        provenance_schema: skill.provenance_schema || "research-agent-skill-provenance/1",
+        provenance_schema: skill.provenance_schema || "coragent-skill-provenance/1",
       })),
     },
   });

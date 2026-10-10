@@ -1,8 +1,8 @@
 # Preparing a scientific Job request
 
-Start from the method Skill's instructions and selected software binding. When it supplies a predefined recipe, prepare it with `--config "$RESEARCH_AGENT_JOB_CONFIG" --environment <name> --executor <id> --version <version> --input <role>=<file>`, followed by `--` and runner arguments. The generic preparer stages declared resources with their module paths intact. Target Python comes from the backend or environment binding in job.toml.
+Start from the method Skill's instructions and selected software binding. When it supplies a predefined recipe, prepare it with `--config "$CORAGENT_JOB_CONFIG" --environment <name> --executor <id> --version <version> --input <role>=<file>`, followed by `--` and runner arguments. The generic preparer stages declared resources with their module paths intact. Target Python comes from the backend or environment binding in job.toml.
 
-For runner parameters, use `"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --executor <id> --version <version> --help`. This reads the pinned CLI contract without running science or contacting a compute target. Fixed input/output/executable flags are supplied by the preparer.
+For runner parameters, use `"$CORAGENT_PYTHON" -m research_agent.application.executors --executor <id> --version <version> --help`. This reads the pinned CLI contract without running science or contacting a compute target. Fixed input/output/executable flags are supplied by the preparer.
 
 If the recipe id is unknown, `executors --list --skill <name>` or `--list --backend <binding>` gives a concise index; `--details` includes full descriptors for diagnostics. This index covers predefined recipes, not all available methods or software. Optional `--config … --environment …` reports whether each recipe's binding is configured, without probing it. Check actual software with the [targeted environment check](runtime_environment.md). An absent recipe can use the task-specific script path below or a native command through a generic Job.
 
@@ -18,7 +18,7 @@ collected outputs and runner resources participate in the generated request iden
 This helper only packages the requested calculation; the Agent selects the sequence
 and interprets numerical checks using the Gaussian Skill.
 
-Python dependencies are installation-owned Conda environments configured in job.toml. Run preparation helpers with "$RESEARCH_AGENT_PYTHON"; target runners use the resolved Conda binding. Missing environments require installation maintenance, not ad-hoc pip installs during a research turn.
+Python dependencies are installation-owned Conda environments configured in job.toml. Run preparation helpers with "$CORAGENT_PYTHON"; target runners use the resolved Conda binding. Missing environments require installation maintenance, not ad-hoc pip installs during a research turn.
 
 
 Save helper output with `--output <workspace>/prepared/<cell>.json` (before `--`).

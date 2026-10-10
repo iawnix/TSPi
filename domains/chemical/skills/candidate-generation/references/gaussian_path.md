@@ -26,7 +26,7 @@ Create and register a `chemical-path-spec/1` JSON artifact, for example:
 Use the actual listed Skill paths and workspace paths in these commands:
 
 ```text
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.path-candidates --version 1 --input spec=<workspace>/spec.json --input-artifact <spec-ref> --output <workspace>/candidates-request.json -- --enumerate-stereo --conformers 2
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config "$CORAGENT_JOB_CONFIG" --environment local --executor chemical.path-candidates --version 1 --input spec=<workspace>/spec.json --input-artifact <spec-ref> --output <workspace>/candidates-request.json -- --enumerate-stereo --conformers 2
 ```
 
 Submit the returned request_file/request_sha256 and collect the Job before inspecting candidates. The entry uses the target structure binding; all generated files are collected with Job provenance.
@@ -40,13 +40,13 @@ QST2 convergence and completeness of the finite candidate set are not guaranteed
 Register each selected branch's spec and geometries. The branch spec is the subject
 of the `chemical.diels_alder_path@1` acceptance profile; evidence for different
 spec artifacts cannot be mixed to satisfy one path.
-The generated `ResearchAgentSpec` title binds the solver output to the branch spec digest.
+The generated `CoRAgentSpec` title binds the solver output to the branch spec digest.
 Keep that title in the TS input and checkpoint; raw TS and IRC logs must echo it.
 
 Prepare a TS request with the existing method-selection helper:
 
 ```text
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config <installation>/job.toml --environment local --executor chemical.gaussian-input --version 1 --input input=<branch>/ts.gjf --collect results/ts.chk --output <workspace>/ts-request.json -- --method M062X --basis '6-31G**' --threads 12 --memory-mb 4000 --validation saddle
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config <installation>/job.toml --environment local --executor chemical.gaussian-input --version 1 --input input=<branch>/ts.gjf --collect results/ts.chk --output <workspace>/ts-request.json -- --method M062X --basis '6-31G**' --threads 12 --memory-mb 4000 --validation saddle
 ```
 
 Submit the returned `request_file` and `request_sha256` through `job_start`.
@@ -55,7 +55,7 @@ validate the raw collected `gaussian.out` with the registered saddle validator.
 Inspect the checks and their scope before choosing the next experiment. A parser failure is not a scientific rejection and does not prohibit further exploration. Record missing evidence and your rationale; do not describe unresolved checks as passed. When IRC is the chosen next step, prepare inputs from that Job's collected `ts.chk`:
 
 ```text
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.path-irc --version 1 --input spec=<branch>/spec.json --input checkpoint=<collected-ts.chk> --input-artifact <spec-ref> --input-artifact <checkpoint-ref> --output <workspace>/irc-request.json
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config "$CORAGENT_JOB_CONFIG" --environment local --executor chemical.path-irc --version 1 --input spec=<branch>/spec.json --input checkpoint=<collected-ts.chk> --input-artifact <spec-ref> --input-artifact <checkpoint-ref> --output <workspace>/irc-request.json
 ```
 
 Submit and collect the IRC-input Job before using its generated inputs and checkpoint.

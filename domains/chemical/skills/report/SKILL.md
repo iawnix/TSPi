@@ -24,7 +24,7 @@ For existing `science-result` files, invoke [scripts/build.py](scripts/build.py)
 through native bash:
 
 ```bash
-"$RESEARCH_AGENT_PYTHON" <installed-report-skill>/scripts/build.py --result local=<workspace>/path/to/result.json --output-dir <workspace>/reports/comparison-v1
+"$CORAGENT_PYTHON" <installed-report-skill>/scripts/build.py --result local=<workspace>/path/to/result.json --output-dir <workspace>/reports/comparison-v1
 ```
 
 Pass one `--result environment=path` per result and use a new or empty output

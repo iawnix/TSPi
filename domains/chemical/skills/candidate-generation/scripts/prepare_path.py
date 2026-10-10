@@ -118,7 +118,7 @@ def prepare_candidates(spec_file, output, conformers=1, enumerate_stereo=False):
                 (folder/'reactants.xyz').write_text(f'{len(rxyz)}\n{branch} reactant complex seed\n{rtext}\n')
                 (folder/'product.xyz').write_text(f'{len(pxyz)}\n{branch} product seed\n{ptext}\n')
                 write_json(folder/'spec.json', local_spec)
-                title_marker = 'ResearchAgentSpec '+digest(folder/'spec.json').removeprefix('sha256:')
+                title_marker = 'CoRAgentSpec '+digest(folder/'spec.json').removeprefix('sha256:')
                 charge = f'{spec["charge"]} {spec["multiplicity"]}'
                 route = 'Opt=(QST2,CalcFC,MaxCycles=200) Freq SCF=Tight Int=UltraFine NoSymm'
                 (folder/'ts.gjf').write_text(header(spec, 'ts.chk', route)+f'{title_marker}\n{branch} reactants\n\n{charge}\n{rtext}\n\n{title_marker}\n{branch} product\n\n{charge}\n{ptext}\n\n')

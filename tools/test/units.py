@@ -29,11 +29,11 @@ def prepare_units(run: Path, env: dict):
     directory=run/'units';directory.mkdir(exist_ok=True)
     binary=run/'bin';binary.mkdir(exist_ok=True)
     wrapper=binary/'systemd-run'
-    wrapper.write_text('#!/bin/sh\nexec '+shlex.quote(env['RESEARCH_AGENT_PYTHON'])+' '+shlex.quote(str(run/'source/tools/test/units.py'))+' launch "$@"\n')
+    wrapper.write_text('#!/bin/sh\nexec '+shlex.quote(env['CORAGENT_PYTHON'])+' '+shlex.quote(str(run/'source/tools/test/units.py'))+' launch "$@"\n')
     wrapper.chmod(0o700)
     env['PATH']=str(binary)+os.pathsep+env['PATH']
-    env['RESEARCH_AGENT_TEST_UNIT_ROOT']=str(directory)
-    env['RESEARCH_AGENT_TEST_UNIT_DESCRIPTION']='ResearchAgent local test '+run.name
+    env['CORAGENT_TEST_UNIT_ROOT']=str(directory)
+    env['CORAGENT_TEST_UNIT_DESCRIPTION']='CoRAgent local test '+run.name
     owner=os.getpid()
     start=process_start(owner)
     guardian=subprocess.Popen([sys.executable,str(run/'source/tools/test/units.py'),'guard',str(run),str(owner),start],start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
@@ -41,11 +41,11 @@ def prepare_units(run: Path, env: dict):
 
 
 def launch(args):
-    root=Path(os.environ['RESEARCH_AGENT_TEST_UNIT_ROOT'])
-    description=os.environ['RESEARCH_AGENT_TEST_UNIT_DESCRIPTION']
+    root=Path(os.environ['CORAGENT_TEST_UNIT_ROOT'])
+    description=os.environ['CORAGENT_TEST_UNIT_DESCRIPTION']
     unit=next((arg.split('=',1)[1] for arg in args if arg.startswith('--unit=')),None)
-    if not unit or not re.fullmatch(r'research-agent-[a-z0-9-]+\.service',unit):
-        raise ValueError('Test services require an explicit unique research-agent unit name')
+    if not unit or not re.fullmatch(r'coragent-[a-z0-9-]+\.service',unit):
+        raise ValueError('Test services require an explicit unique coragent unit name')
     if inspect(unit).get('LoadState')!='not-found': raise RuntimeError('Refusing an existing service unit')
     if '--' not in args: raise ValueError('Test systemd launch requires an explicit command boundary')
     boundary=args.index('--')

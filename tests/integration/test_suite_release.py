@@ -81,16 +81,16 @@ def test_core_package_build_is_deterministic_and_installs_app_server_payload(tmp
 
     assert installed["created"] is True
     assert repeated["created"] is False
-    assert set(installed["launchers"]) == {"research-agent"}
-    assert (install_root / "research-agent").is_symlink()
+    assert set(installed["launchers"]) == {"coragent"}
+    assert (install_root / "coragent").is_symlink()
     assert (install_root / "current").is_symlink()
     assert (install_root / "current").resolve() == Path(installed["package_root"])
-    assert (install_root / "research-agent").is_symlink()
+    assert (install_root / "coragent").is_symlink()
     package_root = Path(installed["package_root"])
-    assert (install_root / "research-agent").resolve() == package_root / "agent" / "research-agent"
-    assert (install_root / "research-agent").resolve().is_file()
-    assert not (install_root / "TSWeb").exists()
-    assert not (install_root / "bin" / "TSWeb").exists()
+    assert (install_root / "coragent").resolve() == package_root / "agent" / "coragent"
+    assert (install_root / "coragent").resolve().is_file()
+    assert not (install_root / "coragent-web").exists()
+    assert not (install_root / "bin" / "coragent-web").exists()
     from research_agent.foundation.layout import paths
     guards = paths(install_root).guards
     assert guards.is_dir()
@@ -173,14 +173,14 @@ def test_optional_web_launcher_is_removed_when_rolling_back_to_core_only(
     )
     install_root = tmp_path / "install"
     install_package(Path(with_web["manifest"]), None, install_root, allow_dirty=True)
-    assert (install_root / "TSWeb").is_symlink()
+    assert (install_root / "coragent-web").is_symlink()
 
     install_package(Path(core_only["manifest"]), None, install_root, allow_dirty=True)
 
-    assert not (install_root / "TSWeb").exists()
-    assert not (install_root / "bin" / "TSWeb").exists()
-    assert (install_root / "research-agent").resolve() == Path(
-        install_root / "." / "current" / "agent" / "research-agent"
+    assert not (install_root / "coragent-web").exists()
+    assert not (install_root / "bin" / "coragent-web").exists()
+    assert (install_root / "coragent").resolve() == Path(
+        install_root / "." / "current" / "agent" / "coragent"
     ).resolve()
 
 
@@ -240,7 +240,7 @@ def test_install_rejects_non_symlink_launcher_conflict(tmp_path: Path) -> None:
     )
     install_root = tmp_path / "install"
     install_root.mkdir()
-    (install_root / "research-agent").write_text("operator file\n", encoding="utf-8")
+    (install_root / "coragent").write_text("operator file\n", encoding="utf-8")
     with pytest.raises(SuiteReleaseError, match="non-symlink package entrypoints"):
         install_package(Path(built["manifest"]), None, install_root, allow_dirty=True)
 
@@ -262,7 +262,7 @@ def test_activation_failure_restores_one_pointer_and_runtime_manifest(tmp_path):
     with pytest.raises(RuntimeError,match='injected publication failure'):
         install_package(packages[1],None,root,allow_dirty=True,runtime_publisher=fail)
     assert (layout.current.readlink(), layout.install_state.read_bytes(), json.loads((layout.runtime_home/'env.json').read_text()))==previous
-    assert (root/'research-agent').resolve().is_relative_to(layout.current.resolve())
+    assert (root/'coragent').resolve().is_relative_to(layout.current.resolve())
 
 
 def test_running_host_blocks_install_before_runtime_preparation(tmp_path, monkeypatch):

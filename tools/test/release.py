@@ -17,8 +17,8 @@ from tools.test.supervisor import write_json
 
 def main():
     artifact=Path(sys.argv[1]).resolve()
-    manifest=artifact.parent/'research-agent-package-release.json'
-    run=Path(os.environ['RESEARCH_AGENT_TEST_RUN_ROOT'])
+    manifest=artifact.parent/'coragent-package-release.json'
+    run=Path(os.environ['CORAGENT_TEST_RUN_ROOT'])
     install=run/'install/release'
     before=hashlib.sha256(artifact.read_bytes()).hexdigest()
     environment=dict(os.environ,CONDA_OFFLINE='true')
@@ -27,7 +27,7 @@ def main():
     original=dict(os.environ)
     os.environ.update(environment)
     try:
-        result=install_package(manifest,artifact,install,conda=os.environ.get('RESEARCH_AGENT_TEST_CONDA'),allow_dirty='--allow-dirty' in sys.argv)
+        result=install_package(manifest,artifact,install,conda=os.environ.get('CORAGENT_TEST_CONDA'),allow_dirty='--allow-dirty' in sys.argv)
     finally:
         os.environ.clear();os.environ.update(original)
     package=Path(result['package_root'])/'agent'
@@ -42,26 +42,26 @@ def main():
     code=('import research_agent,pathlib;'
           f'assert pathlib.Path(research_agent.__file__).resolve().is_relative_to(pathlib.Path({str(python.parent.parent)!r}))')
     subprocess.run([str(python),'-c',code],cwd=external,env=clean,check=True)
-    subprocess.run([str(result['launchers']['research-agent']),'--version'],cwd=external,env=clean,check=True)
-    subprocess.run([str(result['launchers']['research-agent']),'--help'],cwd=external,env=clean,check=True)
+    subprocess.run([str(result['launchers']['coragent']),'--version'],cwd=external,env=clean,check=True)
+    subprocess.run([str(result['launchers']['coragent']),'--help'],cwd=external,env=clean,check=True)
     # Seed only the verified third-party cache. The installed preparation and
     # binding code must validate and wire it; source code cannot repair the
     # first-party payload under test.
     pin=json.loads((package/'config/pi-source.json').read_text())
     pi_root=install/'runtimes/pi'/pin['commit']
     pi_root.mkdir(parents=True)
-    subprocess.run(['cp','--reflink=auto','-a',str(Path(environment['RESEARCH_AGENT_TEST_PI_RUNTIME_ROOT']))+'/.',str(pi_root)],check=True)
+    subprocess.run(['cp','--reflink=auto','-a',str(Path(environment['CORAGENT_TEST_PI_RUNTIME_ROOT']))+'/.',str(pi_root)],check=True)
     subprocess.run([str(python),str(package/'scripts/prepare_pi_source.py'),'--install',str(install)],cwd=external,env=clean,check=True)
     binding=('import sys;from pathlib import Path;'
              f"sys.path.insert(0,{str(package / 'scripts')!r});"
              'from install_wizard import bind_pi_runtime_node_modules;'
              f'bind_pi_runtime_node_modules(Path({str(install)!r}),Path({str(pi_root)!r}))')
     subprocess.run([str(python),'-c',binding],cwd=external,env=clean,check=True)
-    clean.update({'RESEARCH_AGENT_TEST_INSTALLED_ROOT':str(install),
-                  'RESEARCH_AGENT_TEST_PACKAGE_ROOT':str(package),'RESEARCH_AGENT_PACKAGE_ROOT':str(package),
-                  'RESEARCH_AGENT_TEST_PI_RUNTIME_ROOT':str(pi_root),'RESEARCH_AGENT_PI_RUNTIME_ROOT':str(pi_root),
-                  'RESEARCH_AGENT_PYTHON':str(python),'RESEARCH_AGENT_RUNTIME_MANIFEST':str(result['runtime']['manifest_path']),
-                  'RESEARCH_AGENT_INSTALL_ROOT':str(install)})
+    clean.update({'CORAGENT_TEST_INSTALLED_ROOT':str(install),
+                  'CORAGENT_TEST_PACKAGE_ROOT':str(package),'CORAGENT_PACKAGE_ROOT':str(package),
+                  'CORAGENT_TEST_PI_RUNTIME_ROOT':str(pi_root),'CORAGENT_PI_RUNTIME_ROOT':str(pi_root),
+                  'CORAGENT_PYTHON':str(python),'CORAGENT_RUNTIME_MANIFEST':str(result['runtime']['manifest_path']),
+                  'CORAGENT_INSTALL_ROOT':str(install)})
     native_report=run/'report/installed-native.tap'
     with native_report.open('w') as log:
         native=subprocess.run(['node','--import',str(pi_root/'packages/coding-agent/src/experimental/source-resolver.ts'),

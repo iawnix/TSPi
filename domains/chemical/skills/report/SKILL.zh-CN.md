@@ -18,7 +18,7 @@ description: 根据研究证据编写图文报告，包含分子结构、能量�
 对于 `science-result` 格式的已有结果，可通过原生 bash 调用 [scripts/build.py](scripts/build.py)：
 
 ```bash
-"$RESEARCH_AGENT_PYTHON" <已安装的报告Skill>/scripts/build.py --result local=<工作区>/path/to/result.json --output-dir <工作区>/reports/comparison-v1
+"$CORAGENT_PYTHON" <已安装的报告Skill>/scripts/build.py --result local=<工作区>/path/to/result.json --output-dir <工作区>/reports/comparison-v1
 ```
 
 每份结果对应一个 `--result environment=path`，输出目录须不存在或为空。该脚本只生成

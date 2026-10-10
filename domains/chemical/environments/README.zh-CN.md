@@ -15,7 +15,7 @@ glibc >=2.28。CF22D 选择通用 x86_64 PySCF 构建，不绑定维护者的 CP
 | render.lock + render.requirements.txt | render | RDKit、Cairo、Matplotlib、xyzrender 及其依赖 |
 
 文本报告只使用 Host 标准库，不需要渲染锁。渲染环境中的 notebook 依赖来自
-xyzrender 上游要求，只安装在渲染目标中。这些环境均不安装 ResearchAgent wheel。
+xyzrender 上游要求，只安装在渲染目标中。这些环境均不安装 CoRAgent wheel。
 
 统一入口 `install.sh` 根据 `manifest.json` 准备环境。首次安装没有提供 `job.toml`
 时，默认选择本地 `structure`；已有绑定保留。其他环境显式选择：
@@ -33,7 +33,7 @@ glibc；执行阶段使用已配置的 PBS/Torque 和 rsync。本机 Python 路�
 `wrapper` 只为已配置的 Gaussian/xTB 后端准备 Python，原生程序仍由管理员提供。
 
 安装器把固定锁和不可变的版本化环境保存在专用受管目录，本机默认是
-`~/soft/research-agent/job-envs/<installation-id>`，再将绝对路径写入 `etc/job.toml`。
+`~/soft/coragent/job-envs/<installation-id>`，再将绝对路径写入 `etc/job.toml`。
 PubChem/OPSIN 服务参数位于 `etc/name-resolver.toml`。本地完成名称解析和结构准备后，
 可以交给远端计算，不要求每个计算目标都安装名称解析服务。
 

@@ -31,7 +31,7 @@ index cea91b0e7..a8f3f9d7a 100644
 -				...process.env,
 -				...options.env,
 -				[INTERNAL_PROCESS_ENV]: role,
-+	const diagnosticPath = process.env.RESEARCH_AGENT_PI_DIAGNOSTIC_FILE?.trim();
++	const diagnosticPath = process.env.CORAGENT_PI_DIAGNOSTIC_FILE?.trim();
 +	let diagnosticFd: number | undefined;
 +	if (diagnosticPath) {
 +		try {

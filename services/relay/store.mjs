@@ -59,7 +59,7 @@ export class RelayStore {
   redeemEnrollment({ code, hostId, name }) {
     const normalizedCode = normalizeCode(code);
     if (!isUuidV4(hostId)) throw new RelayStoreError("invalid_host", "hostId must be a lowercase UUIDv4");
-    const hostName = normalizeName(name, "ResearchAgent Host");
+    const hostName = normalizeName(name, "CoRAgent Host");
     const now = Date.now();
     this.database.exec("BEGIN IMMEDIATE");
     try {
@@ -121,7 +121,7 @@ export class RelayStore {
 
   redeemPairing({ code, deviceName }) {
     const normalizedCode = normalizeCode(code);
-    const name = normalizeName(deviceName, "TS Phone");
+    const name = normalizeName(deviceName, "CoRHub");
     const now = Date.now();
     this.database.exec("BEGIN IMMEDIATE");
     try {

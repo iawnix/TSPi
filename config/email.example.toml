@@ -12,4 +12,4 @@ username = "sender@example.invalid"
 password_file = "smtp-password" # Relative to this configuration directory.
 # For QQ/163, set preset = "qq"/"163" and remove host, port and security
 # to use the provider defaults. Use an SMTP authorization code, not a login password.
-# Alternatively, replace password_file with password_env = "RESEARCH_AGENT_EMAIL_PASSWORD".
+# Alternatively, replace password_file with password_env = "CORAGENT_EMAIL_PASSWORD".

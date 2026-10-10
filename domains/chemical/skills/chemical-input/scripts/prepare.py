@@ -70,7 +70,7 @@ from reaction_checks import reaction
 def main():
     from cli import parse_arguments
     args = parse_arguments()
-    if args.config: os.environ['RESEARCH_AGENT_NAME_RESOLVER_CONFIG'] = args.config
+    if args.config: os.environ['CORAGENT_NAME_RESOLVER_CONFIG'] = args.config
     try:
         if args.command == 'resolve': result = resolve_name(args.name, args.lookup_name)
         elif args.command == 'candidates': result = resolve_candidates_file(args.input)

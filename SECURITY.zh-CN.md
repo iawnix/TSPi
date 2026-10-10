@@ -2,7 +2,7 @@
 
 ## 支持版本
 
-安全修复面向 `main` 最新版本和最新发布的 ResearchAgent release。旧版本可能不会继续获得 Host、
+安全修复面向 `main` 最新版本和最新发布的 CoRAgent release。旧版本可能不会继续获得 Host、
 Link Relay、Native Pi Harness 或 workspace 格式的安全修复。
 
 ## 报告漏洞

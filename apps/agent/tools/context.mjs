@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 
-const TOOL_CONTEXT_BRAND = Symbol("research-agent.tool-execution-context");
+const TOOL_CONTEXT_BRAND = Symbol("coragent.tool-execution-context");
 const REPLAY_MODES = new Set(["normal", "recovery", "reconcile"]);
 
 /**

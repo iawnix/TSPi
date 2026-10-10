@@ -83,21 +83,21 @@ def email_options(config: Path) -> list[str]:
 def environment_defaults(parser: argparse.ArgumentParser, argv=None) -> None:
     """Environment variables are defaults; explicit CLI flags take precedence."""
     aliases = {
-        "research_agent_repo": "RESEARCH_AGENT_INSTALL_REPO",
-        "research_agent_ref": "RESEARCH_AGENT_INSTALL_REF",
-        "relay_state_dir": "RESEARCH_AGENT_LINK_RELAY_STATE_DIR",
-        "relay_listen": "RESEARCH_AGENT_LINK_RELAY_LISTEN",
-        "relay_port": "RESEARCH_AGENT_LINK_RELAY_PORT",
-        "relay_service_scope": "RESEARCH_AGENT_LINK_RELAY_SERVICE_SCOPE",
-        "relay_service_user": "RESEARCH_AGENT_LINK_RELAY_SERVICE_USER",
-        "relay_enable_services": "RESEARCH_AGENT_LINK_RELAY_ENABLE_SERVICES",
-        "relay_start_services": "RESEARCH_AGENT_LINK_RELAY_START_SERVICES",
+        "coragent_repo": "CORAGENT_INSTALL_REPO",
+        "coragent_ref": "CORAGENT_INSTALL_REF",
+        "relay_state_dir": "CORAGENT_LINK_RELAY_STATE_DIR",
+        "relay_listen": "CORAGENT_LINK_RELAY_LISTEN",
+        "relay_port": "CORAGENT_LINK_RELAY_PORT",
+        "relay_service_scope": "CORAGENT_LINK_RELAY_SERVICE_SCOPE",
+        "relay_service_user": "CORAGENT_LINK_RELAY_SERVICE_USER",
+        "relay_enable_services": "CORAGENT_LINK_RELAY_ENABLE_SERVICES",
+        "relay_start_services": "CORAGENT_LINK_RELAY_START_SERVICES",
     }
     defaults = {}
     for action in parser._actions:
-        if action.dest in {"help", "source_root", "research_agent_commit", "yes", "non_interactive", "dry_run", "json", "allow_dirty"}:
+        if action.dest in {"help", "source_root", "coragent_commit", "yes", "non_interactive", "dry_run", "json", "allow_dirty"}:
             continue
-        name = aliases.get(action.dest, "RESEARCH_AGENT_" + action.dest.upper())
+        name = aliases.get(action.dest, "CORAGENT_" + action.dest.upper())
         value = os.environ.get(name)
         if not value:
             continue

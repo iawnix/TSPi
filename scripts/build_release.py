@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a content-addressed TS Agent release archive and manifest."""
+"""Build a content-addressed CoRAgent release archive and manifest."""
 
 from __future__ import annotations
 
@@ -40,12 +40,12 @@ except ImportError:
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST_NAME = "research-agent-release.json"
+MANIFEST_NAME = "coragent-release.json"
 SCHEMA_VERSION = RELEASE_SCHEMA_VERSION
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Build a validated TS Agent release archive.")
+    parser = argparse.ArgumentParser(description="Build a validated CoRAgent release archive.")
     parser.add_argument("--output-dir", default="dist", help="Directory for the archive and release manifest.")
     parser.add_argument("--allow-dirty", action="store_true", help="Allow a build from a dirty Git checkout.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable output.")
@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir = (ROOT / output_dir).resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        with tempfile.TemporaryDirectory(prefix="research-agent-pack-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="coragent-pack-") as temporary:
             temporary_dir = Path(temporary)
             captured = capture_source_tree(
                 ROOT,
@@ -108,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
             digest = sha256_file(packed_path)
             size_bytes = packed_path.stat().st_size
             release_id = f"{package_version}-sha256-{digest[:16]}-{captured.git_commit[:12]}"
-            archive_name = f"research-agent-{release_id}.tgz"
+            archive_name = f"coragent-{release_id}.tgz"
             archive_path = output_dir / archive_name
             if archive_path.exists():
                 if sha256_file(archive_path) != digest:

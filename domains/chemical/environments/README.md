@@ -17,7 +17,7 @@ optimized for the maintainer's CPU. Other targets need their own verified lock.
 
 Text reports use the Host's standard library and do not need `render.lock`.
 Rendering's notebook dependencies are upstream xyzrender requirements; they
-are confined to the rendering target. No environment includes the ResearchAgent wheel.
+are confined to the rendering target. No environment includes the CoRAgent wheel.
 
 The public `install.sh` entry prepares these profiles using `manifest.json`.
 A fresh installation without supplied `job.toml` selects `structure` locally;
@@ -38,7 +38,7 @@ to the target. `wrapper` prepares Python for already configured Gaussian/xTB
 backends; their native binaries remain operator-provided.
 
 The installer stores pinned locks and immutable, versioned prefixes in a
-dedicated owned directory (locally `~/soft/research-agent/job-envs/<installation-id>`).
+dedicated owned directory (locally `~/soft/coragent/job-envs/<installation-id>`).
 It writes their absolute bindings to `etc/job.toml`. PubChem/OPSIN service
 settings live in `etc/name-resolver.toml`; local preparation can feed a remote
 calculation without installing name services on every compute target.

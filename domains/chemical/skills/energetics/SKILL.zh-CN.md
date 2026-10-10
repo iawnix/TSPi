@@ -3,7 +3,7 @@ name: energetics
 description: 评估电子能、ZPE 与热校正、自由能和反应能、势垒、有限范围的 TST 速率及能量剖面。
 ---
 
-# ResearchAgent 能量学
+# CoRAgent 能量学
 
 [English version](SKILL.md)
 

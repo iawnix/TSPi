@@ -2,13 +2,13 @@
 
 [English](MAINTAINER_GUIDE.md) | 简体中文
 
-ResearchAgent 使用 Pi 原生 Harness。Host 绑定工作区、认证输入和持久调度；Python Research Memory 保存原始要求、问题 Node、不可变 Result 与关系。`runtime-bridge` 只传输命令，TS Web 只读同一查询协议。当前重构验收状态见[架构](ARCHITECTURE.zh-CN.md)。
+CoRAgent 使用 Pi 原生 Harness。Host 绑定工作区、认证输入和持久调度；Python Research Memory 保存原始要求、问题 Node、不可变 Result 与关系。`runtime-bridge` 只传输命令，CoRAgent Web 只读同一查询协议。当前职责边界见[架构](ARCHITECTURE.zh-CN.md)。
 
 ## 开发环境
 
 安装固定 Pi 源码，通过 `python3 tools/test/runner.py prepare` 安装独立测试环境。
 测试使用 `tools/test/environment.lock.txt`，默认位于 `/home/iaw/project/TSPi/local_debug`，
-可用 `RESEARCH_AGENT_TEST_ENV_ROOT` 设置。根目录的 `environment.lock.txt` 仅用于最小 Host，
+可用 `CORAGENT_TEST_ENV_ROOT` 设置。根目录的 `environment.lock.txt` 仅用于最小 Host，
 不含科学依赖或 pytest。修改包布局前运行：
 
 ```bash
@@ -18,12 +18,12 @@ npm run lint:public
 ```
 
 完整 Python 套件使用 `python3 tools/test/runner.py source -- -q`。原生 lane 覆盖 Harness
-Host、Pi 原生 client、history 隔离与导入、Monitor 投递、ResearchAgent Link 以及固定 Pi 的
+Host、Pi 原生 client、history 隔离与导入、Monitor 投递、CoRAgent Link 以及固定 Pi 的
 extension/provider 边界。运行时必须使用与
 `config/pi-source.json` commit 一致的准备好 checkout：
 
 ```bash
-export RESEARCH_AGENT_TEST_PI_RUNTIME_ROOT=/path/to/prepared/pi
+export CORAGENT_TEST_PI_RUNTIME_ROOT=/path/to/prepared/pi
 npm run test:native-pi
 ```
 
@@ -48,9 +48,9 @@ Job Runtime 拥有执行回执，Artifact Store 拥有文件和来源。Monitor 
 先检查工作区，再按诊断重建可派生视图：
 
 ```bash
-"$RESEARCH_AGENT_PYTHON" apps/agent-cli/workspace.py doctor --root /absolute/workspace
-"$RESEARCH_AGENT_PYTHON" apps/agent-cli/workspace.py rebuild --root /absolute/workspace
-"$RESEARCH_AGENT_PYTHON" apps/agent-cli/workspace.py doctor --root /absolute/workspace
+"$CORAGENT_PYTHON" apps/agent-cli/workspace.py doctor --root /absolute/workspace
+"$CORAGENT_PYTHON" apps/agent-cli/workspace.py rebuild --root /absolute/workspace
+"$CORAGENT_PYTHON" apps/agent-cli/workspace.py doctor --root /absolute/workspace
 ```
 
 重建以不可变记录和结果为依据，恢复 Node/map 索引、搜索索引与可读视图；不生成科学结果、不修改执行或邮件回执，也不迁移旧格式工作区。原始记录缺失或不一致需要修复真实来源，不能用重建伪造。研究更新通过公开工具进行；CLI 不接受旧 expected-version / observed-sequence 全局进度参数。
@@ -74,7 +74,7 @@ Python 独立核验执行目录；Pi 按 `package.json.pi.skills` 发现产品�
 Job 状态与恢复由执行运行时管理；派发意图、执行观察和收集证据必须遵守
 工作区事务边界，同时保持查看、收集和取消能力。应测试 Harness client、Pi 资源与科学执行合同、Monitor
 重试与回执、wheel 安装、研究快照和检索的 Web 展示 和源码篡改拒绝。当前证据以稳定的运维文档、
-源码测试和组件测试为准，旧验收报告仅放 docs/archive，不作为当前完成证据。
+源码测试和组件测试为准，过时方案和一次性验收报告保留在 Git 历史中，不放入当前文档目录。
 
 ## 文档归属
 
@@ -82,9 +82,9 @@ Job 状态与恢复由执行运行时管理；派发意图、执行观察和收�
 - `docs/INSTALLATION.zh-CN.md`：安装、服务、升级和恢复。
 - `docs/TERMINAL.zh-CN.md`：Pi 原生 TUI、Host、Phone 与 Monitor 使用。
 - `skills/` and `domains/chemical/skills/`：面向用户的科学流程和参考资料。
-- `contracts/ts-web/`：研究上下文、Node、Result 与记录响应的浏览器传输合同。
+- `contracts/coragent-web/`：研究上下文、Node、Result 与记录响应的浏览器传输合同。
 
-TS Phone 文档和移动发布工具由独立的 `ts-phone` 仓库维护。ResearchAgent 拥有小型认证 Host
+CoRHub 文档和移动发布工具由独立的 `corhub` 仓库维护。CoRAgent 拥有小型认证 Host
 bridge 和可选 browser gateway；不得新增第二个 Pi 渲染器、Phone broker 或 alternate
 session owner。
 
@@ -92,7 +92,7 @@ session owner。
 
 | 变更 | 必须同步 |
 |---|---|
-| ResearchAgent Host 协议或服务 | `apps/agent/`、启动器测试、TS Phone 客户端、架构文档 |
+| CoRAgent Host 协议或服务 | `apps/agent/`、启动器测试、CoRHub 客户端、架构文档 |
 | 工作区 schema | Research Memory 合同、bootstrap、验证测试、工作区参考 |
 | 科学软件 | Skill 脚本/解析器、环境配置、对应 Skill 参考、测试 |
 | 科学分析 | 脚本、适用时的验证器/profile manifest、输入输出验证、科学反例、扩展资源摘要 |

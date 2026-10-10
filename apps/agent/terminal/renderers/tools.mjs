@@ -1,5 +1,5 @@
 /** Presentation summaries preserve full results behind the native expand control. */
-export function createResearchAgentToolRenderers({ Text, wrapTextWithAnsi }, names) {
+export function createCoRAgentToolRenderers({ Text, wrapTextWithAnsi }, names) {
   function textOf(result) {
     return (result.content || []).filter(block => block.type === "text").map(block => block.text).join("\n");
   }

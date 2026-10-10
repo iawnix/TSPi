@@ -3,7 +3,7 @@ name: qbics
 description: 判断 QBICS 的适用性，核实已安装命令、输入与验证需求后执行有界研究 Job。
 ---
 
-# ResearchAgent QBICS
+# CoRAgent QBICS
 
 [English version](SKILL.md)
 

@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Research memory · CoRAgent</title><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/app.css"></head>
+<body>
+<header><a href="/" class="brand">CoRAgent <span>研究记录</span></a><select id="workspace" aria-label="工作区"></select><button id="refresh">刷新</button></header>
+<main><p id="status" role="status">正在读取研究进度…</p><section id="progress" aria-label="当前进度"></section><section id="jobs" aria-label="计算任务"></section><section id="tasks" aria-label="原始任务"></section>
+<section><h2>研究记录</h2><form id="search"><input id="query" type="search" placeholder="检索任务、执行结果或研究笔记" aria-label="检索记录"><select id="origin" aria-label="记录来源"><option value="">全部来源</option><option value="user">用户任务</option><option value="runtime">执行记录</option><option value="agent">研究笔记</option></select><button>检索</button></form><div id="records"></div><button id="more" hidden>加载更多</button></section></main>
+<dialog id="detail"><button id="close">关闭</button><pre id="detail-content"></pre><button id="detail-more" hidden>继续读取</button></dialog>
+<dialog id="auth"><form id="auth-form"><h2>访问工作区</h2><label>访问令牌<input id="token" type="password" required autocomplete="off"></label><p id="auth-error" role="alert"></p><button>连接</button></form></dialog>
+<script src="/app.js"></script></body></html>

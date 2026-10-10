@@ -23,17 +23,17 @@ def source_options(argv: list[str]):
     parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
     parser.add_argument("--source", choices=("local", "github", "package"), default=None)
     parser.add_argument("--source-root")
-    parser.add_argument("--research-agent-repo", default=os.environ.get("RESEARCH_AGENT_INSTALL_REPO", "https://github.com/iawnix/TSPi.git"))
-    parser.add_argument("--research-agent-ref", default=os.environ.get("RESEARCH_AGENT_INSTALL_REF", "main"))
-    parser.add_argument("--research-agent-commit", help=argparse.SUPPRESS)
+    parser.add_argument("--coragent-repo", default=os.environ.get("CORAGENT_INSTALL_REPO", "https://github.com/iawnix/coragent.git"))
+    parser.add_argument("--coragent-ref", default=os.environ.get("CORAGENT_INSTALL_REF", "main"))
+    parser.add_argument("--coragent-commit", help=argparse.SUPPRESS)
     options, remaining = parser.parse_known_args(argv)
-    if options.research_agent_commit is not None:
-        parser.error("--research-agent-commit is reserved for the selected source")
+    if options.coragent_commit is not None:
+        parser.error("--coragent-commit is reserved for the selected source")
     if options.source in {'github', 'package'} and options.source_root:
         parser.error("--source-root is only supported with --source local")
     options.source = options.source or ("local" if options.source_root else "github")
-    if options.source == "local" and any(arg == "--research-agent-ref" or arg.startswith("--research-agent-ref=") for arg in argv):
-        parser.error("--research-agent-ref selects a GitHub revision; local source uses its current HEAD")
+    if options.source == "local" and any(arg == "--coragent-ref" or arg.startswith("--coragent-ref=") for arg in argv):
+        parser.error("--coragent-ref selects a GitHub revision; local source uses its current HEAD")
     return options, remaining
 
 
@@ -57,11 +57,11 @@ def run_selected(root: Path, commit: str, options, component: str, remaining: li
     command = [sys.executable, "-B", str(root / "scripts" / script), *remaining, "--source-root", str(root)]
     if component != "relay":
         command.extend([
-            "--research-agent-repo", options.research_agent_repo,
-            "--research-agent-ref", options.research_agent_ref if options.source == "github" else commit,
-            "--research-agent-commit", commit,
+            "--coragent-repo", options.coragent_repo,
+            "--coragent-ref", options.coragent_ref if options.source == "github" else commit,
+            "--coragent-commit", commit,
         ])
-    return subprocess.run(command, env={**os.environ, "RESEARCH_AGENT_INSTALL_BOOTSTRAPPED": "1"}, check=False).returncode
+    return subprocess.run(command, env={**os.environ, "CORAGENT_INSTALL_BOOTSTRAPPED": "1"}, check=False).returncode
 
 
 def install(argv: list[str]) -> int:
@@ -73,7 +73,7 @@ def install(argv: list[str]) -> int:
     if "--help" in remaining or "-h" in remaining:
         print("Usage: install.sh [relay] [options]\n"
               "Source: --source {local,github,package} (default: github), --source-root PATH,\n"
-              "        --research-agent-repo URL, --research-agent-ref REF\n"
+              "        --coragent-repo URL, --coragent-ref REF\n"
               "Use --dry-run to preview without downloading or installing.\n", flush=True)
         implementation.parse_args(["--help"])
     dry_run = "--dry-run" in remaining
@@ -84,8 +84,8 @@ def install(argv: list[str]) -> int:
     if component == 'agent' and args.package_manifest and options.source != 'package':
         raise ValueError('--package-manifest requires --source package')
     source = module("install_from_github")
-    source.validate_repo(options.research_agent_repo)
-    source.validate_ref(options.research_agent_ref)
+    source.validate_repo(options.coragent_repo)
+    source.validate_ref(options.coragent_ref)
     if component == "agent":
         # Validate configuration inputs before a download; no secrets are copied here.
         module("_install_inputs").apply_config_directory(args)
@@ -97,8 +97,8 @@ def install(argv: list[str]) -> int:
         implementation.validate_email_options(args)
     if dry_run:
         if component == "agent":
-            args.research_agent_repo = options.research_agent_repo
-            args.research_agent_ref = options.research_agent_ref
+            args.coragent_repo = options.coragent_repo
+            args.coragent_ref = options.coragent_ref
             args.source_root = str(Path(options.source_root or ROOT).expanduser().resolve()) if options.source == "local" else None
             implementation.show_dry_run(args)
         else:
@@ -110,10 +110,10 @@ def install(argv: list[str]) -> int:
         return run_selected(root, commit, options, component, remaining)
     if options.source == 'package':
         return implementation.main(remaining)
-    with tempfile.TemporaryDirectory(prefix="research-agent-installer-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="coragent-installer-") as temporary:
         root = Path(temporary) / "source"
-        print(f"Preparing ResearchAgent revision {options.research_agent_ref}...", file=sys.stderr)
-        commit = source.checkout_github(options.research_agent_repo, options.research_agent_ref, root)
+        print(f"Preparing CoRAgent revision {options.coragent_ref}...", file=sys.stderr)
+        commit = source.checkout_github(options.coragent_repo, options.coragent_ref, root)
         return run_selected(root, commit, options, component, remaining)
 
 
@@ -132,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
             return module("uninstall_link_relay" if relay else "uninstall").main(arguments)
         raise ValueError("expected install or uninstall")
     except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as error:
-        print(f"ResearchAgent installer failed: {error}", file=sys.stderr)
+        print(f"CoRAgent installer failed: {error}", file=sys.stderr)
         return 1
 
 

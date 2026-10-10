@@ -1,5 +1,5 @@
 {
-  "schema_version": "research-agent-slash-source/1",
+  "schema_version": "coragent-slash-source/1",
   "commands": {
     "research": {
       "name": "research",

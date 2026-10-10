@@ -164,7 +164,7 @@ def install(args: argparse.Namespace, install_root: Path) -> tuple[dict[str, obj
     if not isinstance(result, dict) or not isinstance(result.get("enrollment"), dict):
         raise RuntimeError("Link Relay installer did not return enrollment metadata")
     _write_json_private(install_root / "etc" / RELAY_MARKER_NAME, {
-        "schema": "research-agent-install-link-relay/1",
+        "schema": "coragent-install-link-relay/1",
         "install_root": str(install_root),
         "relay_install_root": str(relay_root),
         "state_dir": str(state_root),

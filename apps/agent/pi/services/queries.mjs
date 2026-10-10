@@ -2,7 +2,7 @@ import { parseSlashCommand, COMMAND_DEFINITIONS } from "../../tools/commands.mjs
 
 // A non-local Chord service: callers always reach the attached worker, including
 // over SSH. The worker supplies the identity and the already-bound kernel bridge.
-export const CLIENT_QUERIES_SERVICE_ID = "research-agent.client-queries";
+export const CLIENT_QUERIES_SERVICE_ID = "coragent.client-queries";
 
 export function createClientQueries({ workspaceId, sessionId, commandBridge, promptManifest, readTelemetry }) {
   const envelope = (result) => ({ workspace_id: workspaceId, session_id: sessionId, result });

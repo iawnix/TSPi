@@ -11,9 +11,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PUBLIC_PATTERNS = (
     "README*.md", "skills/**/*.md", "domains/**/SKILL*.md", "docs/ARCHITECTURE*.md",
-    "docs/TERMINAL*.md", "docs/INSTALLATION.md", "docs/MAINTAINER_GUIDE.md",
+    "docs/TERMINAL*.md", "docs/INSTALLATION*.md", "docs/MAINTAINER_GUIDE*.md",
+    "docs/CORAGENT_LINK*.md", "components/coragent-web/README*.md",
 )
 RULES = (
+    (re.compile(r"\b(?:ResearchAgent|TS Phone|TSWeb|research-agent|RESEARCH_AGENT_\w*)\b"),
+     "retired public identity: use CoRAgent, CoRHub, coragent or CORAGENT_"),
     (re.compile(r"\brequired_gates\b", re.I),
      "retired field: describe the scoped Gate contract"),
     (re.compile(r"\bevidence\s+(?:layers?|roles?)\b", re.I),

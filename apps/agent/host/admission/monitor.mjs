@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 
-export const MONITOR_ADMISSION_SERVICE_ID = "research-agent.monitor-admission";
+export const MONITOR_ADMISSION_SERVICE_ID = "coragent.monitor-admission";
 const fail = (code, message) => Object.assign(new Error(`${code}: ${message}`), { code });
 
 /** Assess durable delivery identity outside Pi commits. Only authenticated producers reach admission. */

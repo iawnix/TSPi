@@ -1,6 +1,6 @@
-# 参与 ResearchAgent 开发
+# 参与 CoRAgent 开发
 
-欢迎改进 ResearchAgent。项目是领域无关的 Research Harness，并附带计算化学 Skill 包。提交时
+欢迎改进 CoRAgent。项目是领域无关的 Research Harness，并附带计算化学 Skill 包。提交时
 应保持 Harness 生命周期、ResearchMap 权威性和已注册 capability contract 清晰可见。
 
 ## 提交修改前
