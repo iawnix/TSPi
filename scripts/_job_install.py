@@ -320,7 +320,7 @@ def prepare(value, args, package, python):
     root = Path(value['install_root'])
     stage_root = root / 'var/cache/job-install'
     stage_root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    stage = Path(tempfile.mkdtemp(prefix='candidate-', dir=stage_root))
+    stage = Path(tempfile.mkdtemp(prefix='candidate-', dir=stage_root)).resolve()
     # Keep ownership even when acceptance or release activation later fails.
     # Old stores remain discoverable after selecting a different store on retry.
     registry = root / STORES

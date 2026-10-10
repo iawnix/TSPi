@@ -18,6 +18,11 @@ def test_public_package_install_accepts_jobs_reuses_environment_and_uninstalls(t
     built = build_package(output_dir=tmp_path/'package', agent_manifest_path=None, allow_dirty=True, include_web=False)
     root = tmp_path/'installation'
     paths(root).initialize()
+    acceptance = tmp_path/'acceptance'
+    acceptance.mkdir()
+    cache = root/'var/cache/job-install'
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.symlink_to(acceptance, target_is_directory=True)
     pin = json.loads((ROOT/'config/pi-source.json').read_text())
     pi_root = root/'runtimes/pi'/pin['commit']
     pi_root.mkdir(parents=True)
