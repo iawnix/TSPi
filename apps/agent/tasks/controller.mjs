@@ -338,6 +338,12 @@ export function createTaskController({ harness, conversation, admission, LiveDoc
           "task_superseded", "Task control changed while references were being verified");
         requireValue(task.state !== "paused", "task_paused", "Only the user may resume a paused task");
         if (params.action === "refine") {
+          if (task.state === "blocked") {
+            requireValue(sources.some(source => !task.sources.some(previous => previous.submission_id === source.submission_id)),
+              "task_source_required", "Revising a blocked task requires a new user instruction that resolves the blocker");
+            task.state = "active"; task.reason = null; task.wait = null;
+            task.continuation.no_progress = 0;
+          }
           if (params.objective !== undefined) task.objective = params.objective;
           if (params.criteria !== undefined) task.criteria = params.criteria;
           task.sources.push(...sources); task.control_epoch += 1;

@@ -85,3 +85,13 @@ Host restart discovers sessions from Pi's existing catalog and reopens at most f
 Pi loads installed Skills natively. CoRAgent verifies installed resource digests. Read the actual Skill path supplied by Pi; relative references resolve from that Skill directory. `research-memory` teaches five small operations; research-workflow coordinates Jobs and materials; domain Skills teach scientific methods. `reaction_mapping.md` belongs to `chemical-input/references/`.
 
 Process completion, file existence and Node closure do not establish a scientific result. Email uses existing user authorization and its own durable send identity. If Memory recording fails after transport acceptance, recover the record without resending. Installation, runtime and scientific claims each require their own evidence.
+
+### Phone material files
+
+Host exposes the authenticated `files/*` capabilities documented in
+[`contracts/files/README.md`](../contracts/files/README.md). The Python material
+projection bounds directory pages and version-checked file ranges. Explicit
+`files/pin` creates a content-addressed snapshot under workspace inputs for a
+phone draft; it is not a Research Memory Artifact. These operations do not attach
+a session or invoke Pi. CoRHub retains the existing text-message/outbox protocol
+when submitting the reference. Private state paths and links are excluded.

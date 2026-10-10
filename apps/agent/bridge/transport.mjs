@@ -95,7 +95,7 @@ export function create_jsonl_subprocess_transport({
   });
 
   async function request(method, payload = {}) {
-    if (!["workspace_catalog", "workspace_initialize", "workspace_attach", "workspace_admit"].includes(method)) require_method(method);
+    if (!["workspace_files", "workspace_catalog", "workspace_initialize", "workspace_attach", "workspace_admit"].includes(method)) require_method(method);
     if (closed) throw new KernelBridgeError("Python runtime transport is closed", { code: "transport_closed" });
     const id = `bridge_${++sequence}`;
     const message = `${JSON.stringify({ id, method, payload })}\n`;

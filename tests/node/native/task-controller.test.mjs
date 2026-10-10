@@ -76,6 +76,43 @@ test("idle active tasks continue without Jobs and stop after bounded lack of pro
   await controller.reconcile();
   assert.equal((await controller.current(context)).state, "blocked");
   assert.equal((await controller.current(context)).continuation.no_progress, 3);
+
+  faux.setResponses([fauxAssistantMessage("The previous approach produced no new evidence")]);
+  await admission.submitUser({ requestId: "ask-blocker", content: "Why did the research stop?" }, context);
+  await conversation.waitForIdle(context);
+  await controller.reconcile();
+  let current = await controller.current(context);
+  assert.equal(current.state, "blocked", "ordinary input must not restart automatic work");
+  assert.equal(current.continuation.sequence, 3);
+  await assert.rejects(controller.update({ action: "refine", expected_revision: current.revision,
+    source_submission_ids: [task.sources[0].submission_id] }, "old-sources", context), { code: "task_source_required" });
+
+  faux.setResponses([fauxAssistantMessage("I will use the revised method")]);
+  const source = await admission.submitUser({ requestId: "revise-method", content: "Use the supplied geometry to continue the study" }, context);
+  await conversation.waitForIdle(context);
+  current = await controller.current(context);
+  const params = { action: "refine", expected_revision: current.revision,
+    source_submission_ids: [String(source.id)], objective: "Study the supplied geometry" };
+  const revised = await controller.update(params, "revise-blocked", context);
+  assert.equal(revised.state, "active");
+  assert.equal(revised.reason, null);
+  assert.equal(revised.wait, null);
+  assert.equal(revised.continuation.no_progress, 0);
+  assert.equal(revised.progress_version, current.progress_version, "new instructions are not scientific evidence");
+  assert.deepEqual(await controller.update(params, "revise-blocked", context), revised);
+  assert.ok(revised.audit.some(item => item.actor === "task_controller" && item.reason?.includes("Three automatic runs")));
+
+  faux.setResponses([fauxAssistantMessage("Continuing with the revised method")]);
+  await controller.reconcile();
+  await conversation.waitForIdle(context);
+  current = await controller.current(context);
+  assert.equal(current.state, "active");
+  assert.equal(current.continuation.sequence, 4);
+  await controller.control({ user_task_id: task.user_task_id, action: "pause", expected_revision: current.revision,
+    request_id: "pause-revised" }, context);
+  current = await controller.current(context);
+  await assert.rejects(controller.update({ action: "refine", expected_revision: current.revision,
+    source_submission_ids: [String(source.id)] }, "refine-paused", context), { code: "task_paused" });
 });
 
 const nodeId = n => `node_${n.toString(16).padStart(32, "0")}`;

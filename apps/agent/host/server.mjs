@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHostFiles, FILE_METHODS } from "./files.mjs";
 import { hostIdentity } from "../platform/environment.mjs";
 import { createMonitorEvents } from "./monitor/events.mjs";
 import { createHostSessions } from "./sessions.mjs";
@@ -41,7 +42,7 @@ export async function startCoRAgentHost(options) {
   const physicalRoot = await realpath(workspaceRoot);
   const epoch = randomUUID();
   const monitorAvailable = existsSync(join(packageRoot, "apps", "agent-cli", "monitor.py"));
-  const capabilities = [...BASE_CAPABILITIES, ...MONITOR_METHODS];
+  const capabilities = [...BASE_CAPABILITIES, ...MONITOR_METHODS, ...FILE_METHODS];
   const clients = new Set();
   for (const marker of [
     join(physicalRoot, "workspace_manifest.json"),
@@ -66,6 +67,7 @@ export async function startCoRAgentHost(options) {
 
   const deduplicate = createRequestStore(stateRoot);
 
+  const files = createHostFiles({ workspace, python });
   const runMonitor = createHostMonitor({ sessionBackend, workspace, stateRoot });
 
   const sessions = createHostSessions({ sessionBackend, workspace, deduplicate, clients, epoch, monitorToken });
@@ -85,6 +87,7 @@ export async function startCoRAgentHost(options) {
       };
     }
     if (!client.initialized) throw protocolError("not_initialized", "Send initialize before session requests");
+    if (FILE_METHODS.includes(method)) return files.handle(method, params);
     if (method.startsWith("workspace/")) return workspaces.handle(method, params, deduplicate);
     if (/^(session|input|turn|model|models)\//u.test(method) || method === "internal/monitor-wake") {
       return sessions.handle(client, method, params);
@@ -140,6 +143,7 @@ export async function startCoRAgentHost(options) {
     await new Promise((resolve) => server.close(resolve)).catch(() => {});
     await unlinkOwnedSocket(socketPath, socketIdentity).catch(() => {});
     try { await sessionBackend.close(); } catch { /* cleanup is best effort */ }
+    await files.close();
     if (ownsCatalog) await workspaceCatalog.close();
     throw cause;
   }
@@ -161,7 +165,7 @@ export async function startCoRAgentHost(options) {
           await unlinkOwnedSocket(socketPath, socketIdentity);
         } finally {
           // Always release Pi bindings/runtime even if socket cleanup failed.
-          try { await sessionBackend.close(); } finally { if (ownsCatalog) await workspaceCatalog.close(); }
+          try { await sessionBackend.close(); } finally { try { await files.close(); } finally { if (ownsCatalog) await workspaceCatalog.close(); } }
         }
       })();
       return closePromise;

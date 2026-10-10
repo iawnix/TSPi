@@ -42,7 +42,8 @@ export function activityStatus({ monitor, monitorError, sessionId, now = Date.no
   } else if (['active', 'waiting'].includes(task.state) && now - Date.parse(controller.last_checked_at) > Math.max(30_000, controller.check_interval_ms * 3)) {
     symbol = '!'; color = 'warning'; reason = 'Continuation check overdue';
   } else if (task.state === 'blocked') {
-    symbol = '!'; color = 'warning'; reason = `Needs attention${task.reason ? ': ' + task.reason : ''}`;
+    symbol = '!'; color = 'warning'; reason = scoped.execution.state === 'running'
+      ? 'Responding · Task blocked' : 'Needs attention';
   } else if (task.state === 'active' && !scoped.automatic_continuation_enabled && scoped.execution.state === 'idle') {
     symbol = '!'; color = 'warning'; reason = 'Automatic continuation off';
   } else if (task.state === 'active' && scoped.execution.state === 'idle') {

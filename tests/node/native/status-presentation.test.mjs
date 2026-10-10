@@ -37,7 +37,8 @@ test('task status distinguishes execution, waits and control state, with stale d
  assert.match(activityStatus(state).text,/Researching · 1 jobs running/);
  assert.match(activityStatus({...state,monitor:snapshot({task:{...task,state:'waiting',wait:{job_ids:['j1'],mode:'all'}}})}).text,/Waiting for compute.*Continues when ready/);
  assert.match(activityStatus({...state,monitor:snapshot({task:{...task,state:'paused'}})}).text,/Paused/);
- assert.match(activityStatus({...state,monitor:snapshot({task:{...task,state:'blocked',reason:'Budget exhausted'}})}).text,/Needs attention: Budget exhausted/);
+ assert.match(activityStatus({...state,monitor:snapshot({task:{...task,state:'blocked',reason:'Budget exhausted'}})}).text,/Responding · Task blocked/);
+ assert.match(activityStatus({...state,monitor:snapshot({execution:{state:'idle'},task:{...task,state:'blocked',reason:'Budget exhausted'}})}).text,/Needs attention · 1 jobs running/);
  assert.match(activityStatus({...state,monitor:snapshot({execution:{state:'idle'}})}).text,/Checking continuation/);
  assert.match(activityStatus({...state,monitor:snapshot({execution:{state:'idle'},task:{...task,continuation:{reservation:'r1'}}})}).text,/Preparing continuation/);
  assert.match(activityStatus({...state,monitor:snapshot({execution:{state:'idle'},automatic_continuation_enabled:false})}).text,/Automatic continuation off/);
@@ -49,6 +50,22 @@ test('task status distinguishes execution, waits and control state, with stale d
  assert.match(activityStatus({...state,now:Date.now()+31000}).text,/Status is stale/);
  assert.match(activityStatus({...state,sessionId:'other'}).text,/Checking status · — jobs running/);
  assert.match(activityStatus({...state,monitor:snapshot({jobs:{items:[],next_cursor:null}})}).text,/— jobs running/);
+});
+
+test('blocked task details stay in Monitor while the activity line remains short and tracks recovery',()=>{
+ const status=createStatusPresentation({session:{workspaceId:'w',sessionId:'s'},theme,...tui});
+ const reason='输入构造失败，需要修正结构。'.repeat(40)+'\n等待进一步指令。';
+ status.update({monitor:snapshot({execution:{state:'idle'},task:{...task,state:'blocked',reason}})});
+ const line=status.activity.render(80).join('');
+ assert.match(line,/Needs attention · 1 jobs running/);
+ assert.doesNotMatch(line,/输入构造|等待进一步/);
+ assert.ok(tui.visibleWidth(line)<=80);
+ assert.ok(status.monitorDetails().includes(reason));
+ status.update({monitor:snapshot({task:{...task,state:'blocked',reason}})});
+ assert.match(status.activity.render(80).join(''),/Responding · Task blocked · 1 jobs running/);
+ status.update({monitor:snapshot()});
+ assert.match(status.activity.render(80).join(''),/Researching · 1 jobs running/);
+ assert.doesNotMatch(status.monitorDetails(),/输入构造|Task blocked|Needs attention/);
 });
 
 test('monitor symbol colors and narrow width do not hide state in the normal layout',()=>{

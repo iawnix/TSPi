@@ -11,6 +11,27 @@ import { MONITOR_METHODS } from "../../../apps/agent/contracts/monitor.mjs";
 
 const TARGET = { workspace_id: "project-a", session_id: "session-a" };
 
+test("Host files browse, version reads and pin without touching the session backend", async t => {
+  const { client, backend, workspaceRoot } = await fixture(t);
+  t.after(() => client.close());
+  backend.readSession = backend.sendInput = async () => { throw new Error('Files must not wake Pi'); };
+  const root = join(workspaceRoot, "project-a");
+  await writeFile(join(root, "inputs", "fixture.xyz"), "1\nfixture\nC 0 0 0\n");
+  const hello = await client.request("initialize", { protocol: HOST_PROTOCOL });
+  for (const method of ['files/list', 'files/stat', 'files/read', 'files/pin']) assert.ok(hello.capabilities.includes(method));
+  const page = await client.request('files/list', { workspace_id: 'project-a', path: 'inputs' });
+  const file = page.items.find(item => item.name === 'fixture.xyz');
+  const target = { workspace_id: 'project-a', path: file.path, expected_version: file.version };
+  const read = await client.request('files/read', { ...target, offset: 0, length: 65536 });
+  assert.equal(Buffer.from(read.data_base64, 'base64').toString(), "1\nfixture\nC 0 0 0\n");
+  const pinned = await client.request('files/pin', target);
+  assert.equal(await readFile(join(root, pinned.path), 'utf8'), "1\nfixture\nC 0 0 0\n");
+  await writeFile(join(root, 'inputs', 'fixture.xyz'), 'changed');
+  await assert.rejects(client.request('files/read', target), { code: 'file_changed' });
+  await assert.rejects(client.request('files/stat', { workspace_id: 'project-a', path: 'inputs/../state.txt' }), { code: 'file_access_denied' });
+  await assert.rejects(client.request('files/list', { workspace_id: 'project-a', path: '', workspace_root: root }), { code: 'invalid_params' });
+});
+
 function snapshot() {
   return { messages: [], online: true, can_prompt: true, is_streaming: false, turn_id: null, receipts: [] };
 }
