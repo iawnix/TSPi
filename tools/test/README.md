@@ -83,7 +83,9 @@ and remote-platform acceptance unverified. Those require separately authorized
 non-private data; the normal runner does not send test data externally.
 
 CI uses these same commands, with an ephemeral root under `runner.temp`, and
-never uploads the test root, logs, databases or cache. The manifest discovers
+installs `ripgrep` and `fd-find` before entering the offline test namespace.
+Ubuntu's `fdfind` is exposed as `fd` on the test PATH for Pi's native coding tools.
+CI never uploads the test root, logs, databases or cache. The manifest discovers
 files automatically; all primary test suites must own disjoint sets of tests.
 
 The optional `phone` suite captures both repositories, runs Flutter with the

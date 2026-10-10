@@ -1,6 +1,5 @@
 """Public failure summaries must not disclose private diagnostic content."""
 import json
-from pathlib import Path
 
 from tools.test.runner import inspect_case_results
 
