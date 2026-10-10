@@ -7,6 +7,8 @@ description: Resume research through persistent problem Nodes, explicit relation
 
 Start from the injected workspace context or `research_read {}`. It preserves original user requirements and selects relevant Nodes, Results and execution facts within a budget. Omitted content is not absent or completed; use the returned references to inspect it. Scientific interpretation belongs to you and the domain Skill, not the execution receipt.
 
+User task control belongs to `task_read` and `task_update`: objective, delivery criteria, waiting, blockers and completion. A Node's open/paused/closed status does not pause or complete that task. Keep scientific interpretation and evidence here, and reference those records from task progress or completion.
+
 ## Five small operations
 
 - `research_read {}` restores the workspace overview; `{ref}` reads a returned Node, Result or record reference. Follow pagination to inspect a long object.
@@ -28,6 +30,10 @@ Supported fields are goal, title, proposal, plan, progress, status, assessment_r
 ## Continue a problem or start a branch
 
 Keep parameter changes, different initial geometries and repeated attempts at the same question in one Node. Create another Node when the question or independently tracked branch changes. proposal states the current hypothesis or approach; goal states the question; plan states how to investigate. A hypothesis is optional for preparation or reporting work.
+
+Split a broad study when its parts have independently interpretable conclusions, distinct alternatives or shared evidence needs. Create the questions you can already investigate and expand them as evidence arrives. A root Node is optional; a parameter sweep can remain one question with many Jobs. For compound studies or a failed approach, read [planning and revisiting questions](references/planning.md).
+
+Associate the chosen entry Nodes and focus with the current task using `task_update` action `set_research`, its current `expected_revision`, and `research: {entry_node_ids: [...], focus_node_ids: [...]}`. Use actual returned Node IDs. Entries restore the study's structure; focus guides the next request's context. The lists are navigation, not exclusive ownership. Change them when the research focus changes. Read-only exploration uses Node/relations reads without changing the task. Plan edits, notes and empty Nodes do not count as new progress.
 
 ```json
 {"goal":"Find a transition state connecting A and B","proposal":"A concerted path may exist"}

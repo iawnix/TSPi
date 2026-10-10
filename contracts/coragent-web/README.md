@@ -4,7 +4,7 @@ CoRAgent owns the read-only Research Memory provider. The optional `coragent-web
 
 | Route | Response |
 | --- | --- |
-| `snapshot` | Workspace metadata and a bounded `research-snapshot/2` context |
+| `snapshot` | Workspace metadata and a bounded `research-snapshot/3` context |
 | `nodes` | Searchable, paginated Node list |
 | `records` | Search across Nodes, Results and historical records |
 | `record/<ref>` | Exact Node, Result or record detail, with bounded text pages |

@@ -91,7 +91,7 @@ def _make_handler(provider: ProviderClient, *, auth_token: str | None = None):
                     self._send_json(
                         {
                             "ok": True,
-                            "protocol": "research-snapshot/2",
+                            "protocol": "research-snapshot/3",
                             "provider_protocol": "research-memory-provider/1",
                             "canonical": "Research memory",
                             "read_only": True,

@@ -1,3 +1,5 @@
+import { formatMonitor, taskStateLabel } from '../commands/monitor.mjs';
+
 /** Pure presentation of durable usage, current context and operational observations. */
 export const formatTokens = value => Number.isFinite(value)
   ? value >= 1e6 ? `${(value / 1e6).toFixed(1)}m` : value >= 1e3 ? `${(value / 1e3).toFixed(1)}k` : `${Math.round(value)}` : 'Unknown';
@@ -17,43 +19,46 @@ export function contextMatches(view, telemetry) {
     && model?.provider === telemetry.model?.provider && model?.modelId === telemetry.model?.modelId;
 }
 
-const ACTIVE_JOB_STATES = new Set(['running', 'queued', 'held', 'pending', 'submitted']);
-
-export function activityStatus({ monitor, monitorError, monitorErrorSince, telemetry, sessionId, now = Date.now() }) {
-  const rows = (monitor?.monitors || []).filter(row => row.session_id === sessionId);
-  const pending = (monitor?.pending_deliveries || []).filter(row => row.session_id === sessionId);
-  const active = rows.filter(row => ACTIVE_JOB_STATES.has(row.last_state));
-  const countsKnown = Array.isArray(monitor?.monitors);
-  const running = countsKnown ? active.filter(row => row.last_state === 'running').length : null;
-  const queued = countsKnown ? active.length - running : null;
-  const relevant = active.length > 0 || pending.length > 0 || (telemetry?.research?.running_jobs?.length || 0) > 0;
-  const health = monitor?.host_worker_health;
-  const supervisor = monitor?.supervisor_health;
-  const lastPoll = Date.parse(health?.last_successful_poll);
-  const staleAfter = Math.max(30_000, (health?.poll_interval_ms || 5000) * 3);
-  let symbol = '✓', color = 'muted', reason = 'Healthy';
-  if (pending.some(row => row.error) || health?.last_error || (supervisor?.state && supervisor.state !== 'running')) {
-    symbol = '×'; color = 'error';
-    reason = pending.find(row => row.error)?.error || (health?.last_error ? `Shared monitor worker: ${health.last_error}` : `Shared monitor supervisor: ${supervisor.state}`);
-  } else if (monitorError && Number.isFinite(monitorErrorSince) && now - monitorErrorSince >= 30_000) {
-    symbol = '×'; color = 'error'; reason = 'Monitor unavailable for at least 30 seconds';
-  } else if (health && (!Number.isFinite(lastPoll) || now - lastPoll > staleAfter)) {
-    symbol = '!'; color = 'warning'; reason = 'Last successful poll is missing or stale';
-  } else if (active.some(row => row.enabled === false)) {
-    symbol = '!'; color = 'warning';
-    reason = `${active.filter(row => row.enabled === false).length} active job monitor(s) paused`;
-  } else if (monitor && !rows.length && relevant) {
-    symbol = '!'; color = 'warning'; reason = 'No job monitor registered for this session';
-  } else if (monitorError || !health || !supervisor?.state) {
-    symbol = '…'; reason = monitorError ? 'Reconnecting to monitor' : 'Checking monitor health';
+export function activityStatus({ monitor, monitorError, sessionId, now = Date.now() }) {
+  const scoped = monitor?.session_id === sessionId ? monitor : null;
+  const running = scoped?.jobs.counts?.running ?? null;
+  const queued = scoped?.jobs.counts?.queued ?? null;
+  const task = scoped?.task;
+  const controller = scoped?.task_controller;
+  const updated = Date.parse(scoped?.updated_at);
+  let symbol = '✓', color = 'muted', reason;
+  if (monitorError) {
+    symbol = '×'; color = 'error'; reason = 'Connection lost';
+  } else if (!scoped) {
+    symbol = '…'; reason = 'Checking status';
+  } else if (!Number.isFinite(updated) || now - updated > 30_000) {
+    symbol = '!'; color = 'warning'; reason = 'Status is stale';
+  } else if (controller.error) {
+    symbol = '×'; color = 'error'; reason = `Continuation error: ${controller.error.code}`;
+  } else if (!task) {
+    reason = 'No current task';
+  } else if (controller.last_checked_at === null) {
+    symbol = '…'; reason = 'Checking recovery';
+  } else if (['active', 'waiting'].includes(task.state) && now - Date.parse(controller.last_checked_at) > Math.max(30_000, controller.check_interval_ms * 3)) {
+    symbol = '!'; color = 'warning'; reason = 'Continuation check overdue';
+  } else if (task.state === 'blocked') {
+    symbol = '!'; color = 'warning'; reason = `Needs attention${task.reason ? ': ' + task.reason : ''}`;
+  } else if (task.state === 'active' && !scoped.automatic_continuation_enabled && scoped.execution.state === 'idle') {
+    symbol = '!'; color = 'warning'; reason = 'Automatic continuation off';
+  } else if (task.state === 'active' && scoped.execution.state === 'idle') {
+    symbol = '…'; reason = task.continuation.reservation ? 'Preparing continuation' : 'Checking continuation';
+  } else {
+    reason = taskStateLabel(task.state);
+    if (task.state === 'paused') symbol = 'Ⅱ';
+    if (task.state === 'recovering') symbol = '…';
   }
-  return { text: `Monitor ${symbol} · ↻${running ?? '—'}${pending.length ? ` · ↑${pending.length}` : ''}`,
-    symbol, color, reason, running, queued, pending: pending.length };
+  const suffix = ` · ${running ?? '—'} jobs running${reason === 'Waiting for compute' && scoped.automatic_continuation_enabled ? ' · Continues when ready' : ''}`;
+  return { text: `Monitor ${symbol} · ${reason}${suffix}`, symbol, color, reason, running, queued };
 }
 
 export function createStatusPresentation({ session, theme, truncateToWidth, visibleWidth, ring = true,
   monochrome = process.env.TERM === 'dumb' || 'NO_COLOR' in process.env }) {
-  let view, telemetry, monitor, monitorError, monitorErrorSince;
+  let view, telemetry, monitor, monitorError;
   const fit = (text, width) => truncateToWidth(text, Math.max(1, width));
   const modelLabel = () => {
     const agent = view?.docs?.['pi.agent'] || {};
@@ -88,9 +93,9 @@ export function createStatusPresentation({ session, theme, truncateToWidth, visi
     },
   };
   const activity = { invalidate() {}, render(width) {
-    const state = activityStatus({telemetry,monitor,monitorError,monitorErrorSince,sessionId:session.sessionId});
+    const state = activityStatus({telemetry,monitor,monitorError,sessionId:session.sessionId});
     const text = monochrome ? state.text
-      : `${theme.fg('muted','Monitor ')}${theme.fg(state.color,state.symbol)}${theme.fg('muted',` · ↻${state.running ?? '—'}${state.pending ? ` · ↑${state.pending}` : ''}`)}`;
+      : `${theme.fg('muted','Monitor ')}${theme.fg(state.color,state.symbol)}${theme.fg('muted',state.text.slice(`Monitor ${state.symbol}`.length))}`;
     return width > 0 ? [truncateToWidth(` ${text}`,width)] : [];
   } };
   return { footer, activity,
@@ -99,8 +104,6 @@ export function createStatusPresentation({ session, theme, truncateToWidth, visi
       if ('telemetry' in value) telemetry = value.telemetry;
       if ('monitor' in value) monitor = value.monitor;
       if ('monitorError' in value) {
-        if (value.monitorError && !monitorError) monitorErrorSince = Date.now();
-        if (!value.monitorError) monitorErrorSince = undefined;
         monitorError = value.monitorError;
       }
     },
@@ -118,11 +121,10 @@ export function createStatusPresentation({ session, theme, truncateToWidth, visi
         ...(rows.length ? ['', 'By model', ...rows] : [])].join('\n');
     },
     monitorDetails() {
-      const state = activityStatus({telemetry,monitor,monitorError,monitorErrorSince,sessionId:session.sessionId});
-      return [`Status: ${state.symbol} ${state.reason}`,
-        `Running: ${state.running ?? '—'} · Queued: ${state.queued ?? '—'}`,
-        `Pending delivery: ${Array.isArray(monitor?.pending_deliveries) ? state.pending : '—'}`,
-        `Last check: ${monitor?.host_worker_health?.last_successful_poll || '—'}`,
+      const state = activityStatus({monitor,monitorError,sessionId:session.sessionId});
+      return [`Status: ${state.text}`,
+        ...(monitor ? [formatMonitor('monitor/overview', monitor)] : []),
+        `Last update: ${monitor?.updated_at || '—'}`,
         ...(monitorError ? [`Connection: ${monitorError}`] : [])].join('\n');
     },
   };

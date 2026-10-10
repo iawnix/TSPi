@@ -12,7 +12,8 @@
         "session_id",
         "event_ids",
         "focus_node_ids",
-        "field"
+        "field",
+        "entry_node_ids"
       ],
       "required": [],
       "schema": {
@@ -94,6 +95,14 @@
                 "type": "null"
               }
             ]
+          },
+          "entry_node_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            },
+            "description": "Internal task navigation roots. Does not authorize or schedule research work."
           }
         },
         "required": [],
@@ -105,7 +114,7 @@
             "type": "object",
             "properties": {
               "schema_version": {
-                "const": "research-snapshot/2"
+                "const": "research-snapshot/3"
               },
               "workspace_id": {
                 "type": "string"
@@ -406,6 +415,162 @@
               },
               "snapshot_id": {
                 "type": "string"
+              },
+              "research": {
+                "type": "object",
+                "properties": {
+                  "entry_node_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "focus_node_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "nodes": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "open",
+                            "paused",
+                            "closed"
+                          ]
+                        },
+                        "assessment_ref": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "plan": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "content_omitted": {
+                          "type": "boolean"
+                        },
+                        "read": {
+                          "type": "object",
+                          "properties": {
+                            "ref": {
+                              "type": "string"
+                            },
+                            "field": {
+                              "const": "relations"
+                            }
+                          },
+                          "required": [
+                            "ref",
+                            "field"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "revision",
+                        "title",
+                        "status",
+                        "assessment_ref",
+                        "plan",
+                        "content_omitted",
+                        "read"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "relations": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "enum": [
+                            "part_of",
+                            "requires",
+                            "alternative_to"
+                          ]
+                        },
+                        "target": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "source",
+                        "kind",
+                        "target"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "omitted": {
+                    "type": "object",
+                    "properties": {
+                      "entry_node_ids": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "focus_node_ids": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "nodes": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "relations": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "unexpanded_nodes": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "entry_node_ids",
+                      "focus_node_ids",
+                      "nodes",
+                      "relations",
+                      "unexpanded_nodes"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "entry_node_ids",
+                  "focus_node_ids",
+                  "nodes",
+                  "relations",
+                  "omitted"
+                ],
+                "additionalProperties": false,
+                "description": "Bounded task neighborhood: two containment levels below entry Nodes and direct focus neighbors. Omission counts describe this discovered neighborhood, not the entire graph; unexpanded_nodes counts discovered Nodes with children outside it."
               }
             },
             "required": [
@@ -413,6 +578,7 @@
               "workspace_id",
               "sequence",
               "nodes",
+              "research",
               "tasks",
               "new_records",
               "running_jobs",
@@ -2435,7 +2601,8 @@
         "validator_version",
         "request_file",
         "request_sha256",
-        "node_id"
+        "node_id",
+        "user_task_id"
       ],
       "required": [],
       "schema": {
@@ -2573,6 +2740,13 @@
           },
           "node_id": {
             "type": "string"
+          },
+          "user_task_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^task_[A-Za-z0-9_-]+$"
           }
         },
         "required": [],
@@ -4220,6 +4394,97 @@
       }
     },
     {
+      "id": "job.list",
+      "domain": "runtime",
+      "effect": "read",
+      "allowed": [
+        "session_id",
+        "user_task_id",
+        "limit",
+        "cursor"
+      ],
+      "required": [],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "user_task_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "cursor": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "job_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "session_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "user_task_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "state": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "collection_state": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "job_id",
+                "session_id",
+                "user_task_id",
+                "state",
+                "collection_state"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "jobs",
+          "next_cursor"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "id": "artifact.register",
       "domain": "runtime",
       "allowed": [
@@ -4590,9 +4855,23 @@
     },
     "monitor": {
       "name": "monitor",
-      "description": "Inspect this session's jobs and monitor deliveries.",
-      "usage": "/monitor",
-      "completions": []
+      "description": "Inspect and control user tasks, compute jobs, and execution records.",
+      "usage": "/monitor [tasks | task <id> | task pause|resume <id> | task cancel <id> --keep-jobs|--cancel-jobs | jobs [--task <id>] | job <id> | job cancel <id> | runs [--task <id>] | run <id> | health] [--limit <1–100> --cursor <cursor>]",
+      "completions": [
+        "tasks",
+        "task",
+        "task pause",
+        "task resume",
+        "task cancel",
+        "jobs",
+        "jobs --task",
+        "job",
+        "job cancel",
+        "runs",
+        "runs --task",
+        "run",
+        "health"
+      ]
     },
     "usage": {
       "name": "usage",

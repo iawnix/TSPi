@@ -1,3 +1,4 @@
+import { MONITOR_SERVICE_ID } from "../contracts/monitor.mjs";
 import { loadPi } from "./source.mjs";
 import { MONITOR_ADMISSION_SERVICE_ID } from "../host/admission/monitor.mjs";
 import { SESSION_ADMISSION_SERVICE_ID } from "../host/admission/session.mjs";
@@ -48,6 +49,7 @@ export async function createCoRAgentHarnessBackend(options = {}) {
   const InputAdmission = defineService(INPUT_ADMISSION_SERVICE_ID);
   const MonitorAdmission = defineService(MONITOR_ADMISSION_SERVICE_ID);
   const SessionAdmission = defineService(SESSION_ADMISSION_SERVICE_ID);
+  const Monitor = defineService(MONITOR_SERVICE_ID);
   const { startForegroundServer } = serverModule;
   const { openClientRuntime, activateBuiltinClientServices } = runtimeModule;
 
@@ -149,7 +151,7 @@ export async function createCoRAgentHarnessBackend(options = {}) {
         active = await activateBuiltinClientServices(clientRuntime.servers[0]);
         await active.plugins.prepareSession({ sessionId, packagePaths: null }, BACKGROUND_CONTEXT);
         await active.management.attach(sessionId, BACKGROUND_CONTEXT);
-        const services = active.session.open({ services: [InputAdmission, MonitorAdmission, SessionAdmission], assertAccess() {}, onError() {} });
+        const services = active.session.open({ services: [InputAdmission, MonitorAdmission, SessionAdmission, Monitor], assertAccess() {}, onError() {} });
         await services.ready(BACKGROUND_CONTEXT);
         binding = {
           key,
@@ -285,17 +287,16 @@ export async function createCoRAgentHarnessBackend(options = {}) {
     return inputStatus(binding, requestId);
   }
 
+  const recoveryHealth = { state: "recovering", recovered: 0, failures: [] };
   async function recoverDurableSessions() {
-    const sessions = admin.directory.state.value?.sessions || [];
-    const openings = [];
-    for (const summary of sessions) {
-      if (closed || typeof summary?.sessionId !== "string" || typeof summary?.workspaceId !== "string") continue;
-      // Opening a binding is the Pi v1 durable recovery boundary. The worker
-      // opens the SQLite session and calls Harness.resume() before it serves
-      // requests; no JSONL transcript parsing or synthetic prompt is needed.
-      openings.push(openBinding(summary.workspaceId, summary.sessionId).catch(() => null));
-    }
-    await Promise.all(openings);
+    // The catalog is only discovery. Opening the owning SessionWorker restores
+    // Pi execution and reconciles its durable user task, including idle tasks.
+    const result = await recoverSessionCatalog({
+      sessions: [...(admin.directory.state.value?.sessions || [])],
+      openSession: summary => openBinding(summary.workspaceId, summary.sessionId),
+      isClosed: () => closed,
+    });
+    Object.assign(recoveryHealth, result);
   }
 
   const backend = {
@@ -358,6 +359,13 @@ export async function createCoRAgentHarnessBackend(options = {}) {
     async inputStatus(params) {
       return refreshBinding(params.workspace_id, params.session_id, binding => inputStatus(binding, params.client_message_id));
     },
+    async monitor(method, params) {
+      return refreshBinding(params.workspace_id, params.session_id, async binding => {
+        const response = await serviceCall(binding, Monitor, "handle", { method, params });
+        if (response.error) throw error(response.error.code, response.error.message);
+        return method === "monitor/health" ? { ...response.result, recovery: structuredClone(recoveryHealth) } : response.result;
+      });
+    },
     async interrupt(params) {
       return refreshBinding(params.workspace_id, params.session_id,
         binding => serviceCall(binding, SessionAdmission, "interrupt", { turnId: params.turn_id }));
@@ -388,6 +396,26 @@ export async function createCoRAgentHarnessBackend(options = {}) {
   // even when no presentation client reconnects.
   const recovery = recoverDurableSessions();
   return backend;
+}
+
+/** Bound Worker recovery without treating a failed session as an empty task. */
+export async function recoverSessionCatalog({ sessions, openSession, isClosed }) {
+  const result = { state: "recovering", recovered: 0, failures: [] };
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(4, sessions.length) }, async () => {
+    while (!isClosed() && next < sessions.length) {
+      const summary = sessions[next++];
+      try {
+        await openSession(summary);
+        result.recovered += 1;
+      } catch (cause) {
+        result.failures.push({ workspace_id: summary.workspaceId, session_id: summary.sessionId,
+          code: cause.code || "session_recovery_failed", message: cause.message });
+      }
+    }
+  }));
+  result.state = isClosed() ? "stopped" : result.failures.length ? "degraded" : "ready";
+  return result;
 }
 
 export function submissionReceipt(record, requestId) {

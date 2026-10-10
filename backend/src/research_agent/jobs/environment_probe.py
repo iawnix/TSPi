@@ -113,6 +113,8 @@ def inspect_python(binding, requirements, command=(), *, require_receipt=True):
     for name in requirements.get("imports", []):
         try:
             importlib.import_module(name)
+        except ModuleNotFoundError:
+            raise EnvironmentMismatch("environment_dependency_missing") from None
         except Exception:
             raise EnvironmentMismatch("environment_import_failed") from None
     files = {"python": file_identity(sys.executable), "conda": file_identity(binding["conda_executable"])}

@@ -13,7 +13,6 @@
     "session_id",
     "wake_policy",
     "notify_policy",
-    "enabled",
     "created_at",
     "sequence",
     "last_state",
@@ -64,7 +63,8 @@
       "const": "none"
     },
     "enabled": {
-      "type": "boolean"
+      "const": true,
+      "description": "Inert legacy metadata; current writers omit this field. Task Controller owns pause and resume."
     },
     "created_at": {
       "type": "string",
@@ -153,6 +153,13 @@
         "null"
       ],
       "minimum": 1
+    },
+    "user_task_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^task_[A-Za-z0-9_-]+$"
     }
   },
   "oneOf": [

@@ -61,3 +61,35 @@ test("input status is a projection of Pi submission, including durable failure",
   assert.deepEqual(receipt.error, { code: "faulted", message: "worker failed" });
   assert.equal(submissionReceipt(null, "unknown").state, "not_found");
 });
+
+test("catalog recovery opens idle sessions without clients, bounds startup, and reports failed sessions", async () => {
+  const { recoverSessionCatalog } = await import("../../../apps/agent/pi/backend.mjs");
+  const sessions = Array.from({ length: 11 }, (_, index) => ({ workspaceId: "workspace-a", sessionId: `session-${index}` }));
+  let concurrent = 0, peak = 0;
+  const visited = [];
+  const result = await recoverSessionCatalog({ sessions, isClosed: () => false, openSession: async summary => {
+    concurrent++;
+    peak = Math.max(peak, concurrent);
+    visited.push(summary.sessionId);
+    await new Promise(resolve => setImmediate(resolve));
+    concurrent--;
+    if (summary.sessionId === "session-2") throw Object.assign(new Error("Fixture session unavailable"), { code: "session_unavailable" });
+  } });
+  assert.equal(peak, 4);
+  assert.equal(visited.length, 11);
+  assert.equal(new Set(visited).size, 11);
+  assert.deepEqual(result, { state: "degraded", recovered: 10, failures: [{ workspace_id: "workspace-a", session_id: "session-2", code: "session_unavailable", message: "Fixture session unavailable" }] });
+});
+
+test("catalog recovery stops opening workers during backend shutdown", async () => {
+  const { recoverSessionCatalog } = await import("../../../apps/agent/pi/backend.mjs");
+  let closed = false;
+  const sessions = Array.from({ length: 20 }, (_, index) => ({ workspaceId: "workspace-a", sessionId: `session-${index}` }));
+  const opened = [];
+  const result = await recoverSessionCatalog({ sessions, isClosed: () => closed, openSession: async summary => {
+    opened.push(summary.sessionId);
+    closed = true;
+  } });
+  assert.equal(opened.length, 1);
+  assert.equal(result.state, "stopped");
+});

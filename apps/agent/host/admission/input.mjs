@@ -30,6 +30,7 @@ function digest(value) {
 
 /** The Worker supplies trusted producer identity and prepared State evidence. */
 export function createInputAdmission({ harness, conversation, LiveDoc, InboxDoc, admitSubmission }) {
+  let policy;
   async function status(requestId, context) {
     requireRequestId(requestId);
     const record = await conversation.commit(tx => tx.submissionByRequest(conversation.id, requestId), context);
@@ -44,7 +45,7 @@ export function createInputAdmission({ harness, conversation, LiveDoc, InboxDoc,
 
   async function submit({ requestId, content, whenBusy = "followUp", producer, identity, basis = null, idleOnly = false }, context) {
     requireRequestId(requestId);
-    if (!["user", "monitor"].includes(producer)) throw fail("invalid_producer", "Unknown trusted input producer");
+    if (!["user", "monitor", "task_controller"].includes(producer)) throw fail("invalid_producer", "Unknown trusted input producer");
     if (!["reject", "steer", "followUp"].includes(whenBusy)) throw fail("invalid_input", "Unsupported input queue policy");
     if (typeof content !== "string" && !Array.isArray(content)) throw fail("invalid_message", "Input content is required");
     const fingerprint = digest({ producer, whenBusy, identity: identity ?? content });
@@ -63,11 +64,13 @@ export function createInputAdmission({ harness, conversation, LiveDoc, InboxDoc,
         if (live.run || inbox.items.length) throw fail("busy", "Internal events wait for an idle session");
       }
       const head = await tx.doc(InputHead, conversation.id);
+      const control = await policy?.beforeAdmission(tx, { producer, identity, basis });
       // Only Pi reads/writes occur inside this commit. Domain assessment and
       // Python I/O happen before it and are revalidated before consumption.
       const id = await admitSubmission(tx, conversation.id, { type: "input", requestId, content, whenBusy }, Date.now(), queueModes);
       Object.assign(provenance, { producer, fingerprint, identity: identity ?? null, admission_basis: basis });
       head.id = id;
+      await policy?.afterAdmission(tx, { id, requestId, producer, identity, basis, control });
       return { id, duplicate: false };
     }, context);
     harness.resume();
@@ -75,23 +78,32 @@ export function createInputAdmission({ harness, conversation, LiveDoc, InboxDoc,
   }
 
   return {
+    setPolicy(value) { policy = value; },
     status, origin,
     async checkRecovery(context) {
       const pending = (await harness.inspect(context)).submissions.filter(record => record.conversationId === conversation.id && record.type === "input");
       for (const record of pending) {
-        if (!["user", "monitor"].includes((await origin(record, context))?.producer)) {
+        if (!["user", "monitor", "task_controller"].includes((await origin(record, context))?.producer)) {
           throw fail("input_origin_unavailable", "Pending inputs have no verified provenance; create a new session");
         }
       }
     },
-    async recordConsumption(record, basis, context) {
+    async recordConsumption(record, basis, context, guard) {
       return conversation.commit(async tx => {
+        await guard?.(tx);
         const provenance = await tx.doc(InputProvenance, conversation.id, keyFor(record.requestId), null);
         if (!provenance.fingerprint) throw fail("input_origin_unavailable", "Input has no verified provenance");
         // Append an evidence fact once. Generation tasks change between tool
         // rounds, but this consumed input remains owned by the same Pi run.
         provenance.consumption ??= { submission_id: record.id, basis };
         return provenance.consumption;
+      }, context);
+    },
+    async recordSuccessorConsumption(record, successorId, basis, context) {
+      return conversation.commit(async tx => {
+        const provenance = await tx.doc(InputProvenance, conversation.id, keyFor(record.requestId), null);
+        if (!provenance.fingerprint) throw fail("input_origin_unavailable", "Input has no verified provenance");
+        provenance.successor_consumption ??= { submission_id: successorId, basis };
       }, context);
     },
     async latest(context) {
@@ -129,9 +141,10 @@ export function createInputService(admission) {
 }
 
 /** Native AgentController calls exactly the same admission boundary as Host. */
-export function bindUserInputConversation(conversation, admission, harness) {
+export function bindUserInputConversation(conversation, admission, harness, sessionAdmission) {
   return new Proxy(conversation, {
     get(target, property) {
+      if (property === "abort" && sessionAdmission) return context => sessionAdmission.abort(context);
       if (property === "submit") return async (draft, context) => {
         if (draft.type !== "input") return target.submit(draft, context);
         const result = await admission.submitUser(draft, context);

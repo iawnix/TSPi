@@ -5,7 +5,7 @@
     "label": "Example research"
   },
   "snapshot": {
-    "schema_version": "research-snapshot/2",
+    "schema_version": "research-snapshot/3",
     "sequence": 0,
     "tasks": [],
     "running_jobs": [],
@@ -21,6 +21,19 @@
       }
     },
     "snapshot_id": "snapshot_example",
-    "nodes": []
+    "nodes": [],
+    "research": {
+      "entry_node_ids": [],
+      "focus_node_ids": [],
+      "nodes": [],
+      "relations": [],
+      "omitted": {
+        "entry_node_ids": 0,
+        "focus_node_ids": 0,
+        "nodes": 0,
+        "relations": 0,
+        "unexpanded_nodes": 0
+      }
+    }
   }
 }

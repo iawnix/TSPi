@@ -95,7 +95,7 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
       assert.equal(telemetry.result.estimated, true);
       const summary = await queries.research("read", BACKGROUND_CONTEXT);
       assert.equal(summary.workspace_id, "startup");
-      assert.equal(summary.result.schema_version, "research-snapshot/2");
+      assert.equal(summary.result.schema_version, "research-snapshot/3");
       assert.match((await queries.research("storage bootstrap", BACKGROUND_CONTEXT)).error.message, /Usage/);
       const after = await backend.readSession("startup", created.session.session_id);
       assert.deepEqual(after.snapshot.messages, read.snapshot.messages);
@@ -137,13 +137,12 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
           }}));
         });
       }});
-      let monitorRunning=1, monitorPending=0, refreshMonitor;
+      let monitorRunning=1, refreshMonitor;
       const facet = await createCoRAgentNativeClientFacet({ sourceRoot, session: {
         workspaceId: "startup", sessionId: created.session.session_id, quit() { quit = true; },
-        async monitorStatus() { return {workspace_id:'startup',
-          monitors:Array.from({length:monitorRunning},()=>({session_id:created.session.session_id,last_state:'running',enabled:true})),
-          pending_deliveries:Array.from({length:monitorPending},()=>({session_id:created.session.session_id})),
-          host_worker_health:{last_successful_poll:new Date().toISOString()},supervisor_health:{state:'running'}}; },
+        async monitor() { return {workspace_id:'startup',session_id:created.session.session_id,task:null,
+          jobs:{items:Array.from({length:monitorRunning},(_,i)=>({job_id:`job_${i}`,state:'running'})),counts:{running:monitorRunning,queued:0},next_cursor:null},
+          execution:{state:'idle'},task_controller:{error:null,last_checked_at:new Date().toISOString(),check_interval_ms:1000,checking:false},automatic_continuation_enabled:true,updated_at:new Date().toISOString()}; },
         subscribeMonitor(onChange) { refreshMonitor=onChange; return ()=>{refreshMonitor=undefined;}; },
         async list() { return [...await backend.listSessions("startup"), {session_id:'another-session'}]; },
         async resume() { throw new Error("Selecting the current session should be a no-op"); },
@@ -189,7 +188,7 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         assert.doesNotMatch(renderedText(), /Server:| entries|\/model ·/);
         assertDock(frameAt());
         terminal.sendInput('/mo');
-        await waitFor(()=>component.render(100).some(line=>line.includes("Inspect this session's jobs")));
+        await waitFor(()=>component.render(100).some(line=>line.includes("Inspect and control")));
         for(const [width,height] of [[100,24],[32,12],[20,10]]) {
           const frame=frameAt(width,height);assertDock(frame,height);
           assert.ok(frame.lines.slice(0,monitorRow(frame)).some(line=>stripVTControlCharacters(line).includes('monitor')));
@@ -202,10 +201,10 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         assert.equal(ui.getFocusedComponent(),completionFocus);assertDock(frameAt());
         terminal.sendInput('\x1b');terminal.sendInput('\x15');
         terminal.sendInput('/mon');
-        await waitFor(()=>component.render(100).some(line=>line.includes("Inspect this session's jobs")));
+        await waitFor(()=>component.render(100).some(line=>line.includes("Inspect and control")));
         terminal.sendInput('\t');
         assert.match(stripVTControlCharacters(frameAt().lines[20]),/\/monitor/);
-        assert.doesNotMatch(frameAt().lines.slice(0,18).join('\n'),/Inspect this session's jobs/);
+        assert.doesNotMatch(frameAt().lines.slice(0,18).join('\n'),/Inspect and control/);
         terminal.sendInput('\x15');
         // A completion click still applies native completion and leaves keyboard routing usable.
         terminal.sendInput('/us');
@@ -239,16 +238,16 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         await waitFor(()=>renderedText().includes('Monitor ✓ · ↑2'));
         await new Promise(resolve => setImmediate(resolve));
         submit('/monitor');
-        await waitFor(()=>renderedText().includes('Running: 1'));
+        await waitFor(()=>renderedText().includes('1 jobs running'));
         const monitorFocus=ui.getFocusedComponent();
-        monitorRunning=2;monitorPending=1;refreshMonitor();
-        await waitFor(()=>renderedText().includes('Running: 2'));
+        monitorRunning=2;refreshMonitor();
+        await waitFor(()=>renderedText().includes('2 jobs running'));
         assert.equal(ui.getFocusedComponent(),monitorFocus);
-        assert.match(renderedText(),/Pending delivery: 1/);
+        assert.match(renderedText(),/job_1 · running/);
         assertDock(frameAt());
-        assert.match(renderedText(),/Monitor ✓ · ↻2 · ↑1/);
+        assert.match(renderedText(),/Monitor ✓ · No current task · 2 jobs running/);
         terminal.sendInput('\x1b');
-        await waitFor(()=>renderedText().includes('Monitor ✓ · ↻2 · ↑1'));
+        await waitFor(()=>renderedText().includes('Monitor ✓ · No current task · 2 jobs running'));
         await new Promise(resolve=>setImmediate(resolve));
         submit("/research read");
         await waitFor(() => renderedText().includes("Research state"));

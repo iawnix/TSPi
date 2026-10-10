@@ -208,10 +208,14 @@ def dispatch(operation: str, params: dict[str, Any]) -> dict[str, Any]:
     from .api import validate_command_params
     validate_command_params("job." + operation, params, transport_fields=("root", "workspace_root"))
     root = _root(params)
+    if operation == "list":
+        from .job_state import list_executions
+        return list_executions(root, session_id=params.get("session_id"), user_task_id=params.get("user_task_id"),
+                               limit=params.get("limit", 50), cursor=params.get("cursor"))
     preparation = None
     if operation == "start" and (params.get("prepared_ref") or params.get("request_file")):
         from research_agent.application.references import read_prepared_file, resolve_prepared_job
-        transport = {key: params[key] for key in ("root", "workspace_root", "session_id") if key in params}
+        transport = {key: params[key] for key in ("root", "workspace_root", "session_id", "user_task_id") if key in params}
         controls = {key: params[key] for key in ("timeout_seconds", "repeat", "node_id") if key in params}
         allowed = {*transport, *controls, "prepared_ref"} if params.get("prepared_ref") else {
             *transport, *controls, "request_file", "request_sha256"}
@@ -224,7 +228,8 @@ def dispatch(operation: str, params: dict[str, Any]) -> dict[str, Any]:
                 "To change execution parameters, run the preparer again; do not strip fields from its output."
             )
         if params.get("prepared_ref"):
-            request = resolve_prepared_job(root, {key: value for key, value in params.items() if key != "session_id"})
+            request = resolve_prepared_job(root, {key: value for key, value in params.items()
+                                                  if key not in {"session_id", "user_task_id", "node_id"}})
         else:
             if not isinstance(params.get("request_sha256"), str):
                 raise ValueError("prepared_request_digest_required")
@@ -395,7 +400,7 @@ def _prepare_start(root, runtime, params, preparation=None, prepared_params=None
 
 def _stage_start(root, runtime, params, job_id, preparation=None, prepared_params=None):
     staging_root = root / "runs/jobs" / job_id
-    if {"input_evidence_basis", "research_binding"} & set(params.get("metadata") or {}):
+    if {"input_evidence_basis", "research_binding", "user_task_id"} & set(params.get("metadata") or {}):
         raise ValueError("job_input_basis_runtime_only: declare input_artifact_ids and stage their actual files")
     if params.get("validator_id"):
         from .validators import check_current_inputs
@@ -450,6 +455,7 @@ def _stage_start(root, runtime, params, job_id, preparation=None, prepared_param
         "request_id": request_id, "execution_fingerprint": execution_fingerprint,
         "fingerprint_complete": bool(spec.metadata.get("configuration_sha256") and spec.metadata.get("resources_sha256")),
         "repeat": repeat,
+        "user_task_id": params.get("user_task_id"),
         **spec.metadata.get("research_binding", {"node_id": None, "node_revision": None}),
         "request_digest": _request_digest(params),
         "command": list(spec.command), "cwd": str(spec.cwd), "workspace_id": spec.workspace_id,

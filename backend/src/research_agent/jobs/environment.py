@@ -45,7 +45,10 @@ def _python_request(selected, requirements):
 
 
 def _file_check(expression, role, expected=None):
-    script = [f"research_agent_path=$(readlink -f -- {expression})", 'test -f "$research_agent_path"',
+    missing = "execution_environment_changed" if expected is not None else "environment_" + role + "_missing"
+    reject = '{ echo CORAGENT_ENVIRONMENT_ERROR=' + missing + ' >&2; exit 125; }'
+    script = [f"research_agent_path=$(readlink -f -- {expression}) || " + reject,
+              'test -f "$research_agent_path" || ' + reject,
               'research_agent_hash=$(sha256sum < "$research_agent_path")', 'research_agent_hash="sha256:${research_agent_hash%% *}"']
     if expected is not None:
         script.append(f'[ "$research_agent_path" = {shlex.quote(expected["path"])} ] && '
@@ -68,7 +71,11 @@ def _activation(selected, expected=None):
 def _native_check(selected, expected=None):
     command = selected["binding"]["command"]
     executable = command if isinstance(command, str) else command[0]
-    return 'research_agent_executable=$(type -P -- ' + shlex.quote(executable) + ')\ntest -x "$research_agent_executable"\n' + _file_check('"$research_agent_executable"', "executable", expected)
+    missing = "execution_environment_changed" if expected is not None else "environment_executable_missing"
+    reject = '{ echo CORAGENT_ENVIRONMENT_ERROR=' + missing + ' >&2; exit 125; }'
+    return ('research_agent_executable=$(type -P -- ' + shlex.quote(executable) + ') || ' + reject
+            + '\ntest -x "$research_agent_executable" || ' + reject + '\n'
+            + _file_check('"$research_agent_executable"', "executable", expected))
 
 
 def _capture(command, *, env=None, timeout):

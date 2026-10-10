@@ -50,3 +50,22 @@ test('gateway has one request format, fixed session and caller-owned mutation id
   assert.deepEqual(calls, Array.from({ length: 2 }, () => ['input/send', { ...body.params, ...identity, request_id: 'stable' }]));
   assert.equal((await rpc(body, {}, '/requests')).status, 404);
 });
+
+test('gateway forwards only canonical Monitor methods and requires stable control identity', async t => {
+  const { rpc, calls, identity } = await fixture(t);
+  for (const method of ['monitor/list', 'monitor/status', 'monitor/enable', 'monitor/disable']) {
+    assert.equal((await rpc({ id: 'removed', method })).status, 400);
+  }
+  for (const method of ['monitor/task/pause', 'monitor/task/resume', 'monitor/task/cancel', 'monitor/job/cancel']) {
+    assert.equal((await rpc({ method })).status, 400);
+  }
+  const query = { method: 'monitor/jobs', params: { user_task_id: 'task-1', limit: 10 } };
+  assert.equal((await rpc(query)).status, 200);
+  const mutation = { id: 'cancel-1', method: 'monitor/task/cancel', params: { user_task_id: 'task-1', expected_revision: 2, jobs: 'keep' } };
+  assert.equal((await rpc(mutation)).status, 200);
+  assert.deepEqual(calls, [
+    [query.method, { ...query.params, ...identity }],
+    [mutation.method, { ...mutation.params, ...identity, request_id: mutation.id }],
+  ]);
+  assert.equal((await rpc({ ...mutation, params: { ...mutation.params, session_id: 'another' } })).status, 403);
+});

@@ -13,7 +13,7 @@ from research_agent.application.job_monitor import command
 
 def main():
     p=argparse.ArgumentParser()
-    p.add_argument('command',choices=['tick','pending','claim','event','complete','health','list','status','enable','disable'])
+    p.add_argument('command',choices=['tick','pending','claim','event','complete','health','list','status'])
     p.add_argument('--root',required=True)
     for name in ['monitor-id','event-id','channel','claim-token','error']:p.add_argument('--'+name)
     p.add_argument('--delivered',action='store_true')

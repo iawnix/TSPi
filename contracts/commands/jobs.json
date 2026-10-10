@@ -118,6 +118,13 @@
           },
           "node_id": {
             "type": "string"
+          },
+          "user_task_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^task_[A-Za-z0-9_-]+$"
           }
         },
         "required": [],
@@ -406,6 +413,44 @@
       "result": {
         "$ref": "results.json#/commands/job.monitor_assess"
       }
+    },
+    {
+      "id": "job.list",
+      "domain": "runtime",
+      "effect": "read",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "user_task_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "cursor": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "$ref": "results.json#/commands/job.list"
+      },
+      "examples": [
+        {},
+        {
+          "session_id": "session_example",
+          "limit": 20
+        }
+      ]
     }
   ]
 }

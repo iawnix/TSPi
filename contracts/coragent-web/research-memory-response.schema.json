@@ -39,11 +39,12 @@
         "new_records",
         "bounds",
         "read_more",
-        "snapshot_id"
+        "snapshot_id",
+        "research"
       ],
       "properties": {
         "schema_version": {
-          "const": "research-snapshot/2"
+          "const": "research-snapshot/3"
         },
         "sequence": {
           "type": "integer",
@@ -72,6 +73,33 @@
         },
         "nodes": {
           "type": "array"
+        },
+        "research": {
+          "type": "object",
+          "required": [
+            "entry_node_ids",
+            "focus_node_ids",
+            "nodes",
+            "relations",
+            "omitted"
+          ],
+          "properties": {
+            "entry_node_ids": {
+              "type": "array"
+            },
+            "focus_node_ids": {
+              "type": "array"
+            },
+            "nodes": {
+              "type": "array"
+            },
+            "relations": {
+              "type": "array"
+            },
+            "omitted": {
+              "type": "object"
+            }
+          }
         }
       }
     }

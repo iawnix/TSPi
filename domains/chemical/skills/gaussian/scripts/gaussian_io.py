@@ -222,7 +222,8 @@ def split_job_sections(lines: list[str]) -> list[dict[str, object]]:
         is_concatenated_start = (
             i > start
             and re.match(r"^\s*Entering Link 1\b", line) is not None
-            and any("termination of Gaussian" in prior for prior in lines[start:i])
+            and any("Normal termination of Gaussian" in prior or "Error termination" in prior
+                    for prior in lines[start:i])
         )
         if not is_link1_separator and not is_concatenated_start:
             continue
@@ -265,7 +266,7 @@ def parse_frequencies(lines: list[str]) -> list[float]:
         if "Frequencies --" not in line:
             continue
         _, values = line.split("--", 1)
-        freqs.extend(float(part) for part in values.split())
+        freqs.extend(float(part.replace('D', 'E').replace('d', 'e')) for part in values.split())
     return freqs
 
 
@@ -280,16 +281,21 @@ def parse_frequency_tables(lines: list[str]) -> list[dict[str, object]]:
     tables: list[dict[str, object]] = []
     current: dict[str, object] | None = None
     for index, line in enumerate(lines):
-        if current is not None and _starts_frequency_section(line):
-            current["end_line"] = index
-            current = None
+        if _starts_frequency_section(line):
+            if current is not None:
+                current["end_line"] = index
+            # An unfinished final Freq section must not expose an earlier table
+            # from Opt=CalcAll as the final frequency evidence.
+            current = {"index": len(tables), "start_line": index + 1, "end_line": index + 1, "frequencies": []}
+            tables.append(current)
+            continue
         if "Frequencies --" not in line:
             if current is not None and _ends_frequency_table(line):
                 current["end_line"] = index
                 current = None
             continue
         _, values = line.split("--", 1)
-        freqs = [float(part) for part in values.split()]
+        freqs = [float(part.replace('D', 'E').replace('d', 'e')) for part in values.split()]
         if current is None:
             current = {"index": len(tables), "start_line": index + 1, "end_line": index + 1, "frequencies": []}
             tables.append(current)
@@ -329,7 +335,7 @@ def parse_normal_modes(lines: list[str], atom_count: int) -> list[dict[str, obje
         line = lines[index]
         if 'Frequencies --' not in line:
             continue
-        frequencies = [float(x.replace('D', 'E')) for x in line.split('--', 1)[1].split()]
+        frequencies = [float(x.replace('D', 'E').replace('d', 'e')) for x in line.split('--', 1)[1].split()]
         if len(modes) + len(frequencies) > len(table['frequencies']):
             break
         header = None
@@ -348,7 +354,7 @@ def parse_normal_modes(lines: list[str], atom_count: int) -> list[dict[str, obje
             if len(fields) != 2 + 3 * len(frequencies) or int(fields[0]) != atom_index:
                 return []
             atomic_numbers.append(int(fields[1]))
-            values = [float(x.replace('D', 'E')) for x in fields[2:]]
+            values = [float(x.replace('D', 'E').replace('d', 'e')) for x in fields[2:]]
             if not all(math.isfinite(x) for x in values):
                 return []
             for k in range(len(frequencies)):
@@ -403,6 +409,9 @@ def parse_convergence(lines: list[str]) -> tuple[dict[str, dict[str, str | float
     )
     for line in lines:
         stripped = line.strip()
+        if stripped.startswith(("Step number", "Maximum Force")):
+            convergence_rows = {}
+            stationary_convergence_rows = None
         if stripped.startswith(labels):
             parts = stripped.split()
             if len(parts) >= 5:
@@ -452,13 +461,12 @@ def orientation_blocks(lines: list[str], marker: str) -> list[list[Coord]]:
 
 
 def final_geometry(lines: list[str]) -> list[Coord]:
-    standard = orientation_blocks(lines, "Standard orientation:")
-    if standard:
-        return standard[-1]
-    input_orientation = orientation_blocks(lines, "Input orientation:")
-    if input_orientation:
-        return input_orientation[-1]
-    return []
+    positions = [i for i, line in enumerate(lines)
+                 if "Standard orientation:" in line or "Input orientation:" in line]
+    if not positions:
+        return []
+    blocks = orientation_blocks(lines[positions[-1]:], "orientation:")
+    return blocks[-1] if blocks else []
 
 
 IRC_POINT_RE = re.compile(r"Point Number:\s*(\d+)\s+Path Number:\s*(\d+)")
@@ -719,9 +727,11 @@ def parse_log(
     convergence, convergence_source = parse_convergence(section_lines)
     normal_termination = "Normal termination of Gaussian" in section_text
     error_termination = "Error termination" in section_text
-    stationary_point_found = "Stationary point found" in section_text
+    stationary_point_found = convergence_source == "stationary_point"
     final_convergence_evidence_present = bool(convergence)
-    final_convergence_satisfied = bool(convergence) and all(
+    final_convergence_satisfied = set(convergence) == {
+        "Maximum Force", "RMS Force", "Maximum Displacement", "RMS Displacement",
+    } and all(
         str(row["converged"]).upper() == "YES" for row in convergence.values()
     )
     summary: dict[str, object] = {

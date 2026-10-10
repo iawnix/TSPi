@@ -21,9 +21,9 @@ Monitor -- Host RPC ---------+      Harness / Pi App Server / SessionWorker
 ```
 
 The Host is the Agent Server API and hosting layer. It owns routing, authentication,
-session discovery, non-input RPC receipts, and
+session discovery, session-management RPC receipts, and
 the Monitor supervisor. The Pi Harness worker inside that same Agent Server
-owns input admission and idempotency, the Root Agent loop, model, tools, transcript, and durable SQLite lane.
+owns input admission and idempotency, user-task control receipts, the Root Agent loop, model, tools, transcript, and durable SQLite lane.
 The native Pi TUI, Phone, and Monitor all address that same lane; none starts
 another agent loop.
 
@@ -94,7 +94,7 @@ CoRAgent command names, arguments, and completions share one catalogue:
 - `/sys-prompt`: inspect the current worker's CoRAgent system prompt manifest and sources without a model request.
 - `/resume [session-id]`: select or specify a session in the current workspace. Cancelling keeps the current session.
 - `/usage`: inspect session token totals, context and usage by model in a compact panel.
-- `/monitor`: inspect this session's running and queued jobs, pending deliveries and last check in a live panel.
+- `/monitor`: inspect the current user task, its delivery criteria and waits, associated compute Jobs, and execution records. See the Monitor commands below.
 - `/quit`: disconnect this terminal while leaving the worker and its tasks running.
 
 The nonfunctional `/debug` placeholder has been removed.
@@ -114,18 +114,22 @@ Arrow keys scroll content without changing the panel height; short documents onl
 show Back. Closing restores editing and the transcript reading position. Background
 task cancellation hints are hidden while a command surface owns Esc.
 
-A permanent row immediately above the input shows `Monitor ✓` (healthy),
-`Monitor …` (checking or briefly reconnecting),
-`Monitor !` (warning), or `Monitor ×` (error). `· ↻2` means two jobs are running in this
-session; queued jobs are counted separately in `/monitor`. `↻0` means none are running
-and `↻—` means the count is unavailable. An optional `· ↑N` counts monitor events
-awaiting delivery; ordinary pending delivery is not a warning. The row remains
-visible when idle and during command use. Completion lists retain Pi's keyboard and
-mouse behavior in their own area above it. Background refreshes preserve selection,
-reading position and input focus. Terminal resizing and multiline drafts move the
-row with the input; opening a command does not move it away from the input.
-`/monitor` shows job counts, warning reasons and the last
-successful poll. Counts belong to this session; worker health is shared across workspaces.
+A permanent row immediately above the input shows the user task before the Job
+count: `Monitor ✓ · Researching · 2 jobs running`, `Waiting for compute`,
+`Preparing continuation`, `Paused`, `Needs attention`, or `Completed`. A completed
+model reply does not imply a completed user task. A disconnected or stale snapshot
+takes priority over cached progress. Unknown counts display `—`; no progress
+percentage or completion time is inferred. The row remains visible while idle and
+while command panels are open. Background refreshes preserve focus, selection,
+reading position, and the input draft.
+
+`/monitor` is a live current-session overview. It displays the original objective,
+delivery criteria, latest recorded progress, concrete Job waits, control reason,
+and automatic-continuation setting. Compute execution and output collection have
+separate fields. Scientific analysis shows “Not recorded” until a dedicated
+research projection provides evidence; a successful Job is not treated as completed
+analysis. Open execution details to inspect Pi generation/tool tasks; they are not
+mixed into the user-task list.
 
 At launch, `-c` selects the latest writable SQLite durable session and
 `--session-id <id>` selects an exact session. Startup `-r`/`--resume` is
@@ -162,12 +166,61 @@ Session lists use `{sessions: [...]}` and contain no legacy backend or format fl
 
 ## Monitor
 
-The Host starts one Monitor worker for the configured workspace root. Monitor
-ticks durable Compute status and writes event and delivery receipts inside each
-workspace. Wake and user-notification channels are acknowledged independently,
-with leases and backoff. A wake is an accepted input, not proof that an agent
-turn finished; the Root Agent must reread state and inspect the calculation.
-Monitor delivers authenticated execution events through next_run; it does not publish scientific conclusions or edit Node content.
+Monitor unifies user-task controls and compute-Job observations. Task Controller
+runs alongside the Pi Harness in the SessionWorker and uses the same durable
+transaction and admission boundary. The installation Monitor worker polls Compute
+status and records execution events. Pi remains the only model/tool execution loop;
+Research Memory stores scientific evidence and conclusions.
+
+| Command | Behavior |
+| --- | --- |
+| `/monitor` | Live overview for the current session |
+| `/monitor tasks` | Current and historical user tasks |
+| `/monitor task <id>` | Objective, delivery criteria, research problems, progress and waits |
+| `/monitor task pause <id>` | Pause automatic task progression; running work may finish |
+| `/monitor task resume <id>` | Resume the specified user task |
+| `/monitor task cancel <id> --keep-jobs` | Cancel the user task and retain its compute Jobs |
+| `/monitor task cancel <id> --cancel-jobs` | Cancel the user task and request cancellation of its Jobs |
+| `/monitor jobs [--task <id>]` | Session Jobs or Jobs owned by one user task |
+| `/monitor job <id>` | Execution and collection state |
+| `/monitor job cancel <id>` | Request cancellation of one compute Job |
+| `/monitor runs [--task <id>]` | Execution records grouped by Pi submission/run |
+| `/monitor run <id>` | Bounded generation/tool execution details |
+| `/monitor health` | Task Controller and shared Monitor worker health |
+
+Task details include research entry points, current focus, local plan excerpts,
+original problem status, assessment/Result references, and related Jobs. Only
+Jobs owned by the current session have `/monitor job` links; other Jobs remain
+visible as `Outside this session`. Shared
+problems appear once; relations reference their IDs. `closed` is labeled `Ended`,
+which does not assert scientific success or task completion. Omitted context is
+marked and `/research read <id>` opens the underlying record. Node counts do not
+measure research progress. Reading these views never changes task focus or wakes
+the model; there is no separate planning command.
+
+Lists and run details accept `--limit <1–100>` and `--cursor <cursor>`. A returned
+next-page command preserves the filter and page size. IDs belong to the attached
+session; a missing or foreign ID produces an error. Task cancellation always
+requires an explicit Job policy.
+
+All commands call the canonical `monitor/overview`, `monitor/tasks`,
+`monitor/task/read|pause|resume|cancel`, `monitor/jobs`, `monitor/job/read|cancel`,
+`monitor/runs`, `monitor/run/read`, and `monitor/health` Host methods directly.
+Queries do not send Agent input or call the model. Task controls read the current
+revision and send a stable request identity; a revision conflict is displayed,
+not silently retried. Monitor's previous status/list/enable/disable methods and
+per-Job automatic-follow-up switches are removed.
+
+Pausing a user task prevents new automatic progress without cancelling its running
+Jobs. Chat Esc/`turn/interrupt` stops the current reply and suppresses automatic
+restart. Esc inside a Monitor panel only closes that panel. Cancelling a Job and
+closing a terminal are separate actions. `/resume` switches the chat session;
+`/monitor task resume` resumes work inside the current session.
+
+Job wake and user-notification channels have independent receipts, leases and
+backoff. A wake is accepted input, not proof that analysis completed. Task Controller
+rechecks durable task and Job state before continuing. The Agent must still inspect
+results; Monitor does not publish scientific conclusions or edit Nodes.
 
 `workspace_manifest.json` binds the canonical `workspace_id` to both scientific
 state and Host routing. There is no separate scientific identity or direct-child

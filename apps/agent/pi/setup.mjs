@@ -4,6 +4,10 @@ import { recordUserSources } from "../tools/user-sources.mjs";
 import { createInputAdmission, createInputService, bindUserInputConversation, INPUT_ADMISSION_SERVICE_ID } from "../host/admission/input.mjs";
 import { createMonitorAdmission, MONITOR_ADMISSION_SERVICE_ID } from "../host/admission/monitor.mjs";
 import { createSessionAdmission, SESSION_ADMISSION_SERVICE_ID } from "../host/admission/session.mjs";
+import { createTaskController } from "../tasks/controller.mjs";
+import { createTaskTools } from "../tasks/tools.mjs";
+import { projectUserTask } from "../tasks/projection.mjs";
+import { createMonitorService, recordRun, MONITOR_SERVICE_ID } from "../tasks/service.mjs";
 import { wakeMessage } from "../host/monitor/worker.mjs";
 import { CLIENT_QUERIES_SERVICE_ID, createClientQueries } from "./services/queries.mjs";
 import { dirname, join } from "node:path";
@@ -38,6 +42,7 @@ const CoRAgentMonitorAdmission = defineService(MONITOR_ADMISSION_SERVICE_ID);
 const CoRAgentInputAdmission = defineService(INPUT_ADMISSION_SERVICE_ID);
 const CoRAgentSessionAdmission = defineService(SESSION_ADMISSION_SERVICE_ID);
 const CoRAgentClientQueries = defineService(CLIENT_QUERIES_SERVICE_ID);
+const CoRAgentMonitor = defineService(MONITOR_SERVICE_ID);
 
 export async function createCoRAgentHarness(databasePath, options) {
   const producerToken = process.env.CORAGENT_INPUT_PRODUCER_TOKEN;
@@ -49,7 +54,7 @@ export async function createCoRAgentHarness(databasePath, options) {
   const settingsManager = SettingsManager.create(cwd);
   configureHarnessHttp(settingsManager);
   const executionEnvs = new ExecutionEnvs(cwd);
-  let commandBridge, harness;
+  let commandBridge, harness, taskController;
   try {
     const resolved = await findInitialAgentModel(
       settingsManager,
@@ -59,7 +64,7 @@ export async function createCoRAgentHarness(databasePath, options) {
     const loadedSkills = await loadProductSkills();
     commandBridge = create_python_runtime_bridge({ workspace_root: cwd, workspace_id: workspaceId });
     const transactionCoordinator = createTransactionCoordinator({ bridge: commandBridge, workspaceRoot: cwd });
-    const businessTools = createCoreTools({ commandBridge });
+    const businessTools = createCoreTools({ commandBridge, getTaskBinding: context => taskController.binding(context) });
     const promptManifest = createSystemPromptManifest({
       native: { source: join(loadedSkills.packageRoot, "prompts/coragent.md"), text: `Working directory: ${cwd}\n\n${await readFile(join(loadedSkills.packageRoot, "prompts/coragent.md"), "utf8")}` },
       skills: { source: loadedSkills.skillsRoot, items: loadedSkills.skills },
@@ -76,11 +81,12 @@ export async function createCoRAgentHarness(databasePath, options) {
     const toolContext = createToolExecutionContext({
       workspace_root: cwd, workspace_id: workspaceId, session_id: sessionId, operation_id: null,
       replay_mode: "normal", principal: RESEARCH_MEMORY_WRITE_PRINCIPAL,
-      allowed_authorities: ["host_read", "kernel_read", "kernel_write", "runtime_read", "execution_runtime", "research_write", "artifact_runtime", "external_side_effect"],
-      allowed_effects: ["read", "research_write", "result_collection", "artifact_write", "execution_control", "external_write"],
+      allowed_authorities: ["host_read", "kernel_read", "kernel_write", "runtime_read", "execution_runtime", "research_write", "artifact_runtime", "external_side_effect", "task_control"],
+      allowed_effects: ["read", "research_write", "result_collection", "artifact_write", "execution_control", "external_write", "task_write"],
     });
     const durableTools = [
       ...businessTools,
+      ...createTaskTools(() => taskController),
       systemPromptTool,
     ].map((tool) => wrapToolForHarness(tool, {
       toolContext,
@@ -99,12 +105,35 @@ export async function createCoRAgentHarness(databasePath, options) {
       sections: [section("research_agent_system_prompt", () => promptManifest.effective, { tag: false })],
       hooks: [
         hook(GenerationTask, {
+          afterTools: async (_assistant, results, api, context) => {
+            await taskController.observeToolResults(await Promise.all(results.map(id => api.entry(id, context))), context);
+          },
           beforeRequest: (request, api, context) => {
             return (async () => {
               const live = await api.snapshot(LiveDoc, api.conversationId, context);
-              const inputContext = await recordUserSources({ harness, admission: inputAdmission, monitorAdmission, api, context, inputIds: live?.run?.inputs,
+              const inputContext = await recordUserSources({ harness, admission: inputAdmission, monitorAdmission, taskController, api, context, inputIds: live?.run?.inputs,
                 bridge: commandBridge, sessionId, recordedIds: recordedUserSources });
-              return injectDecisionContext(request, String(api.taskId), inputContext);
+              const task = await taskController.current(context);
+              await recordRun({ conversation, api, inputIds: live?.run?.inputs || [], userTaskId: task?.user_task_id ?? null, context });
+              const actualUserIds = [];
+              for (const id of live?.run?.inputs || []) {
+                const record = await (await harness.submission(id, context)).status(context);
+                if ((await inputAdmission.origin(record, context))?.producer === "user") actualUserIds.push(String(id));
+              }
+              const taskMessage = { role: "system", content: "", sections: { coragent_user_task:
+                "Runtime task control state, not new user authorization. Register authorized sustained work with task_begin; ordinary questions remain questions. A final reply does not complete a task. Report concrete progress with evidence, wait for owned Jobs, or record a blocker. Only the user may resume a paused task.\n"
+                + JSON.stringify({ task: projectUserTask(task), actual_user_submission_ids: actualUserIds,
+                  automatic_continuation_enabled: taskController.health().automatic_continuation_enabled }) }, timestamp: Date.now() };
+              const injected = await injectDecisionContext({ ...request, messages: [...request.messages, taskMessage] }, String(api.taskId), {
+                ...inputContext, ...(task ? task.research : {}),
+              });
+              // Recheck after external projection IO, immediately before Pi sends the request.
+              for (const id of live?.run?.inputs || []) {
+                const record = await (await harness.submission(id, context)).status(context);
+                const origin = await inputAdmission.origin(record, context);
+                if (origin.producer !== "user") await taskController.assertExecutionAllowed(record, origin, context);
+              }
+              return injected;
             })();
           },
         }),
@@ -127,16 +156,22 @@ export async function createCoRAgentHarness(databasePath, options) {
     const created = (await harness.conversation("root", PI_TODO_CONTEXT)) === undefined;
     const conversation = await harness.root(PI_TODO_CONTEXT, { agent: { cwd, ...(created && resolved.model ? { model: resolved.model } : {}), ...(created && resolved.thinkingLevel ? { thinkingLevel: resolved.thinkingLevel } : {}) } });
     inputAdmission = createInputAdmission({ harness, conversation, LiveDoc, InboxDoc, admitSubmission });
+    taskController = createTaskController({ harness, conversation, admission: inputAdmission, LiveDoc, InboxDoc,
+      kernel: commandBridge, workspaceId, sessionId, context: PI_TODO_CONTEXT,
+      enabled: process.env.CORAGENT_AUTOMATIC_CONTINUATION !== "0" });
     await inputAdmission.checkRecovery(PI_TODO_CONTEXT);
   monitorAdmission = createMonitorAdmission({ admission: inputAdmission, kernel: commandBridge, sessionId,
-      wakeMessage, producerToken });
+      wakeMessage, producerToken, taskController });
+    const sessionAdmission = createSessionAdmission({ harness, conversation, LiveDoc, taskController });
+    taskController.start();
     return {
-      harness, conversation: bindUserInputConversation(conversation, inputAdmission, harness), modelRuntime, settingsManager,
+      harness, conversation: bindUserInputConversation(conversation, inputAdmission, harness, sessionAdmission), modelRuntime, settingsManager,
       facetLoader: createStaticFacetLoader([defineFacet({ id: "@coragent/client-queries", setup(env) {
         const { validateConsumption: _validate, ...monitorService } = monitorAdmission;
         env.provide(CoRAgentMonitorAdmission, monitorService);
         env.provide(CoRAgentInputAdmission, createInputService(inputAdmission));
-        env.provide(CoRAgentSessionAdmission, createSessionAdmission({ harness, conversation, LiveDoc }));
+        env.provide(CoRAgentSessionAdmission, sessionAdmission);
+        env.provide(CoRAgentMonitor, createMonitorService({ controller: taskController, harness, conversation, kernel: commandBridge, workspaceId, sessionId, LiveDoc }));
         env.provide(CoRAgentClientQueries, createClientQueries({ workspaceId, sessionId, commandBridge, promptManifest,
           readTelemetry: async (context) => {
             const { estimateContext } = await loadPi("compaction", sourceRoot);
@@ -149,9 +184,10 @@ export async function createCoRAgentHarness(databasePath, options) {
           },
         }));
       } })]),
-      cleanup: async (context) => { try { await executionEnvs.cleanup(context); } finally { await commandBridge.close(); } },
+      cleanup: async (context) => { await taskController.close(); try { await executionEnvs.cleanup(context); } finally { await commandBridge.close(); } },
     };
   } catch (error) {
+    await taskController?.close();
     await commandBridge?.close().catch(() => {});
     await harness?.close(PI_TODO_CONTEXT).catch(() => {});
     await executionEnvs.cleanup(PI_TODO_CONTEXT).catch(() => {});

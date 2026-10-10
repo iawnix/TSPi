@@ -9,12 +9,12 @@ CoRAgent uses the native Pi Harness as its only Agent loop. Workspace is the per
 
 | Component | Owns |
 | --- | --- |
-| Host / Agent Server | Workspace admission, authenticated input, session binding, request identity and next_run scheduling |
-| Pi session | Conversation, model requests, native tools and input consumption |
+| Agent Server / Host | Service hosting; Host owns workspace admission, authentication, session routing and worker recovery discovery |
+| Pi SessionWorker / durable Harness | Sole owner of session storage, conversation, model/tool execution, atomic input admission and recovery |
 | Research Memory | Workspace storage contract, original requirements, Nodes, immutable Results and explicit research relations |
 | Job Runtime | Dispatch, execution, cancellation, reconciliation and collection receipts |
 | Artifact Store | Immutable file bytes and provenance manifests |
-| Monitor | Execution events, outbox, delivery retry and fixed destination identity |
+| Monitor / Task Controller | User task intent and continuation policy in the SessionWorker; Job monitoring observes execution and delivers events |
 | Email Skill | Authorized report delivery, attachment pinning and transport receipts |
 | Retrieval / Web | Rebuildable bounded views, ranking explanations and read-only navigation |
 
@@ -23,6 +23,8 @@ The `research_agent.research` namespace is the sole research implementation. Run
 ## Research model
 
 A Node is a persistent local research question. `goal` states the question, `proposal` the current hypothesis or approach, `plan` the investigation, and `progress` the current explanation. Hypotheses are optional. Repeated parameters, geometries and failures stay within the same Node unless an independently tracked question emerges. No model-maintained Attempt entity is required.
+
+Compound studies use independently interpretable questions and existing `part_of`, `requires` and `alternative_to` relations. A root Node is optional; shared questions can have multiple parents. UserTask `/2` stores only `research.entry_node_ids` and `research.focus_node_ids`, set together through `task_update` action `set_research`. These are navigation references, not ownership, a schedule or a second plan. Node and Result schemas remain unchanged.
 
 Node status is `open`, `paused` or `closed`. Closing means stopping active work on that question; it does not imply scientific success or cancel a Job. The authored revision changes when Node content changes, independently of background execution observations. Concurrent content changes require a new reading and explicit merge; append-only notes do not replace another author's judgment.
 
@@ -58,9 +60,25 @@ Transactions publish coherent research updates and recover interrupted commits. 
 
 A bounded model context preserves original user intent and the authenticated trigger, then ranks relevant Nodes using event association, explicit focus, pending execution facts and research relations. Necessary result summaries and direct dependencies accompany selected Nodes. Omission has explicit read/search routes; retrieval never presents missing content as completed work. Ordinary user text cannot impersonate Monitor metadata.
 
-Managed research Jobs explicitly bind node_id and the inspected Node revision at submission. Preparation and diagnostics can remain unassociated. Monitor events retain that original association across Node edits and session restart.
+Before every model request, `GenerationTask.beforeRequest` reads the current Task and passes its complete entry/focus references to the internal Memory reader. The single `research-snapshot/3` projection reserves space for the study structure and local plan excerpts before admitting execution facts and detailed Node cards. It shows a bounded containment neighborhood and direct focus relations, including shared parents. Truncated fields do not grant replacement read receipts. Monitor task details use this same projection; browsing does not write focus or wake the model.
 
-`next_run` is a real scheduling mode: persist an authenticated execution event, wait while its owning session is busy or automatic execution is paused, then submit one idempotent Pi input. Event persistence, Pi consumption and scientific interpretation are distinct facts. Lost replies reuse the same request identity; a fixed batch does not absorb later events while retrying. New notes, Node status and Memory sequence do not trigger or suppress delivery. No new event means no automatic turn merely because a Node remains open.
+Managed research Jobs explicitly bind node_id and the inspected Node revision at submission. The trusted tool adapter also binds the current `user_task_id`; this is separate from scientific Node ownership. Preparation and diagnostics can remain unassociated. Monitor events retain the original associations across Node edits and session restart.
+
+`next_run` is a real scheduling mode: persist an authenticated execution event, wait while its owning session is busy or automatic execution is paused, then submit one idempotent Pi input. Event persistence, Pi consumption and scientific interpretation are distinct facts. Lost replies reuse the same request identity; a fixed batch does not absorb later events while retrying. New notes, Node status and Memory sequence do not trigger or suppress delivery. An open Node does not create an automatic turn. A separately registered active user task can continue without a new Job event.
+
+## Persistent user tasks and Monitor
+
+The request-only task projection bounds serialized bytes and explicitly points omitted original requirements, criteria and evidence to `task_read`; truncation never relaxes authorization. A user task spans Pi runs and compute Jobs. `task_begin`, `task_read` and `task_update` record the authorized objective, cited user submissions, delivery criteria, progress evidence and explicit waits or blockers. Ordinary questions do not create tasks. A session has at most one nonterminal user task. Its control state lives only in Pi durable documents; Host does not store a duplicate task lifecycle or control receipt.
+
+The Task Controller runs inside the SessionWorker. Normal tools continue within the native Pi loop. After a completed run, a durable `task_controller` input can continue an active idle task through the same admission transaction used by other inputs. The implementation does not install an `onYield` continuation path. Watch notifications and a 30-second check reconcile outstanding work; Job waits query concrete owned Jobs and invoke no model until ready. Three automatic runs without new evidence block further continuation with an explanation. A normal answer ending is not user-task completion: proposed completion needs evidence for every criterion and a successfully delivered final response.
+
+Pause suppresses new automatic work while the current response and Jobs can finish. Interrupting a response also pauses the user task. Resume is a user control operation. Cancellation requires an explicit keep/cancel policy for owned Jobs. Querying Monitor does not send a prompt or resume a task. `CORAGENT_AUTOMATIC_CONTINUATION=0` disables automatic input while preserving user input and read access.
+
+Progress observations and explicit progress updates share persistent identities: individual Result IDs, Artifact content digests and owned Job milestones. Plan edits, notes, Node creation and focus changes are activity without progress credit. Reusing an identity, changing a reference combination or restarting does not replenish the allowance. Each completion criterion needs fixed Result or Artifact evidence; scientific applicability remains the Agent's responsibility. These controls cannot assess whether newly produced evidence is scientifically valuable.
+
+Host restart discovers sessions from Pi's existing catalog and reopens at most four Workers concurrently; each Worker reconciles its durable task. Recovery failures appear in `monitor/health`. No process besides the SessionWorker writes its SQLite store. The aggregate is a projection of independent Task, Pi and Job owners, not a cross-system atomic snapshot.
+
+`/monitor` is the unified product entry point for tasks, Jobs and execution details. Host and browser transports share one canonical method list in `apps/agent/contracts/monitor.mjs`; the [Monitor contract](../contracts/monitor/README.md) describes requests and results. Pi generation/tool Tasks appear under a run's diagnostic details, never as user tasks. Existing session and Job notifications request a fresh snapshot after changes or reconnects.
 
 ## Skills and delivery
 

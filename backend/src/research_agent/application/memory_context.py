@@ -22,7 +22,7 @@ def jobs(root):
     return output
 
 
-def read(root, *, ref=None, offset=0, limit=16000, session_id=None, event_ids=(), focus_node_ids=(), field=None):
+def read(root, *, ref=None, offset=0, limit=16000, session_id=None, event_ids=(), entry_node_ids=(), focus_node_ids=(), field=None):
     from .job_state import project_events
     from .job_monitor import assess
     with TransactionCoordinator(root).locked():
@@ -32,7 +32,8 @@ def read(root, *, ref=None, offset=0, limit=16000, session_id=None, event_ids=()
         if ref:
             return retrieval.read(root, ref=ref, offset=offset, limit=limit, session_id=session_id, jobs=current, field=field)
         events = [assess(root, event_id, session_id)['event'] for event_id in event_ids]
-        return views.build_snapshot(root, max_bytes=max(2048, limit), session_id=session_id, focus_node_ids=focus_node_ids,
+        return views.build_snapshot(root, max_bytes=max(2048, limit), session_id=session_id,
+                                    entry_node_ids=entry_node_ids, focus_node_ids=focus_node_ids,
                                     jobs=current, events=events, projection={'pending': len(errors), 'errors': errors[:3]})
 
 

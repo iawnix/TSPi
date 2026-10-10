@@ -121,7 +121,7 @@ test("usage and monitor use separate live panels while documents choose reading 
   const shown=[];
   let usage='Total tokens: 10', monitor='Running: 1';
   const commands=createTerminalCommands({
-    ui:{showStatus(message){throw new Error(message);}}, session:{sessionId:'one'},
+    ui:{showStatus(message){throw new Error(message);}}, session:{sessionId:'one',async monitor(){return {}; }},
     show:async (title,body,context,command,scope,mode)=>shown.push({title,body,command,scope,mode}),
     usage:()=>usage,monitor:()=>monitor,
     queries:{async systemPrompt(){return {session_id:'one',result:{effective:'prompt'}};},
@@ -133,6 +133,42 @@ test("usage and monitor use separate live panels while documents choose reading 
   usage='Total tokens: 20';monitor='Running: 2';
   assert.equal(shown[0].body(),'Total tokens: 20');assert.equal(shown[1].body(),'Running: 2');
   assert.throws(()=>parseSlashCommand('monitor','unexpected'),/Usage/);
+});
+
+test('Monitor grammar separates user tasks, compute jobs and execution records', () => {
+  for (const [input, method, fields] of [
+    ['', 'monitor/overview', {}], ['tasks --limit 5 --cursor next', 'monitor/tasks', {limit:5,cursor:'next'}],
+    ['task t1', 'monitor/task/read', {user_task_id:'t1'}],
+    ['task pause t1', 'monitor/task/pause', {user_task_id:'t1'}],
+    ['task resume t1', 'monitor/task/resume', {user_task_id:'t1'}],
+    ['task cancel t1 --keep-jobs', 'monitor/task/cancel', {user_task_id:'t1',jobs:'keep'}],
+    ['task cancel t1 --cancel-jobs', 'monitor/task/cancel', {user_task_id:'t1',jobs:'cancel'}],
+    ['jobs --task t1', 'monitor/jobs', {user_task_id:'t1'}],
+    ['job j1', 'monitor/job/read', {job_id:'j1'}],
+    ['job cancel j1', 'monitor/job/cancel', {job_id:'j1'}],
+    ['runs --task t1', 'monitor/runs', {user_task_id:'t1'}],
+    ['run r1', 'monitor/run/read', {run_id:'r1'}], ['health', 'monitor/health', {}],
+  ]) assert.deepEqual(parseSlashCommand('monitor', input), {command:'client.monitor',params:{method,...fields}});
+  for (const input of ['status', 'enable', 'disable', 'task', 'task cancel t1', 'task cancel t1 --keep-jobs --cancel-jobs',
+    'task pause', 'job cancel', 'health extra', 'jobs --task', 'jobs --limit 0', 'jobs --limit 101',
+    'jobs --task t1 --task t2', 'jobs --root /tmp', 'tasks --task t1']) assert.throws(() => parseSlashCommand('monitor', input), /Usage/);
+});
+
+test('Monitor task controls use current revision and direct Host requests without model input', async () => {
+  const calls=[];
+  const session=createTerminalSession({workspaceId:'w',sessionId:'s',async request(method,params){
+    calls.push([method,params]);
+    return {items:[{user_task_id:'t1',revision:7}],next_cursor:null};
+  }});
+  await session.monitor('monitor/tasks',{limit:5});
+  assert.deepEqual(calls,[['monitor/tasks',{workspace_id:'w',session_id:'s',limit:5}]]);
+  await session.monitor('monitor/task/pause',{user_task_id:'t1'});
+  assert.equal(calls[1][0],'monitor/tasks');
+  assert.deepEqual(calls[1][1],{workspace_id:'w',session_id:'s',limit:100});
+  assert.equal(calls[2][0],'monitor/task/pause');
+  assert.equal(calls[2][1].expected_revision,7);
+  assert.match(calls[2][1].request_id,/^terminal-monitor-/);
+  assert.equal(calls.some(([method])=>method==='input/send'),false);
 });
 
 test("closing a presentation prevents a delayed Host response from reopening it", async () => {
@@ -154,4 +190,40 @@ test("closing a presentation prevents a delayed Host response from reopening it"
   const rejected = assert.rejects(resume, { name: "AbortError" });
   reply({ session: row("two"), client: { session_id: "two" } });
   await rejected;
+});
+
+test('Monitor run detail pagination is explicit and bounded', () => {
+  assert.deepEqual(parseSlashCommand('monitor', 'run r1 --cursor c2 --limit 10').params,
+    {method:'monitor/run/read',run_id:'r1',cursor:'c2',limit:10});
+  assert.throws(() => parseSlashCommand('monitor', 'run r1 --limit 0'), /Usage/);
+  assert.throws(() => parseSlashCommand('monitor', 'run r1 --cursor c1 --cursor c2'), /Usage/);
+});
+
+test('Monitor views keep tool payloads out of user task and Job details', async () => {
+  const {formatMonitor} = await import('../../../apps/agent/terminal/commands/monitor.mjs');
+  const detail = formatMonitor('monitor/job/read', {job:{job_id:'j1',state:'succeeded',collection_state:'not_collected',
+    command:['SECRET_COMMAND'],metadata:{key:'SECRET_METADATA'}}});
+  assert.match(detail,/Execution: succeeded/);
+  assert.match(detail,/Collection: not_collected/);
+  assert.match(detail,/Analysis: Not recorded/);
+  assert.doesNotMatch(detail,/SECRET_/);
+  assert.match(formatMonitor('monitor/runs',{items:[],next_cursor:'c2'},{user_task_id:'t1',limit:5}),
+    /Next page: \/monitor runs --task t1 --limit 5 --cursor c2/);
+  assert.match(formatMonitor('monitor/run/read',{run:{run_id:'r1'},items:[],next_cursor:'c3'},{run_id:'r1'}),
+    /Next page: \/monitor run r1 --cursor c3/);
+});
+
+test('execution records label model and tool operations and expose safe failure facts', async () => {
+  const {formatMonitor} = await import('../../../apps/agent/terminal/commands/monitor.mjs');
+  const result = formatMonitor('monitor/run/read', {run:{run_id:'r1',user_task_id:'t1'},items:[
+    {pi_task_id:'g1',kind:'pi.generation',state:'terminal',outcome:'succeeded',error:null},
+    {pi_task_id:'tool1',kind:'pi.tool',state:'terminal',outcome:'succeeded',tool_name:'job_start',result_entry_id:'entry1',
+      error:{code:'invalid_request',failure_class:'validation',retryable:false,action_outcome:'not_started'},raw_output:'SECRET_OUTPUT'},
+  ],next_cursor:null},{run_id:'r1'});
+  assert.match(result,/Model request · terminal \/ succeeded/);
+  assert.match(result,/Tool call: job_start/);
+  assert.match(result,/Error: invalid_request/);
+  assert.match(result,/Retryable: No/);
+  assert.match(result,/Result entry: entry1/);
+  assert.doesNotMatch(result,/SECRET_OUTPUT/);
 });

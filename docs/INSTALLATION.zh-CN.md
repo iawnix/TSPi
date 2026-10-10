@@ -352,9 +352,15 @@ token 相互独立。Phone 是普通的交互式 Pi 客户端，与终端共享�
 
 ## Monitor 运维
 
-Host 为 workspace root 启动一个 Monitor worker，轮询持久化 Compute 状态，并在每个
-workspace 内写入 registration、event 和 delivery 回执。`monitor/list`、`monitor/status`、
-`monitor/enable`、`monitor/disable` 提供健康状态和积压信息。next_run 持久保留认证执行事件，原会话忙或自动执行暂停时继续等待。投递与消费身份独立于 Memory revision，输入接受不代表完成科学解释。Agent 读取关联 Node 与 Job 回执，再记录结论。
+Host 为 workspace root 启动一个 Job monitoring worker，轮询计算状态并在 workspace 内写入 binding、event 和 delivery 回执。每个 Pi SessionWorker 内的 Task Controller 保存用户任务，通过同一 durable 输入边界推进工作，包括没有计算 Job 的研究步骤。Host 重启从已有会话目录限并发恢复 Worker，恢复错误通过 Monitor 健康状态展示。
+
+`/monitor` 查看当前任务与作业；`/monitor tasks`、`/monitor jobs`、`/monitor runs` 查看列表；`/monitor health` 查看服务诊断。任务暂停/恢复/取消使用 `/monitor task`；取消必须选择 `--keep-jobs` 或 `--cancel-jobs`。Pi generation/tool 详情在 `/monitor run <run-id>` 内。所有客户端使用同一套 [Host Monitor API](../contracts/monitor/README.md)，不保留旧 status/list/enable/disable RPC 别名。
+
+Agent Server 环境变量 `CORAGENT_AUTOMATIC_CONTINUATION=0` 关闭新增自动输入，保留用户输入、Job 观察和查询。已发出的模型请求不会撤回。用户打断当前回复时同时暂停任务，避免被自动续跑立即抵消。暂停保留原始目标和证据，须显式恢复。
+
+next_run 持久保留认证执行事件，原会话忙或自动执行暂停时继续等待。投递与消费身份独立于 Memory revision，输入接受不代表完成科学解释。Agent 读取关联 Node 与 Job 回执，再记录结论。
+
+旧 Monitor binding 若包含 `enabled: false`，须先显式解决持久暂停意图才能恢复自动工作。新记录不写该字段；旧 `enabled: true` 只作为惰性元数据保留。升级不会静默启用已禁用工作或伪造已授权用户任务。
 
 规范的 `workspace_manifest.json` identity 会先被验证，再由 Monitor 用于 Host 路由。其
 `workspace_id` 在 Research Memory、本地运行记录和远程计算 intent 中保持一致；不存在独立的

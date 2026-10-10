@@ -6,7 +6,7 @@ function userEntryText(entry) {
     .filter(Boolean).join("\n");
 }
 
-export async function recordUserSources({ harness, admission, monitorAdmission, api, context, inputIds, bridge, sessionId, recordedIds = new Set() }) {
+export async function recordUserSources({ harness, admission, monitorAdmission, taskController, api, context, inputIds, bridge, sessionId, recordedIds = new Set() }) {
   const eventIds = new Set();
   for (const id of inputIds || []) {
     if (recordedIds.has(id)) continue;
@@ -21,6 +21,11 @@ export async function recordUserSources({ harness, admission, monitorAdmission, 
     const origin = await admission.origin(record, context);
     if (!origin?.producer) throw new Error(`input_origin_unavailable: input ${id} has no verified provenance; create a new session`);
     if (origin.producer !== "user") {
+      if (origin.producer === "task_controller") {
+        await taskController.validateConsumption(record, origin, context);
+        for (const input of origin.admission_basis.event_inputs || []) for (const eventId of input.event_ids) eventIds.add(eventId);
+        continue;
+      }
       if (!["monitor"].includes(origin.producer)) throw new Error(`input_origin_invalid: ${id}`);
       await monitorAdmission.validateConsumption(record, origin, api, context);
       for (const eventId of origin.identity.event_ids) eventIds.add(eventId);

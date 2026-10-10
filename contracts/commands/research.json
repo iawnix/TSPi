@@ -51,6 +51,14 @@
                 "type": "null"
               }
             ]
+          },
+          "entry_node_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            },
+            "description": "Internal task navigation roots. Does not authorize or schedule research work."
           }
         },
         "required": [],

@@ -41,3 +41,14 @@ Record the unmet requirement and report the concrete missing binding. An
 operator can install a versioned prefix from the shipped lock with
 `scripts/install_job_environment.py`; a research task must not modify shared
 environments. Existing jobs retain their original identities after maintenance.
+
+A native prerequisite probe resolves and hashes the configured executable; it
+does not run the solver or verify a license, convergence, or a scientific result.
+`environment_executable_missing` means the selected command cannot be executed;
+`environment_activation_missing` identifies its missing activation script;
+`environment_dependency_missing` identifies a required package or module that is
+absent. `environment_import_failed` means importing a present dependency failed
+during initialization. Report the exact observation and selected target; an
+unconfigured binding or absent recipe does not prove the software is absent
+from every environment. Changed binding or executable evidence requires preparing
+a new request before dispatch, not running an old prepared command.

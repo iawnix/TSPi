@@ -126,6 +126,8 @@ def topology(mol, geometry):
     if len(geometry)!=mol.GetNumAtoms() or [a[0] for a in geometry]!=[a.GetSymbol() for a in mol.GetAtoms()]:
         return {'matches':False,'ambiguous':True,'reason':'atom count/order differs'}
     xyz=np.asarray([a[1:] for a in geometry],dtype=float)
+    if not np.isfinite(xyz).all():
+        raise ValueError('geometry_coordinates_must_be_finite')
     radii=[Chem.GetPeriodicTable().GetRcovalent(a.GetAtomicNum()) for a in mol.GetAtoms()]
     expected={tuple(sorted((b.GetBeginAtomIdx(),b.GetEndAtomIdx()))) for b in mol.GetBonds()}
     deviations=[];ambiguous=False
@@ -136,23 +138,32 @@ def topology(mol, geometry):
             if not np.isfinite(ratio) or ratio<0.55 or (bonded and ratio>1.25) or (not bonded and ratio<1.45):
                 deviations.append({'atoms':[i+1,j+1],'expected_bond':bonded,'distance_ratio':ratio})
                 ambiguous=ambiguous or 1.25<ratio<1.45
-    # Assess only stereocenters explicitly specified in the input graph.
+    # Assess only stereochemistry explicitly specified in the input graph.
     probe=Chem.Mol(mol);conformer=Chem.Conformer(mol.GetNumAtoms())
     for i,point in enumerate(xyz):conformer.SetAtomPosition(i,point)
     probe.RemoveAllConformers();probe.AddConformer(conformer)
-    Chem.AssignAtomChiralTagsFromStructure(probe,replaceExistingTags=True)
+    Chem.AssignStereochemistryFrom3D(probe,replaceExistingTags=True)
     Chem.AssignStereochemistry(probe,cleanIt=True,force=True)
     Chem.AssignStereochemistry(mol,cleanIt=True,force=True)
     stereo=[]
     for original,actual in zip(mol.GetAtoms(),probe.GetAtoms()):
         if original.HasProp('_CIPCode') and (not actual.HasProp('_CIPCode') or original.GetProp('_CIPCode')!=actual.GetProp('_CIPCode')):
             stereo.append(original.GetIdx()+1)
-    return {'matches':not deviations and not stereo,'ambiguous':ambiguous,'bond_mismatches':deviations,'stereo_mismatches':stereo}
+    bond_stereo=[]
+    for original,actual in zip(mol.GetBonds(),probe.GetBonds()):
+        if original.GetStereo() in (Chem.BondStereo.STEREOE,Chem.BondStereo.STEREOZ) and original.GetStereo()!=actual.GetStereo():
+            bond_stereo.append([original.GetBeginAtomIdx()+1,original.GetEndAtomIdx()+1])
+    return {'matches':not deviations and not stereo and not bond_stereo,'ambiguous':ambiguous,
+            'bond_mismatches':deviations,'stereo_mismatches':stereo,'bond_stereo_mismatches':bond_stereo}
 
 
 def aligned_rmsd(a,b):
+    """Least-squares proper rotation of the supplied atom correspondence; never relabel atoms."""
     if [x[0] for x in a]!=[x[0] for x in b] or not a:return None
-    x=np.array([v[1:] for v in a]);y=np.array([v[1:] for v in b]);x-=x.mean(axis=0);y-=y.mean(axis=0)
+    x=np.asarray([v[1:] for v in a],dtype=float);y=np.asarray([v[1:] for v in b],dtype=float)
+    if not np.isfinite(x).all() or not np.isfinite(y).all():
+        raise ValueError('geometry_coordinates_must_be_finite')
+    x-=x.mean(axis=0);y-=y.mean(axis=0)
     u,_,vt=np.linalg.svd(x.T@y);fix=np.eye(3);fix[-1,-1]=np.linalg.det(u@vt)
     return float(np.sqrt(np.mean(np.sum((x@u@fix@vt-y)**2,axis=1))))
 
