@@ -10,6 +10,10 @@ defaults are M062X/6-31G**, Opt=Tight or SP, SCF=Tight, and Int=UltraFine.
 Use `chemical.gaussian-input@1` for a complete explicit Gaussian input.
 Both use the target's `gaussian` binding.
 
+Read runner options with `"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --executor chemical.gaussian-input --version 1 --help`.
+For software diagnosis, use the [targeted environment check](../method-selection/references/runtime_environment.md)
+with this recipe and the chosen environment.
+
 ```bash
 "$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.gaussian --version 1 --input geometry=input.xyz --output prepared/gaussian.json -- --task opt-sp --charge 0 --multiplicity 1
 ```

@@ -20,7 +20,8 @@ describes readiness; it is not a workflow registry or a launch gate beyond the
 probe and transport checks.
 
 `job_probe` checks platform availability, not scientific readiness. Inspect the
-selected backend's command, activation script and Python binding. Use the relevant
+selected backend's command, activation script and Python binding with the
+[targeted environment check](runtime_environment.md). Use the relevant
 program's bounded help/version check or Skill-specific doctor when required.
 For CF22D, [doctor.py](../../cf22d/scripts/doctor.py) checks the configured
 PySCF environment and method construction. It does not establish readiness for

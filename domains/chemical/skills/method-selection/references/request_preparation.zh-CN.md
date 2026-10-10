@@ -1,6 +1,10 @@
 # 准备科学 Job 请求
 
-用 `"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --list` 查看扩展声明的执行入口。每个入口声明后端、固定脚本、CLI 契约、输入角色和输出。准备命令为 `--config "$RESEARCH_AGENT_JOB_CONFIG" --environment <环境> --executor <id> --version <版本> --input <角色>=<文件>`，`--` 后放 runner 参数。通用准备器仅暂存已声明资源并保留模块路径；目标 Python 来自 job.toml 的后端或环境绑定。
+先根据方法 Skill 的指导选择软件绑定。Skill 提供预设入口时，准备命令为 `--config "$RESEARCH_AGENT_JOB_CONFIG" --environment <环境> --executor <id> --version <版本> --input <角色>=<文件>`，`--` 后放 runner 参数。通用准备器暂存已声明资源并保留模块路径；目标 Python 来自 job.toml 的后端或环境绑定。
+
+查看 runner 参数用 `"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --executor <id> --version <版本> --help`。它读取已固定的 CLI 契约，不执行科学计算或连接计算目标。固定的输入、输出、可执行文件参数由准备器提供。
+
+不清楚入口 id 时，`executors --list --skill <名称>` 或 `--list --backend <绑定>` 提供简短索引；诊断需要完整声明时加 `--details`。该索引只包含预设入口，不代表全部方法或软件。可选的 `--config … --environment …` 只显示入口的绑定是否已配置，不做实际探测。实际软件检查见[定向环境检查](runtime_environment.zh-CN.md)。没有预设入口时，可使用下述任务专用脚本，或通过通用 Job 运行原生命令。
 
 保留准备请求中的 request_id；同一次提交恢复时复用它，不因工具响应丢失而生成新 ID。明确重算时生成新请求。
 

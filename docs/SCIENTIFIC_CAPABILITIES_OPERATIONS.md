@@ -10,7 +10,9 @@ new entry for each calculation. See [Skills and the execution catalog](EXTENSION
 
 ## Prepare and execute
 
-List installed entries with `"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --list`. Select an executor id/version and a named environment from installation-owned `etc/job.toml`. The descriptor supplies its backend key, pinned scripts, pure CLI parser, input roles and output declarations. Native entries need no Python binding; Python entries use the selected target's configured interpreter.
+Start from the relevant Skill, then choose its recipe, native command or task script and a named environment from installation-owned `etc/job.toml`. A recipe supplies its backend key, pinned scripts, pure CLI parser, input roles and outputs. Native commands need no Python binding; Python scripts use the selected target's configured interpreter.
+
+`"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --list` returns a compact recipe index, with optional `--skill`, `--backend`, or `--executor`/`--version` filters. `--details` returns full descriptors. Adding `--config … --environment …` shows binding presence without probing software. For actual runner options, use `executors --executor <id> --version <version> --help`; this loads only the pinned CLI parser, without executing the scientific program.
 
 The preparation command writes a request and returns `request_file` and `request_sha256`. Submit these to `job_start`, supplying `node_id` when associating a research question. Runtime checks the file and inputs and fixes the selected Node association and content revision, `prepared_ref` and dispatch intent. Preparation alone dispatches no Job and proves no scientific outcome.
 
@@ -20,15 +22,23 @@ Recover a lost response with the original request identity. Use `job_status`, `j
 
 ## Platform checks
 
-Use `job_probe` in a session to inspect a configured platform. Maintainers can
-verify software bindings from the installed control environment:
+Use `job_probe` in a session to inspect a configured platform. Check software
+for a selected recipe from the installed control environment:
 
 ```bash
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.environment_check --config "$RESEARCH_AGENT_JOB_CONFIG"
+"$RESEARCH_AGENT_PYTHON" -m research_agent.application.environment_check --config "$RESEARCH_AGENT_JOB_CONFIG" --environment <name> --executor <id> --version <version>
 ```
 
-This checks configured environments and may contact their SSH targets. Platform
-observations from `job_probe` and software dependency checks are distinct.
+This contacts only the selected environment. For a program or task script without
+a recipe, replace executor/version with `--backend <binding>`; optionally select
+`--runtime native` or `--runtime python`. `--details` includes the observation.
+Missing recipes, missing configuration, and failed checks return `recipe_not_found`,
+`not_configured`, and `check_failed`, respectively. `verified` means that the
+selected environment prerequisites passed.
+
+For installation maintenance, omit the environment and recipe/backend selection
+to check all configured targets, including SSH targets. Platform observations
+from `job_probe` and software dependency checks are distinct.
 
 ## Environments and ownership
 

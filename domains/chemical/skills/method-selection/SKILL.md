@@ -12,9 +12,11 @@ Use this Skill when selecting a method or preparing execution for an already spe
 Start from the requested observable or the scientific question to resolve. Consider
 system size, charge, spin, electronic state, metals or multireference risk,
 solvent, constraints, target observable, expected uncertainty, candidate
-quality, and cost. Check the selected environment with `job_probe`; do not infer
-software availability from a Skill description alone. Select a named local or
-remote environment and let the Skill construct the exact command and parameters.
+quality, and cost. Use the method Skill to choose the input, command or script,
+then select its software binding and a named local or remote environment in
+`job.toml`. `job_probe` checks the platform; request preparation checks the selected
+software and declared dependencies. For diagnosis or a native command, use the
+[targeted environment check](references/runtime_environment.md).
 
 Use inexpensive exploration only when it answers a declared question. State
 when a higher-level calculation, alternate method, or robustness check is
@@ -24,7 +26,8 @@ calculation intent.
 For a requested optimization/single-point multi-method or multi-environment comparison, expand a complete
 `method × environment × {opt, sp}` matrix before launching work, then probe
 each environment and record independent failures for individual cells. The
-execution entry comes from the installed extension inventory and its method Skill.
+method Skill guides execution through a predefined recipe, native command, or
+task-specific script. A missing recipe does not imply missing software.
 In this comparison, each `sp` depends on the `opt` output for the same method and
 environment. Other studies may use explicitly chosen fixed geometries and TS/Freq/IRC/scan inputs; the Agent defines their dependencies. If one matrix
 cell is unavailable, block that cell explicitly; do not silently substitute a

@@ -15,7 +15,7 @@ OpenSSH/SCP 与 Torque 传输层，不是另一套公共计算生命周期。使
 或除探测和传输检查之外的启动门禁。
 
 `job_probe` 检查平台可用性，不证明科学方法就绪。核实所选 backend 的命令、激活脚本和
-Python 绑定；需要时执行程序的有界 help/version 检查或 Skill 专用 doctor。
+Python 绑定可用[定向环境检查](runtime_environment.zh-CN.md)；需要时执行程序的有界 help/version 检查或 Skill 专用 doctor。
 CF22D 的 [doctor.py](../../cf22d/scripts/doctor.py) 检查配置的 PySCF 环境和方法构造，
 不证明其他程序就绪。当前没有内置 NEB 就绪探测或 workflow registry。
 不要在研究 workspace 中安装科学依赖。

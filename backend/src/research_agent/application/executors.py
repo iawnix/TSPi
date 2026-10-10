@@ -26,6 +26,55 @@ def registered_executor(identifier, version):
     return registered_entry("executors", identifier, version)
 
 
+def list_recipes(*, executor=None, version=None, backend=None, skill=None, details=False,
+                 config=None, environment=None):
+    """Index preparation shortcuts, independently of scientific capability."""
+    settings = load_job_config(config) if config else None
+    if bool(config) != bool(environment):
+        raise ValueError("recipe_list_requires_config_and_environment_together")
+    if settings and environment not in settings['environments']:
+        raise ValueError("execution_environment_not_configured")
+    recipes = []
+    for catalog in installed_catalogs():
+        for entry in catalog['executors']:
+            if any(value is not None and entry.get(key) != value for key, value in
+                   [('id', executor), ('version', version), ('backend', backend), ('skill', skill)]):
+                continue
+            row = copy.deepcopy(entry) if details else {
+                key: entry[key] for key in ('id', 'version', 'skill', 'backend', 'runtime', 'inputs') if key in entry}
+            if settings:
+                row['binding_status'] = ('configured' if entry['backend'] in
+                    settings['environments'][environment].get('backends', {}) else 'not_configured')
+            recipes.append(row)
+    return {'scope': 'predefined_recipes', 'software_availability': 'not_checked',
+            **({'environment': environment} if environment else {}), 'recipes': recipes}
+
+
+def _load_cli(base, descriptor):
+    # Catalog verification pins this standard-library-only contract; never
+    # import the scientific entrypoint in the control interpreter.
+    spec = importlib.util.spec_from_file_location("research_agent_executor_cli", base / descriptor['cli'])
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    return cli
+
+
+def print_runner_help(executor, version):
+    base, descriptor = registered_executor(executor, version)
+    print(f"Recipe: {executor}@{version}; backend: {descriptor['backend']}")
+    print('Managed argv template: ' + json.dumps(descriptor['argv']))
+    print('Provide input roles with preparer --input role=file: ' + json.dumps(descriptor['inputs']))
+    print('Pass other runner arguments after --. The preparer supplies fixed input/output/executable flags.')
+    if not descriptor.get('cli'):
+        print('No bundled CLI help; consult the method Skill or native program documentation.')
+        return
+    try:
+        _load_cli(base, descriptor).parse_arguments(['--help'])
+    except SystemExit as exc:
+        if exc.code != 0:
+            raise
+
+
 def _relative(value):
     path = Path(value)
     if not value or path.is_absolute() or ".." in path.parts or path.as_posix() != value or value == ".":
@@ -161,11 +210,7 @@ def _prepare(config, environment, base, descriptor, resources, inputs, arguments
     for token in template:
         argv.extend(substitutions.get(token, [token]))
     if descriptor.get("cli"):
-        # This is the installed, pinned, standard-library-only argument
-        # contract. Importing the scientific entrypoint here is forbidden.
-        spec = importlib.util.spec_from_file_location("research_agent_executor_cli", base / descriptor["cli"])
-        cli = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(cli)
+        cli = _load_cli(base, descriptor)
         diagnostic = io.StringIO()
         try:
             with contextlib.redirect_stderr(diagnostic):
@@ -201,14 +246,17 @@ def _prepare(config, environment, base, descriptor, resources, inputs, arguments
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--list", action="store_true", help="Show installed execution descriptors")
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False, add_help=False)
+    parser.add_argument("-h", "--help", action="store_true", help="Show preparer help, or the selected executor's runner help")
+    parser.add_argument("--list", action="store_true", help="List predefined recipes; this is not a software availability check")
+    parser.add_argument("--details", action="store_true", help="Include full descriptors with --list")
+    parser.add_argument("--skill", help="Filter --list by associated Skill")
     parser.add_argument("--config")
     parser.add_argument("--environment")
     parser.add_argument("--executor")
     parser.add_argument("--version")
     parser.add_argument("--script", help="Pin a task-specific Python script instead of an installed executor")
-    parser.add_argument("--backend", help="Named Python backend for --script")
+    parser.add_argument("--backend", help="Named Python backend for --script, or backend filter for --list")
     parser.add_argument("--input", action="append", default=[], help="role=source path")
     parser.add_argument("--input-artifact", action="append", default=[], help="Registered input Artifact id or reference, whose bytes must be staged")
     parser.add_argument("--dependency", action="append", default=[], help="source=relative Job destination")
@@ -217,9 +265,20 @@ def main():
     parser.add_argument("--output", help="Save a request and print its file/digest for job_start")
     parser.add_argument("arguments", nargs=argparse.REMAINDER)
     args = parser.parse_args()
-    if args.list:
-        print(json.dumps([entry for catalog in installed_catalogs() for entry in catalog["executors"]], indent=2))
+    if args.help:
+        if args.executor:
+            if not args.version:
+                parser.error("selected runner help requires --executor and --version")
+            print_runner_help(args.executor, args.version)
+        else:
+            parser.print_help()
         return
+    if args.list:
+        print(json.dumps(list_recipes(executor=args.executor, version=args.version, backend=args.backend,
+            skill=args.skill, details=args.details, config=args.config, environment=args.environment), indent=2))
+        return
+    if args.details or args.skill:
+        parser.error("--details and --skill require --list")
     if not args.config or not args.environment:
         parser.error("--config and --environment are required")
     if args.script:

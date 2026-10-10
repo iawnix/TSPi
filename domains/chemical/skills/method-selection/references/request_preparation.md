@@ -1,6 +1,10 @@
 # Preparing a scientific Job request
 
-Use `"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --list` to discover installed execution entries. Each extension declares its backend, pinned scripts, CLI contract, input roles and outputs. Prepare an entry with `--config "$RESEARCH_AGENT_JOB_CONFIG" --environment <name> --executor <id> --version <version> --input <role>=<file>`, followed by `--` and runner arguments. The generic preparer stages only declared resources with their module paths intact. Target Python comes from the backend or environment binding in job.toml.
+Start from the method Skill's instructions and selected software binding. When it supplies a predefined recipe, prepare it with `--config "$RESEARCH_AGENT_JOB_CONFIG" --environment <name> --executor <id> --version <version> --input <role>=<file>`, followed by `--` and runner arguments. The generic preparer stages declared resources with their module paths intact. Target Python comes from the backend or environment binding in job.toml.
+
+For runner parameters, use `"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --executor <id> --version <version> --help`. This reads the pinned CLI contract without running science or contacting a compute target. Fixed input/output/executable flags are supplied by the preparer.
+
+If the recipe id is unknown, `executors --list --skill <name>` or `--list --backend <binding>` gives a concise index; `--details` includes full descriptors for diagnostics. This index covers predefined recipes, not all available methods or software. Optional `--config … --environment …` reports whether each recipe's binding is configured, without probing it. Check actual software with the [targeted environment check](runtime_environment.md). An absent recipe can use the task-specific script path below or a native command through a generic Job.
 
 Preserve the prepared request_id when recovering the same submission. A lost tool response does not authorize a new ID; intentional recalculation uses a new request.
 

@@ -15,7 +15,7 @@ before using an ensemble member in a later research Node.
 
 The remote environment's `crest` Backend binding must select an operator-managed, versioned
 CREST binary. Its activation script must make the compatible xTB executable
-available without changing the research workspace. Check the declared target with `"$RESEARCH_AGENT_PYTHON" -m research_agent.application.environment_check --config "$RESEARCH_AGENT_JOB_CONFIG"` after installation changes, then run a bounded scientific Job. A missing
+available without changing the research workspace. Check the declared target with `"$RESEARCH_AGENT_PYTHON" -m research_agent.application.environment_check --config "$RESEARCH_AGENT_JOB_CONFIG" --environment <name> --backend crest --runtime native` after installation changes, then run a bounded scientific Job. A missing
 command or activation script is an operational failure, not a scientific
 result.
 
