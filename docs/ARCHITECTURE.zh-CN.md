@@ -1,6 +1,6 @@
 # Research Memory 架构
 
-实施状态：本文保留既有 Research Memory 语义，并描述 CoRAgent 当前模块边界。此前 Research Memory 验收不代表本次重构已通过；当前进度见[实施记录](CORAGENT_REFACTOR_STATUS.zh-CN.md)。
+本文描述 CoRAgent 当前运行时与 Research Memory 的职责边界。验证和发布流程见[维护指南](MAINTAINER_GUIDE.zh-CN.md)。
 
 ## 所有权
 

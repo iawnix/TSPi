@@ -1,6 +1,6 @@
 # Maintainer Guide
 
-CoRAgent uses native Pi Harness. Host binds workspaces, authenticated input and durable scheduling; Python Research Memory stores original requirements, problem Nodes, immutable Results and relations. `runtime-bridge` only transports commands; CoRAgent Web consumes the same read-only queries. See [architecture](ARCHITECTURE.md) for refactor acceptance status.
+CoRAgent uses native Pi Harness. Host binds workspaces, authenticated input and durable scheduling; Python Research Memory stores original requirements, problem Nodes, immutable Results and relations. `runtime-bridge` only transports commands; CoRAgent Web consumes the same read-only queries. See [architecture](ARCHITECTURE.md) for the current ownership boundaries.
 
 ## Development Setup
 
@@ -90,7 +90,7 @@ Test the Native Harness client and Pi resource and scientific execution contract
 Monitor retry/acknowledgement behavior, wheel
 installation, Memory Node/Result Web queries and retrieval, and source-tampering rejection.
 Use the stable operations guide and focused test suites as the current evidence;
-superseded one-off reports belong only in docs/archive and are not current acceptance evidence.
+superseded plans and one-off reports remain in Git history, not in the current docs tree.
 
 Maintain English `SKILL.md` and Chinese translations together: English is the discovery entrypoint. See [Skills and the execution catalog](EXTENSIONS.md).
 

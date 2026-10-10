@@ -1,4 +1,4 @@
-# CoRAgent 0.18 installation layout
+# CoRAgent installation layout
 
 Only fresh standalone installations are supported. Installation-level `.pi/` and
 `.agents/` trees are rejected. There is no legacy fallback, migration tool or

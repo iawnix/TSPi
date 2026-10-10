@@ -1,7 +1,7 @@
 # Changelog
 
-This file records user-visible changes. Detailed architectural decisions live
-in `docs/archive/adr/`.
+This file records user-visible changes. Current architecture is documented in
+[the architecture guide](docs/ARCHITECTURE.md); earlier designs remain in Git history.
 
 ## Unreleased
 

@@ -2,7 +2,7 @@
 
 [English](MAINTAINER_GUIDE.md) | 简体中文
 
-CoRAgent 使用 Pi 原生 Harness。Host 绑定工作区、认证输入和持久调度；Python Research Memory 保存原始要求、问题 Node、不可变 Result 与关系。`runtime-bridge` 只传输命令，CoRAgent Web 只读同一查询协议。当前重构验收状态见[架构](ARCHITECTURE.zh-CN.md)。
+CoRAgent 使用 Pi 原生 Harness。Host 绑定工作区、认证输入和持久调度；Python Research Memory 保存原始要求、问题 Node、不可变 Result 与关系。`runtime-bridge` 只传输命令，CoRAgent Web 只读同一查询协议。当前职责边界见[架构](ARCHITECTURE.zh-CN.md)。
 
 ## 开发环境
 
@@ -74,7 +74,7 @@ Python 独立核验执行目录；Pi 按 `package.json.pi.skills` 发现产品�
 Job 状态与恢复由执行运行时管理；派发意图、执行观察和收集证据必须遵守
 工作区事务边界，同时保持查看、收集和取消能力。应测试 Harness client、Pi 资源与科学执行合同、Monitor
 重试与回执、wheel 安装、研究快照和检索的 Web 展示 和源码篡改拒绝。当前证据以稳定的运维文档、
-源码测试和组件测试为准，旧验收报告仅放 docs/archive，不作为当前完成证据。
+源码测试和组件测试为准，过时方案和一次性验收报告保留在 Git 历史中，不放入当前文档目录。
 
 ## 文档归属
 

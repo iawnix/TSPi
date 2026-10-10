@@ -15,7 +15,6 @@ TERMINAL = ROOT / "docs" / "TERMINAL.md"
 TERMINAL_ZH = ROOT / "docs" / "TERMINAL.zh-CN.md"
 INSTALLATION = ROOT / "docs" / "INSTALLATION.md"
 MAINTAINER = ROOT / "docs" / "MAINTAINER_GUIDE.md"
-ADR = ROOT / "docs" / "archive" / "adr" / "0001-phase-node-research-state.md"
 SKILL_ROOT = ROOT / "skills" / "research-memory"
 SKILL = SKILL_ROOT / "SKILL.md"
 REFERENCES = SKILL_ROOT / "references"
@@ -32,8 +31,7 @@ FOCUSED_SKILLS = {
 
 PUBLIC_DOCS = (
     README, README_ZH, ARCHITECTURE, ARCHITECTURE_ZH, TERMINAL, TERMINAL_ZH,
-    INSTALLATION, MAINTAINER, ADR,
-
+    INSTALLATION, MAINTAINER, ROOT / "docs/README.md", ROOT / "docs/README.zh-CN.md",
 )
 
 
@@ -102,7 +100,7 @@ def test_public_markdown_relative_links_resolve_inside_the_package() -> None:
         for root in FOCUSED_SKILLS.values()
         for path in (root / "SKILL.md", root / "SKILL.zh-CN.md", *sorted((root / "references").glob("*.md")))
     ]
-    for path in (*PUBLIC_DOCS, SKILL, SKILL_ROOT / "SKILL.zh-CN.md", *sorted(REFERENCES.glob("*.md")), *focused_files):
+    for path in {*PUBLIC_DOCS, *sorted((ROOT / "docs").rglob("*.md")), SKILL, SKILL_ROOT / "SKILL.zh-CN.md", *sorted(REFERENCES.glob("*.md")), *focused_files}:
         for raw_target in link_pattern.findall(path.read_text(encoding="utf-8")):
             target = raw_target.strip().strip("<>")
             if target.startswith("#") or re.match(r"^[a-z][a-z0-9+.-]*:", target, re.IGNORECASE):

@@ -1,6 +1,6 @@
 # 变更日志
 
-这里记录面向用户的变化；架构决策详见 `docs/archive/adr/`。
+这里记录面向用户的变化；当前设计见[架构文档](docs/ARCHITECTURE.zh-CN.md)，旧方案可通过 Git 历史查询。
 
 ## 未发布
 

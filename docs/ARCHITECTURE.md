@@ -1,6 +1,7 @@
 # Research Memory architecture
 
-Implementation status: Research Memory semantics are retained in the current CoRAgent module boundaries. Earlier Memory acceptance does not certify this refactor; see the [current implementation record](CORAGENT_REFACTOR_STATUS.zh-CN.md).
+This guide describes CoRAgent's current runtime and Research Memory boundaries.
+See the [maintainer guide](MAINTAINER_GUIDE.md) for validation and release procedures.
 
 ## Ownership
 
