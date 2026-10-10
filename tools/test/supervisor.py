@@ -43,7 +43,12 @@ def write_json(path: Path, value: object):
 
 class Supervisor:
     def __init__(self, run: Path):
-        if ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) != 0:
+        self.libc = ctypes.CDLL(None, use_errno=True)
+        previous_subreaper = ctypes.c_int()
+        if self.libc.prctl(37, ctypes.byref(previous_subreaper), 0, 0, 0) != 0:
+            raise OSError('Cannot read caller child-subreaper state')
+        self.previous_subreaper = previous_subreaper.value
+        if self.libc.prctl(36, 1, 0, 0, 0) != 0:
             raise OSError('Linux child subreaper unavailable')
         self.run = run
         self.items: dict[int, dict] = {}
@@ -113,9 +118,14 @@ class Supervisor:
         return result
 
     def close(self):
-        result = self.cleanup()
-        for signum, handler in self.previous.items(): signal.signal(signum,handler)
-        return result
+        try:
+            return self.cleanup()
+        finally:
+            for signum, handler in self.previous.items(): signal.signal(signum,handler)
+            # Do not make subsequent subprocess users inherit responsibility
+            # for reaping unrelated orphaned grandchildren in this process.
+            if self.libc.prctl(36, self.previous_subreaper, 0, 0, 0) != 0:
+                raise OSError('Cannot restore caller child-subreaper state')
 
 
 def reap(run: Path) -> dict:

@@ -8,11 +8,42 @@ import sys
 from tools.test.runner import changes
 from tools.test.supervisor import Supervisor, alive, identity
 from tests.support.repo import REPO_ROOT
+import pytest
 
 
 def run_layout(tmp_path):
     for name in ('logs','report','sockets'): (tmp_path/name).mkdir()
     return tmp_path
+
+
+@pytest.mark.parametrize('previous', [0, 1])
+def test_supervisor_restores_callers_child_subreaper_state(tmp_path, previous):
+    # An isolated caller makes both initial states deterministic, regardless of
+    # which process-management tests ran earlier in this pytest shard.
+    program = '''
+import ctypes
+import sys
+from pathlib import Path
+from tools.test.supervisor import Supervisor
+
+libc = ctypes.CDLL(None, use_errno=True)
+previous = int(sys.argv[2])
+assert libc.prctl(36, previous, 0, 0, 0) == 0
+run = Path(sys.argv[1])
+for name in ('logs', 'report', 'sockets'):
+    (run / name).mkdir()
+supervisor = Supervisor(run)
+try:
+    current = ctypes.c_int()
+    assert libc.prctl(37, ctypes.byref(current), 0, 0, 0) == 0
+    assert current.value == 1
+finally:
+    supervisor.close()
+assert libc.prctl(37, ctypes.byref(current), 0, 0, 0) == 0
+assert current.value == previous, 'Supervisor leaked child-subreaper state into its caller'
+'''
+    subprocess.run([sys.executable, '-c', program, str(tmp_path), str(previous)],
+                   env=dict(os.environ, PYTHONPATH=str(REPO_ROOT)), check=True)
 
 
 def test_process_exiting_during_proc_read_is_absent(monkeypatch):
