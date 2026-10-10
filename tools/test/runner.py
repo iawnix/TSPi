@@ -181,12 +181,27 @@ def root_for(run: Path) -> Path:
 
 
 def inspect_case_results(run: Path, result: dict) -> None:
+    # Only emit names drawn from the captured public test inventory. Never
+    # publish case names/parameters, assertion messages, stdout or tracebacks.
+    source = run / 'source'
+    paths = {str(Path(path).relative_to(source)): Path(path) for path in suite_paths(result['suite'], source)}
+    failed_files = set()
     path=run/'report'/f'{result["suite"]}.xml'
     if path.is_file():
         cases=list(ET.parse(path).iter('testcase'))
         skipped=sum(case.find('skipped') is not None for case in cases)
         result['cases']=len(cases)
         result['skipped']=skipped
+        result['failures']=sum(case.find('failure') is not None for case in cases)
+        result['errors']=sum(case.find('error') is not None for case in cases)
+        for case in cases:
+            if case.find('failure') is None and case.find('error') is None:
+                continue
+            classname = case.get('classname', '')
+            for relative, absolute in paths.items():
+                module = relative.removesuffix('.py').replace('/', '.')
+                if classname == module or classname.startswith(module + '.') or case.get('name') in (relative, str(absolute)):
+                    failed_files.add(relative)
         if skipped and result['status']=='passed': result['status']='incomplete'
     elif result['suite'] in ('node-fast','native-pi'):
         text=(run/'logs'/f'{result["suite"]}.log').read_text(errors='replace')
@@ -194,7 +209,15 @@ def inspect_case_results(run: Path, result: dict) -> None:
         for key in ('tests','pass','fail','skipped'):
             match=re.search(r'^# '+key+r' (\d+)$',text,re.M)
             if match: result[key]=int(match.group(1))
+        for block in re.split(r'^not ok \d+ - ', text, flags=re.M)[1:]:
+            location = re.search(r"^  location: ['\"]?(.+?):\d+:\d+['\"]?$", block, re.M)
+            if location:
+                for relative, absolute in paths.items():
+                    if location[1] in (relative, str(absolute), absolute.as_uri()):
+                        failed_files.add(relative)
         if result.get('skipped',0) and result['status']=='passed': result['status']='incomplete'
+    if failed_files:
+        result['failed_files'] = sorted(failed_files)
 
 
 def execute(args, root: Path, replay: Path | None = None) -> int:
@@ -260,7 +283,8 @@ def execute(args, root: Path, replay: Path | None = None) -> int:
             inspect_case_results(run,result)
             record['results'].append(result)
             write_json(run/'run.json',record)
-            print(json.dumps({key:result[key] for key in ('suite','status','seconds')}),flush=True)
+            public_keys = ('suite','status','seconds','cases','tests','pass','fail','failures','errors','skipped','failed_files')
+            print(json.dumps({key:result[key] for key in public_keys if key in result}),flush=True)
             if supervisor.cancelled: break
     finally:
         from tools.test.units import cleanup_units

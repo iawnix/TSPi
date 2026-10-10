@@ -3,8 +3,9 @@
 Use `python3 tools/test/runner.py` for all suites. Dependencies, snapshots,
 installations, caches and evidence stay under repository `local_debug/`.
 Nothing under that directory may be uploaded or included in a product artifact.
-Runner output contains only run IDs, result counts and status. Detailed failures
-remain in each run's local report and log files.
+Runner output contains only run IDs, result counts, status and failed test file
+names matched against the public source inventory. Case names, parameters,
+assertions and detailed failures remain in each run's local report and log files.
 
 `prepare` also caches the public `structure` and `wrapper` Conda locks for the complete public
 installer acceptance. `--job-profiles` selects these preparation profiles; it
