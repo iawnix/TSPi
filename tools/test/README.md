@@ -67,7 +67,9 @@ verified processes belonging to interrupted runs. `gc` respects live processes,
 retained-run dependency references, current environments and `KEEP` markers.
 
 `source` builds a content-addressed wheel once, verifies its digest, creates a
-fresh overlay and proves first-party imports come from that wheel. It retains
+fresh overlay and proves first-party imports come from that wheel. It explicitly
+binds catalog and Skill resources to the captured package, independently of the
+overlay's parent directories. It retains
 the overlay after failure. `release` accepts only the complete package archive
 with its adjacent `coragent-package-release.json`, invokes the real
 installer, verifies external-cwd startup and installed Python origins, and

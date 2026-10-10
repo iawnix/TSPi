@@ -34,6 +34,9 @@ def run(files, extra, *, workers, name, overlay=None):
         if overlay:
             env.pop('PYTHONPATH',None)
             env['CORAGENT_PYTHON']=str(overlay/'bin/python')
+            # Python comes from the wheel, while catalogs and skills belong to
+            # the captured package. CI's overlay has no ancestor checkout.
+            env['CORAGENT_PACKAGE_ROOT']=str(Path(__file__).resolve().parents[2])
         log=(run_root/'logs'/f'{shard}.log').open('wb')
         child=subprocess.Popen(command,env=env,stdout=log,stderr=subprocess.STDOUT)
         children.append((child,log,shard))
