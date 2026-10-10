@@ -76,42 +76,8 @@ export function createSystemPromptManifest({
   });
 }
 
-export function createSystemPromptTool(manifestOrResolver, contract) {
-  if (!contract || contract.name !== "system_prompt" || !contract.parameters) {
-    throw new TypeError("system prompt tool requires the canonical system_prompt contract");
-  }
-  const resolveManifest = typeof manifestOrResolver === "function"
-    ? manifestOrResolver
-    : () => manifestOrResolver;
-  return {
-    ...contract,
-    async execute(_params, api, context) {
-      const manifest = await resolveManifest(api.coragent, context);
-      assertManifest(manifest);
-      return {
-        content: [{ type: "text", text: JSON.stringify(manifest, null, 2) }],
-        details: {
-          sha256: manifest.sha256,
-          contributorCount: manifest.contributors.length,
-          provenanceComplete: manifest.provenance_complete,
-        },
-      };
-    },
-  };
-}
-
 export function sha256Text(text) {
   return createHash("sha256").update(text, "utf8").digest("hex");
-}
-
-function assertManifest(manifest) {
-  if (
-    manifest?.schema_version !== "coragent-system-prompt/2"
-    || typeof manifest.effective !== "string"
-    || !Array.isArray(manifest.contributors)
-  ) {
-    throw new TypeError("system_prompt requires a CoRAgent system prompt manifest");
-  }
 }
 
 function isStringArray(value) {

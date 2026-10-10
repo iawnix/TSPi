@@ -1,7 +1,6 @@
 import shared from "../../../contracts/commands/shared.json" with { type: "json" };
 
 const TOOL_ROWS = [
-  ["systemPrompt", "system_prompt", "deterministic_runtime"],
   ["taskBegin", "task_begin", "deterministic_runtime"],
   ["taskRead", "task_read", "deterministic_runtime"],
   ["taskUpdate", "task_update", "deterministic_runtime"],
@@ -35,7 +34,6 @@ export const PUBLIC_TOOL_EXECUTION = Object.freeze(Object.fromEntries(
 // this registry is the shared authority/effect/replay contract used by Hosts,
 // audits, and future transports.
 export const PUBLIC_TOOL_METADATA = Object.freeze({
-  system_prompt: Object.freeze({ authority: "host_read", effect: "read", replay: "safe", phase: "orient" }),
   task_begin: Object.freeze({ authority: "task_control", effect: "task_write", replay: "idempotent", phase: "advance" }),
   task_read: Object.freeze({ authority: "task_control", effect: "read", replay: "safe", phase: "orient" }),
   task_update: Object.freeze({ authority: "task_control", effect: "task_write", replay: "idempotent", phase: "advance" }),
@@ -116,9 +114,6 @@ export function createPublicToolContracts(Type) {
     taskBegin: contract("taskBegin", "Begin task", "Register a sustained user assignment before beginning its work. Cite actual user submission IDs from the task context, preserve the user's objective, and define concrete delivery criteria. Continue the current task for follow-ups; ordinary questions do not need a task.", Type.Unsafe(shared.tools.taskBegin)),
     taskRead: contract("taskRead", "Read task", "Read the current user task, its original request, delivery criteria, progress and waiting or stopping reason. This is separate from scientific Nodes and compute Jobs.", Type.Unsafe(shared.tools.taskRead)),
     taskUpdate: contract("taskUpdate", "Update task", "Record progress, wait on Jobs, identify a blocker, refine the user objective from its sources (a new user instruction resolving a blocker reactivates a blocked task), or propose completion with fixed Result/Artifact evidence. set_research replaces the entry_node_ids and focus_node_ids in research with returned Node references. Use the current expected_revision. Plans, notes and Node creation record activity without resetting the no-progress allowance. A failed candidate does not automatically block the whole project. Every delivery criterion needs evidence; a partial reply does not complete the task. Only the user may resume a paused task.", Type.Unsafe(shared.tools.taskUpdate)),
-    systemPrompt: contract("systemPrompt", "System Prompt", "Read the effective system prompt and its provenance.", Type.Unsafe(shared.tools.systemPrompt), {
-      promptSnippet: "Inspect the effective system prompt and its provenance",
-    }),
     state: contract("state", "Research memory", "Read a focused research snapshot: original tasks, important Nodes, their assessments and new execution facts. With ref, read a Node, immutable Result or record. For a large Node, specify field (goal/title/proposal/plan/progress/status/assessment_ref/subjects/relations) and page that field; only fully returned fields count as read for replacement. Follow returned pagination to inspect omitted details; reading never creates evidence dependencies. Read a Node before changing its proposal, plan, status, relations or assessment. The server tracks the revisions actually returned to this session.", Type.Unsafe(shared.tools.state)),
     search: contract("search", "Search research", "Find Nodes, Results and records by text. Empty query lists recent items. Filter by node_id, type, origin or after_sequence. Read a returned ref for its complete content; search does not establish an input or evidence relationship.", Type.Unsafe(shared.tools.search)),
     create: contract("create", "Create research Node", "Start an independently understandable research question or action. Only goal is required. Continue retries within the same Node; create another Node for an independent problem or branch. proposal describes a hypothesis or solution idea; plan describes how to investigate it. Optional relations express part_of, requires or alternative_to without maintaining reverse links. Example: {goal: 'Determine whether TS1 connects A and B', plan: 'Run forward and reverse IRC and inspect endpoints.'}.", Type.Unsafe(shared.tools.create), {executionMode: "sequential"}),

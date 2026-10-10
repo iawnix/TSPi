@@ -1,11 +1,6 @@
 {
   "schema_version": "coragent-command-schemas/1",
   "tools": {
-    "systemPrompt": {
-      "type": "object",
-      "properties": {},
-      "additionalProperties": false
-    },
     "state": {
       "type": "object",
       "properties": {

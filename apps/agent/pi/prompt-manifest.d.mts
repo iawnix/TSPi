@@ -1,5 +1,3 @@
-import type { TSchema } from "typebox";
-
 export type SystemPromptOrigin = "native" | "skill";
 export type SystemPromptAttribution = "exact" | "structured" | "observed" | "unattributed";
 export type SystemPromptRuntime = "native-app-server";
@@ -44,32 +42,5 @@ export function createSystemPromptManifest(options: {
   provenanceComplete: boolean;
   limitations?: readonly string[];
 }): SystemPromptManifest;
-
-export function createSystemPromptTool(
-  manifestOrResolver:
-    | SystemPromptManifest
-    | ((ctx: import("../tools/context.mjs").ToolExecutionContext, context: import("@earendil-works/chord").Context) => SystemPromptManifest | Promise<SystemPromptManifest>),
-  contract: {
-    name: "system_prompt";
-    label: string;
-    description: string;
-    promptSnippet: string;
-    parameters: TSchema;
-  },
-): {
-  name: string;
-  label: string;
-  description: string;
-  promptSnippet: string;
-  parameters: TSchema;
-  execute(
-    params: Record<string, never>,
-    api: import("@earendil-works/pi-durable").ToolExecutionApi & { readonly coragent: import("../tools/context.mjs").ToolExecutionContext },
-    context: import("@earendil-works/chord").Context,
-  ): Promise<{
-    content: Array<{ type: "text"; text: string }>;
-    details: { sha256: string; contributorCount: number; provenanceComplete: boolean };
-  }>;
-};
 
 export function sha256Text(text: string): string;

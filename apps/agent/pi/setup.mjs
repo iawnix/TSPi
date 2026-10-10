@@ -22,7 +22,7 @@ import { loadProductSkills } from "../resources/skills.mjs";
 import { createCoreTools } from "../tools/registry.mjs";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { TODO_CONTEXT as PI_TODO_CONTEXT } from "@earendil-works/chord/context";
-import { createSystemPromptManifest, createSystemPromptTool } from "./prompt.mjs";
+import { createSystemPromptManifest } from "./prompt.mjs";
 import { createPackageSourceReadGuard } from "./policy.mjs";
 import { wrapToolForHarness } from "../tools/envelope.mjs";
 import { createToolExecutionContext } from "../tools/context.mjs";
@@ -70,7 +70,6 @@ export async function createCoRAgentHarness(databasePath, options) {
       skills: { source: loadedSkills.skillsRoot, items: loadedSkills.skills },
 
     });
-    const systemPromptTool = createSystemPromptTool(promptManifest);
     const injectDecisionContext = createDecisionContextInjector({ bridge: commandBridge, coordinator: transactionCoordinator,
       sessionId, estimateContextTokens,
     });
@@ -87,7 +86,6 @@ export async function createCoRAgentHarness(databasePath, options) {
     const durableTools = [
       ...businessTools,
       ...createTaskTools(() => taskController),
-      systemPromptTool,
     ].map((tool) => wrapToolForHarness(tool, {
       toolContext,
       invocation: api => ({ workspaceRoot: cwd, sessionId,

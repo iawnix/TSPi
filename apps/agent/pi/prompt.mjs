@@ -1,18 +1,10 @@
 import { loadPi } from "./source.mjs";
-import Type from "./typebox.mjs";
-import { createPublicToolContracts } from "../tools/contracts.mjs";
 import {
   createPromptContributor,
   createSystemPromptManifest as createManifest,
-  createSystemPromptTool as createTool,
 } from "./prompt-manifest.mjs";
 
-const SYSTEM_PROMPT_CONTRACT = createPublicToolContracts(Type).systemPrompt;
 const { formatSkillsForPrompt } = await loadPi("skills");
-
-export function createSystemPromptTool(manifestOrResolver) {
-  return createTool(manifestOrResolver, SYSTEM_PROMPT_CONTRACT);
-}
 
 export function createSystemPromptManifest({ native, skills }) {
   const contributors = [promptContributor("native", native)];

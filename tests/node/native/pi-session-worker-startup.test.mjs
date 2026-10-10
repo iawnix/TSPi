@@ -26,11 +26,17 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
   let completed = false;
   let backend;
   let modelRequests = 0;
+  let modelRequest;
   const modelServer = createServer((_request, response) => {
-    modelRequests++;
-    response.writeHead(200, {'content-type':'text/event-stream'});
-    response.write(`data: ${JSON.stringify({id:'fixture',object:'chat.completion.chunk',created:1,model:'fixture',
-      choices:[{index:0,delta:{role:'assistant',content:'Local deterministic response'},finish_reason:null}]})}\n\n`);
+    let body = '';
+    _request.on('data', chunk => { body += chunk; });
+    _request.on('end', () => {
+      modelRequest = JSON.parse(body);
+      modelRequests++;
+      response.writeHead(200, {'content-type':'text/event-stream'});
+      response.write(`data: ${JSON.stringify({id:'fixture',object:'chat.completion.chunk',created:1,model:'fixture',
+        choices:[{index:0,delta:{role:'assistant',content:'Local deterministic response'},finish_reason:null}]})}\n\n`);
+    });
     // Keep this local stream open until the user aborts; no remote provider is used.
   });
   await new Promise(resolve => modelServer.listen(0, '127.0.0.1', resolve));
@@ -407,6 +413,12 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         terminal.sendInput('\x1b[200~Run the local deterministic fixture\n'+'Local fixture line\n'.repeat(50)+'\x1b[201~'); terminal.sendInput('\r');
         assert.doesNotMatch(renderedText(),/Fixture completed/);
         await waitFor(()=>modelRequests===1,10000);
+        const toolNames = modelRequest.tools.map(tool => tool.function.name);
+        assert.ok(toolNames.includes('task_read'));
+        assert.ok(!toolNames.includes('system_prompt'), 'prompt diagnostics are not a model tool');
+        const systemMessages = modelRequest.messages.filter(message => message.role === 'system');
+        assert.match(JSON.stringify(systemMessages), /You are CoRAgent/);
+        assert.match(JSON.stringify(systemMessages), /<available_skills>/);
         await waitFor(()=>renderedText().includes('Working'),10000);
         const transcript=renderLayoutFrame(component.layoutRoot,100,24,()=>{}).primaryScrollView;
         transcript.scrollTo(5,{disableFollow:true});
