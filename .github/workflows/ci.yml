@@ -15,9 +15,11 @@ jobs:
       max-parallel: 4
       matrix:
         suite: [static, fast, node-fast, integration, native-pi, package, source, system-services]
-    env:
-      CORAGENT_TEST_ENV_ROOT: ${{ runner.temp }}/ra
     steps:
+      - name: Configure private test root
+        shell: bash
+        # The runner context is unavailable in job-level env expressions.
+        run: echo "CORAGENT_TEST_ENV_ROOT=$RUNNER_TEMP/ra" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
