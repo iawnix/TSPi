@@ -15,13 +15,13 @@ export function createResearchTools({ commandBridge }) {
     ...TOOL_CONTRACTS[key],
     outputLimits: RESEARCH_OUTPUT_LIMITS,
     async execute(params, api, context) {
-      const root = boundWorkspaceRoot(params, api.researchAgent);
+      const root = boundWorkspaceRoot(params, api.coragent);
       const {root: _root, ...request} = params;
       const writing = ["create", "update", "result"].includes(operation);
-      if (operation !== "search") request.session_id = api.researchAgent?.session_id;
+      if (operation !== "search") request.session_id = api.coragent?.session_id;
       if (writing) {
-        requireNativeWrites(`research_${operation}`, api.researchAgent);
-        request.request_id = `${api.researchAgent?.session_id}:${api.callId}`;
+        requireNativeWrites(`research_${operation}`, api.coragent);
+        request.request_id = `${api.coragent?.session_id}:${api.callId}`;
       }
       const result = await commands.execute(`research.${operation}`, root, request, context?.abortSignal);
       const visible = researchToolView(result, operation, params);

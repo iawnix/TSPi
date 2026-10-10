@@ -32,7 +32,7 @@ export async function loadProductSkills({ packageRoot = installedRoot } = {}) {
     readFile(join(packageRoot, "config/resources.json"), "utf8").then(JSON.parse),
     loadPi("skills"),
   ]);
-  if (inventory.schema_version !== "research-agent-resources/1") throw new Error("Invalid resource inventory");
+  if (inventory.schema_version !== "coragent-resources/1") throw new Error("Invalid resource inventory");
   const skillRoots = manifest.pi.skills.map(value => ownedPath(packageRoot, value));
   const resourceFiles = [];
   for (const root of skillRoots) {
@@ -43,7 +43,7 @@ export async function loadProductSkills({ packageRoot = installedRoot } = {}) {
     }
     await regularTree(packageRoot, root, resourceFiles);
   }
-  const promptFile = ownedPath(packageRoot, "prompts/research-agent.md");
+  const promptFile = ownedPath(packageRoot, "prompts/coragent.md");
   await regularTree(packageRoot, dirname(promptFile), resourceFiles);
   if (!resourceFiles.includes(promptFile)) throw new Error("Managed system prompt is missing");
   for (const file of resourceFiles) {
@@ -63,7 +63,7 @@ export async function loadProductSkills({ packageRoot = installedRoot } = {}) {
   const skills = loaded.skills.map(skill => ({
     ...skill,
     digest: inventory.files[relative(packageRoot, skill.filePath).split(sep).join("/")],
-    provenance_schema: "research-agent-skill-provenance/1",
+    provenance_schema: "coragent-skill-provenance/1",
   }));
   return { packageRoot, skillsRoot: packageRoot, skills, resourceFiles };
 }

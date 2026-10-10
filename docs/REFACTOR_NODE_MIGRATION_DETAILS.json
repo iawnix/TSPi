@@ -22,7 +22,7 @@
       ]
     },
     {
-      "source": "apps/app-server/tspi-link-host.mjs",
+      "source": "apps/app-server/coragent-link-host.mjs",
       "status": "moved",
       "targets": [
         "apps/agent/transport/link.mjs"
@@ -50,7 +50,7 @@
       ]
     },
     {
-      "source": "apps/app-server/tspi-browser-gateway.mjs",
+      "source": "apps/app-server/coragent-browser-gateway.mjs",
       "status": "moved",
       "targets": [
         "apps/agent/transport/browser.mjs"
@@ -64,21 +64,21 @@
       ]
     },
     {
-      "source": "apps/app-server/tspi-harness-backend.mjs",
+      "source": "apps/app-server/coragent-harness-backend.mjs",
       "status": "moved",
       "targets": [
         "apps/agent/pi/backend.mjs"
       ]
     },
     {
-      "source": "apps/app-server/tspi-native-client-facet.mjs",
+      "source": "apps/app-server/coragent-native-client-facet.mjs",
       "status": "moved",
       "targets": [
         "apps/agent/terminal/commands/facet.mjs"
       ]
     },
     {
-      "source": "apps/app-server/tspi-terminal-errors.mjs",
+      "source": "apps/app-server/coragent-terminal-errors.mjs",
       "status": "moved",
       "targets": [
         "apps/agent/terminal/errors.mjs"
@@ -165,25 +165,25 @@
         "apps/agent/pi/setup.mjs",
         "apps/agent/pi/coding-tools.mjs",
         "apps/agent/resources/skills.mjs",
-        "prompts/research-agent.md"
+        "prompts/coragent.md"
       ]
     },
     {
-      "source": "apps/app-server/tspi-host-client.mjs",
+      "source": "apps/app-server/coragent-host-client.mjs",
       "status": "moved",
       "targets": [
         "apps/agent/transport/host-client.mjs"
       ]
     },
     {
-      "source": "apps/app-server/tspi-host-proxy.mjs",
+      "source": "apps/app-server/coragent-host-proxy.mjs",
       "status": "moved",
       "targets": [
         "apps/agent/transport/ssh.mjs"
       ]
     },
     {
-      "source": "apps/app-server/tspi-host.mjs",
+      "source": "apps/app-server/coragent-host.mjs",
       "status": "split",
       "targets": [
         "apps/agent/host/server.mjs",
@@ -194,21 +194,21 @@
       ]
     },
     {
-      "source": "apps/app-server/tspi-terminal-client.mjs",
+      "source": "apps/app-server/coragent-terminal-client.mjs",
       "status": "moved",
       "targets": [
         "apps/agent/terminal/main.mjs"
       ]
     },
     {
-      "source": "apps/app-server/tspi-client-queries.mjs",
+      "source": "apps/app-server/coragent-client-queries.mjs",
       "status": "moved",
       "targets": [
         "apps/agent/pi/services/queries.mjs"
       ]
     },
     {
-      "source": "apps/app-server/tspi-terminal-session.mjs",
+      "source": "apps/app-server/coragent-terminal-session.mjs",
       "status": "moved",
       "targets": [
         "apps/agent/terminal/session.mjs"
@@ -234,28 +234,28 @@
       "targets": []
     },
     {
-      "source": "apps/app-server/tspi-tool-renderers.mjs",
+      "source": "apps/app-server/coragent-tool-renderers.mjs",
       "status": "moved",
       "targets": [
         "apps/agent/terminal/renderers/tools.mjs"
       ]
     },
     {
-      "source": "apps/app-server/tspi-status-presentation.mjs",
+      "source": "apps/app-server/coragent-status-presentation.mjs",
       "status": "moved",
       "targets": [
         "apps/agent/terminal/status/presentation.mjs"
       ]
     },
     {
-      "source": "apps/app-server/tspi-document-view.mjs",
+      "source": "apps/app-server/coragent-document-view.mjs",
       "status": "moved",
       "targets": [
         "apps/agent/terminal/renderers/document.mjs"
       ]
     },
     {
-      "source": "apps/app-server/tspi-monitor-subscription.mjs",
+      "source": "apps/app-server/coragent-monitor-subscription.mjs",
       "status": "moved",
       "targets": [
         "apps/agent/terminal/status/monitor.mjs"
@@ -276,7 +276,7 @@
       ]
     },
     {
-      "source": "apps/app-server/tspi-command-panel.mjs",
+      "source": "apps/app-server/coragent-command-panel.mjs",
       "status": "moved",
       "targets": [
         "apps/agent/terminal/commands/panel.mjs"
@@ -486,10 +486,10 @@
       ]
     },
     {
-      "source": "packages/agent-ui/themes/ts-theme.json",
+      "source": "packages/agent-ui/themes/coragent-theme.json",
       "status": "moved",
       "targets": [
-        "apps/agent/terminal/themes/research-agent.json"
+        "apps/agent/terminal/themes/coragent.json"
       ]
     }
   ]

@@ -3,7 +3,7 @@ name: method-selection
 description: 选择科学方法并准备命名计算环境；用户已经指定方法时同样用于执行准备。
 ---
 
-# ResearchAgent 方法选择
+# CoRAgent 方法选择
 
 [English version](SKILL.md)
 

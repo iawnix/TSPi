@@ -3,8 +3,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /** Local deterministic provider: integration tests never contact a model API. */
 export default function fixture(pi: ExtensionAPI) {
-  pi.registerProvider("research-agent-fixture", {
-    baseUrl: "http://127.0.0.1:1", apiKey: "fixture-only", api: "research-agent-fixture-api",
+  pi.registerProvider("coragent-fixture", {
+    baseUrl: "http://127.0.0.1:1", apiKey: "fixture-only", api: "coragent-fixture-api",
     models: [{ id: "echo", name: "Local fixture", reasoning: false, input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 200000, maxTokens: 1024 }],
     streamSimple(model, context) {

@@ -3,7 +3,7 @@ name: irc
 description: 规划和评估双向内禀反应坐标计算，并将端点归属到已声明的分子势阱。
 ---
 
-# ResearchAgent IRC
+# CoRAgent IRC
 
 [English version](SKILL.md)
 

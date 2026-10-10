@@ -45,7 +45,7 @@ def test_geometry_identity_is_explicit_inference_and_rejects_wrong_isomer(tmp_pa
     assert result['status'] == 'mismatch' and result['inference']['charge'] == 0
 
 
-@pytest.mark.parametrize('marker', ['ResearchAgentSpec', 'TSPiSpec'])
+@pytest.mark.parametrize('marker', ['CoRAgentSpec', 'CoRAgentSpec'])
 def test_wrapped_title_digest_is_bounded(marker):
     digest = '1234567890abcdef' * 4
     cut = 70 - len(marker) - 1
@@ -98,9 +98,9 @@ def test_registered_comparison_runs_as_job_and_mismatch_remains_publishable(tmp_
     target = structure(tmp_path / 'target.json', 'CC1CCC=CC1')
     actual = structure(tmp_path / 'actual.json', 'CC1=CCCCC1')
     refs = [execute('artifact.register', tmp_path, {'path': str(path)}) for path in (target, actual)]
-    prepared = prepare(os.environ['RESEARCH_AGENT_JOB_CONFIG'], 'local', 'chemical.compare', '1',
+    prepared = prepare(os.environ['CORAGENT_JOB_CONFIG'], 'local', 'chemical.compare', '1',
                        {'target': target, 'actual': actual}, input_artifact_ids=[r['artifact_id'] for r in refs])
-    assert '.research-agent/python_entrypoint.py' in prepared['command']
+    assert '.coragent/python_entrypoint.py' in prepared['command']
     assert set(prepared['metadata']['input_roles']) == {'target', 'actual'}
     collected = run_job(tmp_path, prepared)
     comparison = selected(collected, '/comparison.json')

@@ -1,6 +1,6 @@
 # Execution environment selection
 
-`RESEARCH_AGENT_PYTHON` is the installation's control interpreter. Use it to prepare
+`CORAGENT_PYTHON` is the installation's control interpreter. Use it to prepare
 requests and format existing evidence. It does not supply scientific libraries.
 
 Use the method Skill to choose a recipe, native command or task script and a
@@ -16,7 +16,7 @@ Request preparation already checks the chosen target. For diagnosis before
 preparation, check only the selected recipe and environment:
 
 ```bash
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.environment_check --config "$RESEARCH_AGENT_JOB_CONFIG" --environment <name> --executor <id> --version <version>
+"$CORAGENT_PYTHON" -m research_agent.application.environment_check --config "$CORAGENT_JOB_CONFIG" --environment <name> --executor <id> --version <version>
 ```
 
 For a native command or task script without a recipe, replace executor/version

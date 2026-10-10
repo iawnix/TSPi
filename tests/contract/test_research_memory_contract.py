@@ -17,7 +17,7 @@ def test_web_exposes_snapshot_search_and_full_original(tmp_path):
     def request(route,query=None):
         return handle_request(state,{'schema_version':PROVIDER_PROTOCOL,'request_id':'r','operation':'route','workspace_id':'web_one','route':route,'query':query or {}})
     payload=request('snapshot')
-    contracts = Path(__file__).resolve().parents[2] / 'contracts/ts-web'
+    contracts = Path(__file__).resolve().parents[2] / 'contracts/coragent-web'
     validator = Draft202012Validator(json.loads((contracts / 'research-memory-response.schema.json').read_text()))
     validator.validate(payload)
     validator.validate(json.loads((contracts / 'research-memory-response.fixture.json').read_text()))

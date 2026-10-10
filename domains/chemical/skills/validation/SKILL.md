@@ -3,7 +3,7 @@ name: validation
 description: Validate a transition-state candidate as a saddle point with the intended mode, structure, electronic state, and stereochemical assignment.
 ---
 
-# ResearchAgent Transition-State Validation
+# CoRAgent Transition-State Validation
 
 [Chinese version](SKILL.zh-CN.md)
 

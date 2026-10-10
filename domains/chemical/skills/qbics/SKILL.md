@@ -3,7 +3,7 @@ name: qbics
 description: Assess QBICS applicability and verify an installed command, its inputs and validation needs before running a bounded research Job.
 ---
 
-# ResearchAgent QBICS
+# CoRAgent QBICS
 
 [Chinese version](SKILL.zh-CN.md)
 

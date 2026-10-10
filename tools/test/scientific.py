@@ -12,9 +12,9 @@ from tools.test.environment import locked
 
 def prepare(package: Path, root: Path, names: list[str]):
     available = profiles(package)
-    conda = os.environ.get('RESEARCH_AGENT_TEST_CONDA') or shutil.which('conda')
+    conda = os.environ.get('CORAGENT_TEST_CONDA') or shutil.which('conda')
     if not conda:
-        raise ValueError('Set RESEARCH_AGENT_TEST_CONDA before preparing scientific caches')
+        raise ValueError('Set CORAGENT_TEST_CONDA before preparing scientific caches')
     for name in dict.fromkeys(names):
         if name not in available:
             raise ValueError('Unknown scientific preparation profile: ' + name)

@@ -73,7 +73,7 @@ def provision(request):
         pending = store / ('.' + prefix.name + '.pending')
         # A prior interrupted attempt may leave a partial environment. Only
         # prefixes with our pending ownership record can be removed on retry.
-        receipt = prefix / 'research-agent-environment.json'
+        receipt = prefix / 'coragent-environment.json'
         if prefix.exists() and pending.exists() and not receipt.exists():
             if pending.read_bytes() != content or prefix.is_symlink():
                 raise ValueError('target_incomplete_environment_not_owned')
@@ -103,9 +103,9 @@ def main():
     try:
         result = provision(request)
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
-        print('RESEARCH_AGENT_PROVISION=' + json.dumps({'status': 'failed', 'error': str(error)}))
+        print('CORAGENT_PROVISION=' + json.dumps({'status': 'failed', 'error': str(error)}))
         return 1
-    print('RESEARCH_AGENT_PROVISION=' + json.dumps(result))
+    print('CORAGENT_PROVISION=' + json.dumps(result))
     return 0
 
 

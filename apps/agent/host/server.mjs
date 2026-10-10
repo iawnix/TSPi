@@ -20,20 +20,20 @@ const BASE_CAPABILITIES = ["workspace/list", "workspace/create", "workspace/atta
 const MONITOR_CAPABILITIES = ["monitor/list", "monitor/status", "monitor/enable", "monitor/disable"];
 
 /** Owns routing and durable acceptance records for the Native Pi Harness. */
-export async function startResearchAgentHost(options) {
+export async function startCoRAgentHost(options) {
   const {
     socketPath,
     workspaceRoot,
     stateRoot,
     sessionBackend,
     serverId = "local",
-    python = process.env.RESEARCH_AGENT_PYTHON || "python3",
+    python = process.env.CORAGENT_PYTHON || "python3",
     packageRoot = PACKAGE_ROOT,
     releaseId = deriveReleaseId(packageRoot),
     monitorPollMs = 2_000,
     monitorToken,
   } = options;
-  if (!sessionBackend) throw protocolError("native_backend_required", "ResearchAgent Host requires the Native Pi Harness backend");
+  if (!sessionBackend) throw protocolError("native_backend_required", "CoRAgent Host requires the Native Pi Harness backend");
   for (const [name, value] of Object.entries({ socketPath, workspaceRoot, stateRoot })) {
     if (typeof value !== "string" || !value.startsWith("/")) throw new TypeError(`${name} must be absolute`);
   }
@@ -99,7 +99,7 @@ export async function startResearchAgentHost(options) {
   async function handle(client, method, params) {
     if (!params || typeof params !== "object" || Array.isArray(params)) throw protocolError("invalid_params", "params must be an object");
     if (method === "initialize") {
-      if (params.protocol !== HOST_PROTOCOL) throw protocolError("protocol_mismatch", "Unsupported ResearchAgent Host protocol");
+      if (params.protocol !== HOST_PROTOCOL) throw protocolError("protocol_mismatch", "Unsupported CoRAgent Host protocol");
       client.initialized = true;
       return {
         protocol: HOST_PROTOCOL,

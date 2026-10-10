@@ -11,31 +11,31 @@ import { sessionActivityAt } from "../host/session-selection.mjs";
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/u;
 
 /**
- * Start Pi's experimental server and expose the ResearchAgent Agent Server backend.
+ * Start Pi's experimental server and expose the CoRAgent Agent Server backend.
  *
  * The experimental server remains the owner of session files, durable Harness,
  * lanes, and transcripts. This adapter translates Agent Server requests to
  * Pi's SessionManagement/AgentController services, so every client reaches
  * the same durable lane.
  */
-export async function createResearchAgentHarnessBackend(options = {}) {
-  const sourceRoot = absolute(options.sourceRoot || process.env.RESEARCH_AGENT_PI_RUNTIME_ROOT, "sourceRoot");
+export async function createCoRAgentHarnessBackend(options = {}) {
+  const sourceRoot = absolute(options.sourceRoot || process.env.CORAGENT_PI_RUNTIME_ROOT, "sourceRoot");
   // Node resolves module symlinks; Worker entry identity must use that same path.
-  const packageRoot = await realpath(absolute(options.packageRoot || process.env.RESEARCH_AGENT_PACKAGE_ROOT, "packageRoot"));
+  const packageRoot = await realpath(absolute(options.packageRoot || process.env.CORAGENT_PACKAGE_ROOT, "packageRoot"));
   const workspaceRoot = absolute(options.workspaceRoot, "workspaceRoot");
   const serverDirectory = absolute(options.serverDirectory, "serverDirectory");
   const sessionDir = absolute(options.sessionDir, "sessionDir");
   const stateRoot = absolute(options.stateRoot || join(serverDirectory, ".."), "stateRoot");
   const workerEntry = join(packageRoot, "apps/agent/pi/worker.mjs");
   const producerToken = await internalProducerToken(stateRoot);
-  process.env.RESEARCH_AGENT_INPUT_PRODUCER_TOKEN = producerToken;
+  process.env.CORAGENT_INPUT_PRODUCER_TOKEN = producerToken;
 
   // Install Pi's source aliases before importing any TypeScript source module.
   process.env.PI_EXPERIMENTAL = "1";
-  process.env.RESEARCH_AGENT_PI_RUNTIME_ROOT = sourceRoot;
-  process.env.RESEARCH_AGENT_PACKAGE_ROOT = packageRoot;
+  process.env.CORAGENT_PI_RUNTIME_ROOT = sourceRoot;
+  process.env.CORAGENT_PACKAGE_ROOT = packageRoot;
   process.env.PI_SESSION_WORKER_ENTRY = workerEntry;
-  process.env.RESEARCH_AGENT_WORKSPACE_ROOT = workspaceRoot;
+  process.env.CORAGENT_WORKSPACE_ROOT = workspaceRoot;
   await loadPi("resolver", sourceRoot);
 
   const [{ BACKGROUND_CONTEXT }, serverModule, runtimeModule] = await Promise.all([
@@ -55,7 +55,7 @@ export async function createResearchAgentHarnessBackend(options = {}) {
     directory: serverDirectory,
     serverId: options.serverId,
     sessionDir,
-    // ResearchAgent server tools and skills are loaded by pi-session-worker.mjs. An
+    // CoRAgent server tools and skills are loaded by pi-session-worker.mjs. An
     // empty presentation selection leaves the interactive UI entirely Pi-owned.
     pluginPackages: [],
     provider: options.model?.provider,
@@ -444,7 +444,7 @@ function hostSnapshot(value) {
 /** Project the pinned Pi ConversationView for Host presentation. */
 function normalizeLane(value) {
   const source = value || { entries: [], docs: {} };
-  if (source.__researchAgentLane === true) return source;
+  if (source.__coragentLane === true) return source;
   const docs = source.docs && typeof source.docs === "object" ? source.docs : {};
   const agent = docs["pi.agent"] && typeof docs["pi.agent"] === "object" ? docs["pi.agent"] : {};
   const live = docs["pi.live"] && typeof docs["pi.live"] === "object" ? docs["pi.live"] : {};
@@ -455,7 +455,7 @@ function normalizeLane(value) {
   const submissionId = inputs.length > 0 ? String(inputs[0]) : null;
   if (run && !submissionId) throw error("invalid_pi_view", "Pi run has no input submission identity");
   const operation = run ? {
-    // `id` remains the Pi scheduler task identity for diagnostics. ResearchAgent's
+    // `id` remains the Pi scheduler task identity for diagnostics. CoRAgent's
     // public operation/turn identity is the admitted submission ID returned
     // by AgentController.prompt().
     id: String(run.taskId),
@@ -478,7 +478,7 @@ function normalizeLane(value) {
   if (!Array.isArray(source.entries) || !source.docs) throw error("invalid_pi_view", "Expected pinned Pi ConversationView");
   const transcript = source.entries.flatMap(entry => (entry.model || []).map(message => ({ ...message, entry_id: entry.id })));
   return {
-    __researchAgentLane: true,
+    __coragentLane: true,
     operation,
     queues,
     transcript,

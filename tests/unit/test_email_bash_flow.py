@@ -68,11 +68,11 @@ port = {server.server_address[1]}
 security = "ssl"
 username = "sender@example.test"
 recipient = "reader@example.test"
-password_env = "RESEARCH_AGENT_FIXTURE_PASSWORD"
+password_env = "CORAGENT_FIXTURE_PASSWORD"
 '''); config.chmod(0o600)
-        monkeypatch.setenv("RESEARCH_AGENT_NOTIFICATION_CONFIG", str(config))
+        monkeypatch.setenv("CORAGENT_NOTIFICATION_CONFIG", str(config))
         monkeypatch.setenv("SSL_CERT_FILE", str(cert))
-        monkeypatch.setenv("RESEARCH_AGENT_FIXTURE_PASSWORD", "fixture-only")
+        monkeypatch.setenv("CORAGENT_FIXTURE_PASSWORD", "fixture-only")
         script = Path(__file__).resolve().parents[2] / "skills/email/scripts/email_cli.py"
         calculation = dispatch("start", {"root": str(tmp_path), "request_id": "calculation",
             "command": [sys.executable, "-c", "import json;from pathlib import Path;Path('result.json').write_text(json.dumps({'method':'fixture','validated':True,'steps':[{'task':'sp','energy_hartree':-1}]}))"],

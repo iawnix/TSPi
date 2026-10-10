@@ -3,7 +3,7 @@ name: irc
 description: Plan and assess bidirectional intrinsic reaction coordinate calculations and assign their endpoints to declared molecular basins.
 ---
 
-# ResearchAgent IRC
+# CoRAgent IRC
 
 [Chinese version](SKILL.zh-CN.md)
 

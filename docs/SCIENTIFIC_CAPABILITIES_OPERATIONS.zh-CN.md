@@ -11,7 +11,7 @@
 
 先读取相关 Skill，选择其预设入口、原生命令或任务脚本，以及安装目录 `etc/job.toml` 中的命名环境。预设入口提供后端键、固定脚本、纯 CLI 解析器、输入角色和输出。原生命令无需 Python 绑定；Python 脚本使用目标环境配置的解释器。
 
-`"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --list` 返回简短的预设入口索引，可按 `--skill`、`--backend` 或 `--executor`/`--version` 筛选；`--details` 返回完整声明。加 `--config … --environment …` 只显示绑定是否已配置，不探测软件。实际 runner 参数通过 `executors --executor <id> --version <版本> --help` 获取；只加载已固定的 CLI 解析器，不运行科学程序。
+`"$CORAGENT_PYTHON" -m research_agent.application.executors --list` 返回简短的预设入口索引，可按 `--skill`、`--backend` 或 `--executor`/`--version` 筛选；`--details` 返回完整声明。加 `--config … --environment …` 只显示绑定是否已配置，不探测软件。实际 runner 参数通过 `executors --executor <id> --version <版本> --help` 获取；只加载已固定的 CLI 解析器，不运行科学程序。
 
 准备命令写入请求并返回 `request_file` 与 `request_sha256`，提交到 `job_start`；关联研究问题时提供 `node_id`。Runtime 检查文件和输入，固定所选 Node 归属与内容版本、`prepared_ref` 与提交意图。准备本身不派发 Job，也不证明科学结果。
 
@@ -24,7 +24,7 @@
 在会话中使用 `job_probe` 检查已配置平台。在安装的控制环境中，针对所选入口核验软件：
 
 ```bash
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.environment_check --config "$RESEARCH_AGENT_JOB_CONFIG" --environment <环境> --executor <id> --version <版本>
+"$CORAGENT_PYTHON" -m research_agent.application.environment_check --config "$CORAGENT_JOB_CONFIG" --environment <环境> --executor <id> --version <版本>
 ```
 
 该命令只连接所选环境。没有预设入口的程序或任务脚本用 `--backend <绑定>` 替代 executor/version；可加 `--runtime native` 或 `--runtime python` 指定运行方式。`--details` 展示底层观测。缺少预设入口、缺少配置和实际检查失败分别返回 `recipe_not_found`、`not_configured` 和 `check_failed`；成功的 `verified` 只表示环境前置条件通过。

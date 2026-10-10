@@ -27,7 +27,7 @@ from typing import Any
 from .artifacts import bounded_content, bounded_text, sha256_json, sha256_path, workspace_path, workspace_root
 from .errors import NotificationError
 
-CONFIG_ENV = "RESEARCH_AGENT_NOTIFICATION_CONFIG"
+CONFIG_ENV = "CORAGENT_NOTIFICATION_CONFIG"
 CONFIG_SCHEMA = "ts-notification-config/1"
 SMTP_CONFIG_SCHEMA = "ts-notification-config/2"
 REQUEST_SCHEMA = "ts-user-notification/2"
@@ -616,10 +616,10 @@ def _run_smtp(
     message["Subject"] = subject
     message["Date"] = formatdate(localtime=True)
     message["Message-ID"] = (
-        f"<research-agent-{notification_digest.removeprefix('sha256:')}"
+        f"<coragent-{notification_digest.removeprefix('sha256:')}"
         f"@{message['From'].split('@', 1)[-1]}>"
     )
-    message["X-ResearchAgent-Notification-Digest"] = notification_digest
+    message["X-CoRAgent-Notification-Digest"] = notification_digest
     message.set_content(body)
     for source, record in attachments:
         try:

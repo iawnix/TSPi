@@ -22,12 +22,12 @@ export function formatTerminalFailure(error, {
   const missing = [modelsPath, authPath].filter((path) => !fileExists(path));
   if (missing.length === 0) {
     const location = diagnosticFile || `${installRoot}/var/log/worker-diagnostics.log`;
-    return `${message}\nDiagnosis: the Pi Worker failed without returning details; inspect ${location} and restart the ResearchAgent Host.`;
+    return `${message}\nDiagnosis: the Pi Worker failed without returning details; inspect ${location} and restart the CoRAgent Host.`;
   }
   return (
     `${message}\nPossible cause: Missing Pi configuration: ${missing.join(", ")}. `
     + `Add custom providers to ${modelsPath} and credentials to ${authPath}, or configure provider `
-    + "environment credentials, then restart the ResearchAgent Host and retry."
+    + "environment credentials, then restart the CoRAgent Host and retry."
   );
 }
 
@@ -35,15 +35,15 @@ function diagnoseWorkerFailure(diagnostic) {
   if (diagnostic.includes("detailsContext.abortSignal")
     || (diagnostic.includes("reading 'abortSignal'") && diagnostic.includes("TypeError"))) {
     return (
-      "Diagnosis: the installed ResearchAgent Worker is incompatible with the pinned Pi Durable API "
+      "Diagnosis: the installed CoRAgent Worker is incompatible with the pinned Pi Durable API "
       + "(details() was called without its execution context). Reinstall the repaired package "
-      + "and restart the ResearchAgent Host."
+      + "and restart the CoRAgent Host."
     );
   }
   if (diagnostic.includes("ECOMPROMISED") || diagnostic.includes("Unable to update lock within the stale threshold")) {
     return (
       "Diagnosis: a durable session lock is stale or was left by a crashed Worker. Restart the "
-      + "ResearchAgent Host after installing the Worker fix; do not delete session databases."
+      + "CoRAgent Host after installing the Worker fix; do not delete session databases."
     );
   }
   return "Diagnosis: the Pi Worker terminated while serving this request; the diagnostic tail is shown below.";
@@ -64,7 +64,7 @@ function readDiagnosticTail(path, readFile) {
 export function formatError(error) {
   const message = collectErrorMessages(error).join(": ");
   if (message.includes("Remote service pi.agent-controller binding is closed")) {
-    return `${message}. The Host was restarted or upgraded; close and relaunch research-agent`;
+    return `${message}. The Host was restarted or upgraded; close and relaunch coragent`;
   }
   return message;
 }

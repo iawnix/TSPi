@@ -2,7 +2,7 @@
 
 [English](TERMINAL.md) | [简体中文](TERMINAL.zh-CN.md)
 
-`research-agent --workspace <name>` 是用户侧统一入口，启动 Pi 官方的远程 `ExperimentalClientTui`，不会替换
+`coragent --workspace <name>` 是用户侧统一入口，启动 Pi 官方的远程 `ExperimentalClientTui`，不会替换
 Pi 的 editor、transcript 渲染或输入循环。它与普通 Pi 的 InteractiveMode 是两套界面，
 命令和扩展能力以实验性远程客户端为准。选中的 workspace
 绑定到安装级 Pi Harness SQLite durable 会话。
@@ -12,8 +12,8 @@ Pi 的 editor、transcript 渲染或输入循环。它与普通 Pi 的 Interacti
 ## 运行边界
 
 ```text
-TS Phone/Web ── Link/HTTP ──┐
-Pi 原生 TUI ─ Unix/SSH ─────┼─> ResearchAgent Agent Server / Host API
+CoRHub/Web ── Link/HTTP ──┐
+Pi 原生 TUI ─ Unix/SSH ─────┼─> CoRAgent Agent Server / Host API
 Monitor ─ Host RPC ─────────┘       ├─ Root Agent Session
                                     └─ Harness / Pi App Server / SessionWorker
 ```
@@ -24,16 +24,16 @@ transcript 和 SQLite durable lane。Pi 原生 TUI、Phone、Monitor 都是同�
 不会启动第二个 agent loop。
 
 Host client 的 RPC transport 可以是本机 Unix socket，也可以通过 SSH 启动远端
-`research-agent-host-proxy`，把同一份 `research-agent-host/2` NDJSON 通过 SSH stdin/stdout 转发到远端私有
+`coragent-host-proxy`，把同一份 `coragent-host/2` NDJSON 通过 SSH stdin/stdout 转发到远端私有
 socket。SSH transport 只改变连接路径，不改变 workspace、session 或 Agent lane 的拥有者。
 
 连接远端安装时，需要同时提供远端 Host socket 和 proxy 路径：
 
 ```bash
-./research-agent --workspace reaction-a \
+./coragent --workspace reaction-a \
   --remote-host pi.example \
-  --remote-host-socket /run/user/1000/research-agent/host.sock \
-  --remote-proxy-path /opt/research-agent/apps/agent/transport/ssh.mjs \
+  --remote-host-socket /run/user/1000/coragent/host.sock \
+  --remote-proxy-path /opt/coragent/apps/agent/transport/ssh.mjs \
   --ssh-config ~/.ssh/config
 ```
 
@@ -43,8 +43,8 @@ Unix endpoint。workspace 和 session 仍由远端 Host 持有；本地目录只
 ## 打开工作区
 
 ```bash
-./research-agent --workspace reaction-a
-./research-agent --workspace reaction-a -c
+./coragent --workspace reaction-a
+./coragent --workspace reaction-a -c
 ```
 
 启动器先确保安装级 Host 在线，再请求 session descriptor，直接把 Pi 官方 native client
@@ -55,8 +55,8 @@ Unix endpoint。workspace 和 session 仍由远端 Host 持有；本地目录只
 Host 是安装级服务，会扫描 workspace root 下的直接子工作区。通常使用：
 
 ```bash
-systemctl --user start ts-app-server-research-agent.service
-systemctl --user status ts-app-server-research-agent.service
+systemctl --user start coragent.service
+systemctl --user status coragent.service
 ```
 
 system service 去掉 `--user`。Host 私有 socket 位于配置的 runtime 目录。
@@ -64,14 +64,14 @@ system service 去掉 `--user`。Host 私有 socket 位于配置的 runtime 目�
 ## 会话和操作
 
 远程 `ExperimentalClientTui` 提供 `/resume`、`/model`、`/thinking`、`/compact`、
-`/reload` 以及 Native ResearchAgent 命令。`/resume` 只能切换当前 workspace 中的 SQLite durable
+`/reload` 以及 Native CoRAgent 命令。`/resume` 只能切换当前 workspace 中的 SQLite durable
 session，不会跨 workspace。切换会释放当前 TUI 连接，再附着选中的会话；后台任务继续运行。
 独立 Pi 的其它会话命令在这个远程客户端中不可用。
 
-ResearchAgent 提供以下客户端命令，名称、参数和补全由同一命令目录定义：
+CoRAgent 提供以下客户端命令，名称、参数和补全由同一命令目录定义：
 
 - `/research`：由当前 worker 执行只读查询，查看 Memory 上下文和记录，包括 SSH 连接的远端工作区；具体选项以命令帮助为准。长结果在独立阅读页中查看。
-- `/sys-prompt`：直接读取当前 worker 的 ResearchAgent system prompt manifest 和来源，不调用模型。
+- `/sys-prompt`：直接读取当前 worker 的 CoRAgent system prompt manifest 和来源，不调用模型。
 - `/resume [session-id]`：在当前工作区选择或指定会话；取消选择保持当前会话。
 - `/usage`：在紧凑面板中查看当前会话的 token 总量、上下文和各模型用量。
 - `/monitor`：在实时面板中查看当前会话的运行、排队作业、待投递事件和最近检查时间。
@@ -116,11 +116,11 @@ prompt 通过 Host `input/send` 进入同一个 lane，并使用持久回执和�
 
 ## Phone、浏览器与 Monitor
 
-Phone 客户端必须通过 ResearchAgent Link 使用版本化 `research-agent-host/2` NDJSON 方法。Relay 只转发不透明
+Phone 客户端必须通过 CoRAgent Link 使用版本化 `coragent-host/2` NDJSON 方法。Relay 只转发不透明
 帧，不拥有 session 或 Research Memory。可选 browser gateway 只附着一个已经存在的会话，
 通过 loopback HTTP/SSE 提供 snapshot 和事件，不启动 Pi 或 worker。
 
-Host 握手仅接受 `protocol: "research-agent-host/2"`，v1 客户端必须更新。能力列表与调用方法统一用斜杠。
+Host 握手仅接受 `protocol: "coragent-host/2"`，v1 客户端必须更新。能力列表与调用方法统一用斜杠。
 会话读取和附着只接受 `after_cursor: {epoch, sequence}`；Host epoch 改变时返回当前快照，
 不重放旧 epoch 的事件。会话创建/恢复及 `model/select` 统一使用 `model: {provider, id}`。
 会话列表只返回 `{sessions: [...]}`，不携带旧 backend 或格式标记。

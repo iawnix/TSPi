@@ -1,5 +1,5 @@
 {
-  "schema_version": "research-agent-environments/1",
+  "schema_version": "coragent-environments/1",
   "profiles": {
     "structure": {
       "lock": "structure.lock",
@@ -51,7 +51,7 @@
         "glibc": "2.28"
       },
       "resources": {
-        "check_structure.py": "sha256:1a80cfec25517a049f29876e969b3fd5d04cfb69f8f6120d4f72f8d168fd7f08",
+        "check_structure.py": "sha256:ed7605165f391a611027c147d6bfb2b1c909f87ccf27686065bf192669e3d936",
         "structure.lock": "sha256:b2447fff9059d0819049b9d4761e740d6a69a5f3686bf40cc7122edc3307d39b"
       }
     },

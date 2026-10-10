@@ -17,13 +17,13 @@ def digest(path: Path) -> str:
 def generated(root: Path) -> dict[Path, str]:
     output = {}
     package = json.loads((root / "package.json").read_text())
-    for name in package['researchAgent'].get('environments', []):
+    for name in package['coragent'].get('environments', []):
         path = root / name
         value = json.loads(path.read_text())
         for profile in value['profiles'].values():
             profile['resources'] = {key: digest(path.parent / key) for key in sorted(profile['resources'])}
         output[path] = json.dumps(value, indent=2) + '\n'
-    for name in package["researchAgent"]["execution"]:
+    for name in package["coragent"]["execution"]:
         path = root / name
         value = json.loads(path.read_text())
         for entry in value["executors"]:
@@ -45,7 +45,7 @@ def generated(root: Path) -> dict[Path, str]:
                 raise ValueError(f"resource symlink: {path.relative_to(root)}")
             content = output[path].encode() if path in output else path.read_bytes()
             files[path.relative_to(root).as_posix()] = "sha256:" + hashlib.sha256(content).hexdigest()
-    output[root / "config/resources.json"] = json.dumps({"schema_version": "research-agent-resources/1", "files": files}, indent=2) + "\n"
+    output[root / "config/resources.json"] = json.dumps({"schema_version": "coragent-resources/1", "files": files}, indent=2) + "\n"
     return output
 
 

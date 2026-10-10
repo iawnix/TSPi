@@ -2,8 +2,8 @@ import { validateHarnessToolDefinition } from "./contracts.mjs";
 import { validateToolInvocationContext } from "./context.mjs";
 import { validateToolArguments } from "@earendil-works/pi-ai";
 
-const RESULT_SCHEMA = "research-agent-tool-result/1";
-const ERROR_SCHEMA = "research-agent-tool-error/1";
+const RESULT_SCHEMA = "coragent-tool-result/1";
+const ERROR_SCHEMA = "coragent-tool-error/1";
 const FAILURE_CLASSES = Object.freeze([
   "validation", "authorization", "workspace", "conflict", "ambiguous", "transient", "execution", "contract",
 ]);
@@ -148,10 +148,10 @@ export function wrapToolForHarness(tool, { toolContext, invocation } = {}) {
         const bound = enforceInvocationContext
           ? validateToolInvocationContext(tool, toolContext, invocation?.(api), api.callId)
           : toolContext;
-        // Keep Pi's async progress/cancellation API intact. The branded ResearchAgent
+        // Keep Pi's async progress/cancellation API intact. The branded CoRAgent
         // context comes only from the Worker, never from model arguments.
         const result = withToolResultEnvelope(
-          await tool.execute(params, { ...api, researchAgent: bound }, context), tool.name, api.callId,
+          await tool.execute(params, { ...api, coragent: bound }, context), tool.name, api.callId,
         );
         return result.details?.envelope?.ok === false ? { ...result, isError: true } : result;
       } catch (error) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the standalone ResearchAgent Link Relay service."""
+"""Install the standalone CoRAgent Link Relay service."""
 
 from __future__ import annotations
 
@@ -16,9 +16,9 @@ import urllib.parse
 from pathlib import Path
 
 
-SERVICE_NAME = "research-agent-relay.service"
-DEFAULT_INSTALL_ROOT = Path("/opt/research-agent-relay")
-DEFAULT_STATE_ROOT = Path("/var/lib/research-agent-relay")
+SERVICE_NAME = "coragent-relay.service"
+DEFAULT_INSTALL_ROOT = Path("/opt/coragent-relay")
+DEFAULT_STATE_ROOT = Path("/var/lib/coragent-relay")
 SERVICE_USER = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 
 
@@ -30,7 +30,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--listen", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8788)
     parser.add_argument("--service-scope", choices=("system", "user", "none"), default="system")
-    parser.add_argument("--service-user", default="research-agent-relay")
+    parser.add_argument("--service-user", default="coragent-relay")
     parser.add_argument("--enable-services", action="store_true")
     parser.add_argument("--start-services", action="store_true")
     parser.add_argument("--source-root", default=str(Path(__file__).resolve().parents[1]))
@@ -66,9 +66,9 @@ def validate_options(args: argparse.Namespace) -> None:
         # /opt and /var/lib are appropriate for a system service, but should
         # not make a development or user-scoped install fail for permissions.
         if args.install_root == str(DEFAULT_INSTALL_ROOT):
-            args.install_root = str(Path.home() / ".local/share/research-agent-relay")
+            args.install_root = str(Path.home() / ".local/share/coragent-relay")
         if args.state_dir == str(DEFAULT_STATE_ROOT):
-            args.state_dir = str(Path.home() / ".local/state/research-agent-relay")
+            args.state_dir = str(Path.home() / ".local/state/coragent-relay")
     args.install_root = str(Path(args.install_root).expanduser().resolve())
     args.state_dir = str(Path(args.state_dir).expanduser().resolve())
     args.source_root = str(Path(args.source_root).expanduser().resolve())
@@ -104,7 +104,7 @@ def validate_options(args: argparse.Namespace) -> None:
         raise ValueError("service installation requires systemctl; choose --service-scope none")
     for command in ("node", "npm", "git"):
         if shutil.which(command) is None:
-            raise ValueError(f"{command} is required to install ResearchAgent Link Relay")
+            raise ValueError(f"{command} is required to install CoRAgent Link Relay")
 
 
 def ensure_service_user(name: str) -> pwd.struct_passwd:
@@ -252,7 +252,7 @@ def systemd_unit(
         )
     )
     return f"""[Unit]
-Description=ResearchAgent Link Relay
+Description=CoRAgent Link Relay
 After=network-online.target
 
 [Service]
@@ -329,7 +329,7 @@ def ask(prompt: str, default: str = "") -> str:
 def interactive_options(args: argparse.Namespace) -> None:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise RuntimeError("interactive Link Relay installation requires a TTY")
-    args.public_url = ask("ResearchAgent Link Relay public URL", args.public_url or "")
+    args.public_url = ask("CoRAgent Link Relay public URL", args.public_url or "")
     args.listen = ask("Listen address", args.listen)
     args.port = int(ask("Listen port", str(args.port)))
     args.install_root = ask("Installation directory", args.install_root)
@@ -346,7 +346,7 @@ def main(argv: list[str] | None = None) -> int:
         validate_options(args)
         account = ensure_service_user(args.service_user) if args.service_scope == "system" else None
         if account is not None and account.pw_uid == 0:
-            raise ValueError("ResearchAgent Link Relay must not run as root")
+            raise ValueError("CoRAgent Link Relay must not run as root")
         service_root, commit = install_release(args)
         state = prepare_state(args, account)
         enrollment = create_enrollment(service_root, state, account)
@@ -363,7 +363,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, indent=2, sort_keys=True) if args.json else format_result(result))
         return 0
     except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
-        print(f"ResearchAgent Link Relay installation failed: {exc}", file=sys.stderr)
+        print(f"CoRAgent Link Relay installation failed: {exc}", file=sys.stderr)
         return 1
 
 
@@ -371,10 +371,10 @@ def format_result(result: dict[str, object]) -> str:
     enrollment = result["enrollment"]
     code = enrollment.get("code") if isinstance(enrollment, dict) else None
     return (
-        "ResearchAgent Link Relay installed.\n"
+        "CoRAgent Link Relay installed.\n"
         f"Public URL: {result['public_url']}\n"
         f"Host enrollment code: {code}\n"
-        "Use this code once in the local ResearchAgent installer."
+        "Use this code once in the local CoRAgent installer."
     )
 
 

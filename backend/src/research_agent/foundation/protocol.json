@@ -1,5 +1,5 @@
 {
-  "host_protocol": "research-agent-host/2",
+  "host_protocol": "coragent-host/2",
   "workspace_id": {
     "type": "string",
     "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}(?![\\s\\S])"
@@ -23,7 +23,7 @@
     "decision_log.jsonl",
     "transaction_log.jsonl"
   ],
-  "link_protocol": "research-agent-link.v1",
-  "host_token_prefix": "rah_",
-  "device_token_prefix": "rad_"
+  "link_protocol": "coragent-link.v1",
+  "host_token_prefix": "cah_",
+  "device_token_prefix": "cad_"
 }

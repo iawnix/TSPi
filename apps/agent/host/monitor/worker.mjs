@@ -9,7 +9,7 @@ import { validate_workspace_manifest } from "../workspace.mjs";
 
 const executeFile = promisify(execFile);
 import { packageRoot } from "../../platform/resources.mjs";
-const python = process.env.RESEARCH_AGENT_PYTHON || "python3";
+const python = process.env.CORAGENT_PYTHON || "python3";
 
 // Monitor only wakes the owning Agent; notification decisions belong to email Skill.
 export async function deliverMonitorEvent({ workspace, delivery, deliveries = [delivery], runJson, sendWake }) {
@@ -82,8 +82,8 @@ export function wakeMessage(event) {
 
 export async function runMonitorWorker(options, signal) {
   const { connectHost } = await import("../../transport/host-client.mjs");
-  const token = process.env.RESEARCH_AGENT_INTERNAL_MONITOR_TOKEN;
-  delete process.env.RESEARCH_AGENT_INTERNAL_MONITOR_TOKEN;
+  const token = process.env.CORAGENT_INTERNAL_MONITOR_TOKEN;
+  delete process.env.CORAGENT_INTERNAL_MONITOR_TOKEN;
   if (!token) throw new Error("Monitor must be started by the installation Host");
   let client;
   const catalog = createWorkspaceCatalog(options.workspaceRoot, { python });
@@ -150,7 +150,7 @@ async function runMonitorJson(command, workspace, extra = [], signal) {
   return value;
 }
 export function parseMonitorArguments(arguments_) {
-  const values = { intervalMs: Number(process.env.RESEARCH_AGENT_MONITOR_INTERVAL_MS || "5000"), once: false };
+  const values = { intervalMs: Number(process.env.CORAGENT_MONITOR_INTERVAL_MS || "5000"), once: false };
   const properties = { "workspace-root": "workspaceRoot", "host-socket": "hostSocket", "state-root": "stateRoot",
     "server-directory": "serverDirectory", "server-id": "serverId", "interval-ms": "intervalMs" };
   for (let index = 0; index < arguments_.length; index += 1) {
@@ -187,5 +187,5 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const controller = new AbortController();
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.once(signal, () => controller.abort());
   try { await runMonitorWorker(parseMonitorArguments(process.argv.slice(2)), controller.signal); }
-  catch (error) { if (!controller.signal.aborted) { process.stderr.write(`ResearchAgent Monitor stopped: ${errorMessage(error)}\n`); process.exitCode = 1; } }
+  catch (error) { if (!controller.signal.aborted) { process.stderr.write(`CoRAgent Monitor stopped: ${errorMessage(error)}\n`); process.exitCode = 1; } }
 }

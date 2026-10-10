@@ -4,7 +4,7 @@
 
 ## 提交
 
-`"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors` 将扩展声明的执行入口与 job.toml 中的命名绑定组合，生成含 argv、目标环境、进程变量、固定输入和输出的请求。检查文件后，将返回的 request_file/request_sha256 和可选 timeout_seconds 交给 job_start。资源默认值在准备前配置到 job.toml。Runtime 把 prepared_ref、提交意图和 Job 一起登记；准备命令不写 Research Memory。
+`"$CORAGENT_PYTHON" -m research_agent.application.executors` 将扩展声明的执行入口与 job.toml 中的命名绑定组合，生成含 argv、目标环境、进程变量、固定输入和输出的请求。检查文件后，将返回的 request_file/request_sha256 和可选 timeout_seconds 交给 job_start。资源默认值在准备前配置到 job.toml。Runtime 把 prepared_ref、提交意图和 Job 一起登记；准备命令不写 Research Memory。
 
 输入复制为带路径和摘要的快照，保持脚本 import 目录结构。Runtime 负责本地/远程进程控制；Skill 可以在 Job 内同步调用科学程序，不能自行后台化或另行提交调度任务。
 

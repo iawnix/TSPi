@@ -10,7 +10,7 @@ description: 使用 xTB 进行低成本结构筛选、单点、优化、频率�
 单点与优化可以使用 `chemical.xtb@1`，它固定使用 GFN2-xTB，接受 `sp`、`opt`、`opt-sp`：
 
 ```bash
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.xtb --version 1 --input geometry=input.xyz --output prepared/xtb.json -- --task opt-sp --charge 0 --multiplicity 1
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config "$CORAGENT_JOB_CONFIG" --environment local --executor chemical.xtb --version 1 --input geometry=input.xyz --output prepared/xtb.json -- --task opt-sp --charge 0 --multiplicity 1
 ```
 
 将返回的请求文件和摘要交给 `job_start`，需要关联研究问题时提供 node_id。

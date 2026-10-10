@@ -1,4 +1,4 @@
-# Research Agent 0.18 installation layout
+# CoRAgent 0.18 installation layout
 
 Only fresh standalone installations are supported. Installation-level `.pi/` and
 `.agents/` trees are rejected. There is no legacy fallback, migration tool or
@@ -6,7 +6,7 @@ compatibility link.
 
 ```text
 <install>/
-  research-agent             # sole public client, follows current
+  coragent             # sole public client, follows current
   uninstall.sh              # independent recovery/uninstall entry
   current -> releases/<id>  # sole active release selection
   releases/<id>/            # immutable application code and complete Skills
@@ -26,14 +26,14 @@ compatibility link.
   workspaces/               # default; an explicit external root is supported
 ```
 
-No root `bin/` or public `research-agentServer` is installed. Systemd invokes
-`current/agent/libexec/research-agent-host` with an explicit installation root.
-Use `research-agent --workspace <name>` for research, and
-`systemctl --user … ts-app-server-research-agent.service` for service management.
+No root `bin/` or public `coragentServer` is installed. Systemd invokes
+`current/agent/libexec/coragent-host` with an explicit installation root.
+Use `coragent --workspace <name>` for research, and
+`systemctl --user … coragent.service` for service management.
 
 Host Conda bases and wheel overlays live under
-`~/soft/research-agent/host-envs/<installation-id>/{base,kernels}/<hash>`. The installer
-accepts `RESEARCH_AGENT_HOST_ENV_ROOT` for a dedicated alternate store and persists it.
+`~/soft/coragent/host-envs/<installation-id>/{base,kernels}/<hash>`. The installer
+accepts `CORAGENT_HOST_ENV_ROOT` for a dedicated alternate store and persists it.
 Scientific Job environments remain explicitly bound through `etc/job.toml`,
 with separate local and remote paths. Existing Conda prefixes are not moved.
 

@@ -14,7 +14,7 @@ from .config_contract import binding_digest, python_command
 from .worker import supervisor_environment
 
 PROBE_FILE = Path(__file__).with_name("environment_probe.py")
-PROBE_DESTINATION = ".research-agent/environment_probe.py"
+PROBE_DESTINATION = ".coragent/environment_probe.py"
 
 
 def validate_requirements(value, runtime):
@@ -50,9 +50,9 @@ def _file_check(expression, role, expected=None):
     if expected is not None:
         script.append(f'[ "$research_agent_path" = {shlex.quote(expected["path"])} ] && '
                       f'[ "$research_agent_hash" = {shlex.quote(expected["sha256"])} ] || '
-                      '{ echo RESEARCH_AGENT_ENVIRONMENT_ERROR=execution_environment_changed >&2; exit 125; }')
+                      '{ echo CORAGENT_ENVIRONMENT_ERROR=execution_environment_changed >&2; exit 125; }')
     else:
-        script.append(f"printf 'RESEARCH_AGENT_FILE=%s\\t%s\\t%s\\n' {shlex.quote(role)} \"$research_agent_path\" \"$research_agent_hash\"")
+        script.append(f"printf 'CORAGENT_FILE=%s\\t%s\\t%s\\n' {shlex.quote(role)} \"$research_agent_path\" \"$research_agent_hash\"")
     return "\n".join(script)
 
 
@@ -91,7 +91,7 @@ def _run_target(settings, selected, script):
     env = selected["binding"].get("environment", {})
     timeout = target.get("command_timeout_seconds", 120)
     if selected["kind"] == "local":
-        with tempfile.TemporaryDirectory(prefix="research-agent-environment-") as scratch:
+        with tempfile.TemporaryDirectory(prefix="coragent-environment-") as scratch:
             variables = {**supervisor_environment(), "TMPDIR": scratch,
                          **{key: value.replace("{scratch}", scratch) for key, value in env.items()}}
             return _capture(["bash", "-c", script], env=variables, timeout=timeout)
@@ -123,20 +123,20 @@ def probe_binding(settings, selected, requirements):
     except (OSError, subprocess.SubprocessError):
         raise ValueError("environment_probe_unavailable: verify the selected target connection and binding") from None
     if result.returncode:
-        codes = re.findall(r"^RESEARCH_AGENT_ENVIRONMENT_ERROR=([a-z_]+)$", result.stderr, re.MULTILINE)
+        codes = re.findall(r"^CORAGENT_ENVIRONMENT_ERROR=([a-z_]+)$", result.stderr, re.MULTILINE)
         raise ValueError(codes[-1] if codes else "environment_probe_failed")
     files, python = {}, None
     try:
         for line in result.stdout.splitlines():
-            if line.startswith("RESEARCH_AGENT_FILE="):
-                role, path, digest = line.removeprefix("RESEARCH_AGENT_FILE=").split("\t")
+            if line.startswith("CORAGENT_FILE="):
+                role, path, digest = line.removeprefix("CORAGENT_FILE=").split("\t")
                 if role in files or role not in {"activation", "executable"} or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
                     raise ValueError()
                 files[role] = {"path": path, "sha256": digest}
-            elif line.startswith("RESEARCH_AGENT_ENVIRONMENT="):
+            elif line.startswith("CORAGENT_ENVIRONMENT="):
                 if python is not None:
                     raise ValueError()
-                python = json.loads(line.removeprefix("RESEARCH_AGENT_ENVIRONMENT="))
+                python = json.loads(line.removeprefix("CORAGENT_ENVIRONMENT="))
         if bool(selected["python"]) != (python is not None) or bool(selected["binding"].get("activation_script")) != ("activation" in files):
             raise ValueError()
         if selected["runtime"] == "native" and "executable" not in files:
@@ -168,7 +168,7 @@ def guarded_command(selected, argv, snapshot, *, module_paths=None):
         script += '[ "${research_agent_hash%% *}" = ' + shlex.quote(digest) + ' ] || exit 125\n'
         if module_paths is not None:
             launcher = Path(__file__).with_name('python_entrypoint.py')
-            target = '.research-agent/python_entrypoint.py'
+            target = '.coragent/python_entrypoint.py'
             launcher_digest = hashlib.sha256(launcher.read_bytes()).hexdigest()
             inputs.append({'source': str(launcher), 'destination': target, 'sha256': launcher_digest})
             script += 'research_agent_hash=$(sha256sum < ' + shlex.quote(target) + ')\n'

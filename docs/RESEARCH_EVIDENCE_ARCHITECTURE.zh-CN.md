@@ -14,7 +14,7 @@ Result 的 observation 是记录的观察，conclusion 是作者解释，check_r
 
 执行器请求的 input_roles 记录每个输入角色的暂存路径和摘要，提交时与实际暂存声明核对。既有 Job 输入清单、资源摘要、环境观察、命令及不可变收集回执继续形成来源记录。验证器回执分别展示 execution_status、parsing、scientific_verdict（若验证器提供）和 provenance；来源验证不代表科学正确。
 
-Gaussian 标题摘要是附加交叉检查。解析器支持已知标记的有界续行，包括历史 TSPiSpec，不对整份日志删除空白后匹配。缺失、无法读取和实际摘要不一致分别表达；原始证据保持不变。聚合 verdict 保留保守语义，scientific_verdict 另列已完成的科学条件检查，两者均注明范围。显式 Gaussian runner 的结果也分别记录执行、解析和请求检查状态。
+Gaussian 标题摘要是附加交叉检查。解析器支持已知标记的有界续行，包括历史 CoRAgentSpec，不对整份日志删除空白后匹配。缺失、无法读取和实际摘要不一致分别表达；原始证据保持不变。聚合 verdict 保留保守语义，scientific_verdict 另列已完成的科学条件检查，两者均注明范围。显式 Gaussian runner 的结果也分别记录执行、解析和请求检查状态。
 
 Skill 指导 Agent 审查证据、记录缺口并选择下一步；某个自写验证器失败不构成禁止继续研究的通用门槛。原始材料缺失、引用不合法、暂存摘要不一致等工程约束仍严格检查。
 

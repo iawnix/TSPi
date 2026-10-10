@@ -1,10 +1,10 @@
-# ResearchAgent Job Monitor v2
+# CoRAgent Job Monitor v2
 
 Monitor owns the durable execution wake outbox under
-`operations/monitors/<monitor_id>/`. A `research-agent-job-monitor/2` binding fixes the
+`operations/monitors/<monitor_id>/`. A `coragent-job-monitor/2` binding fixes the
 workspace, Job, owning session, and optional research Node/revision at dispatch.
-Events use `research-agent-job-monitor-event/2`; delivery receipts use
-`research-agent-job-monitor-delivery/2`. There is no version 1 adapter.
+Events use `coragent-job-monitor-event/2`; delivery receipts use
+`coragent-job-monitor-delivery/2`. There is no version 1 adapter.
 
 `next_run` is required on authenticated internal Monitor admission. Host and
 Worker reject other modes. Admission checks Pi's active run and inbox in the

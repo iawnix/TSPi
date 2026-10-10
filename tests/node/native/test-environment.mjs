@@ -6,14 +6,14 @@ function requiredPath(name) {
   return path;
 }
 
-export const TEST_ROOT = requiredPath("RESEARCH_AGENT_TEST_ROOT");
-export function pinnedPiSource() { return requiredPath("RESEARCH_AGENT_TEST_PI_RUNTIME_ROOT"); }
-export function managedPython() { return requiredPath("RESEARCH_AGENT_PYTHON"); }
+export const TEST_ROOT = requiredPath("CORAGENT_TEST_ROOT");
+export function pinnedPiSource() { return requiredPath("CORAGENT_TEST_PI_RUNTIME_ROOT"); }
+export function managedPython() { return requiredPath("CORAGENT_PYTHON"); }
 
-export const TEST_SOCKET_ROOT = requiredPath("RESEARCH_AGENT_TEST_SOCKET_ROOT");
+export const TEST_SOCKET_ROOT = requiredPath("CORAGENT_TEST_SOCKET_ROOT");
 
 export async function assertInstalledRuntime(packageRoot) {
-  const installRoot = process.env.RESEARCH_AGENT_TEST_INSTALLED_ROOT;
+  const installRoot = process.env.CORAGENT_TEST_INSTALLED_ROOT;
   if (!installRoot) return;
   const assert = (await import("node:assert/strict")).default;
   const { realpath } = await import("node:fs/promises");
@@ -31,7 +31,7 @@ export async function assertInstalledRuntime(packageRoot) {
   assert.ok(inside(installation, pi), "Pi code must come from the installed runtime");
   assert.equal(await realpath(join(product, "node_modules")), await realpath(join(pi, "node_modules")));
   assert.equal(process.env.PYTHONPATH, undefined, "installed acceptance must not import source Python");
-  assert.equal(await realpath(process.env.RESEARCH_AGENT_PACKAGE_ROOT), product);
+  assert.equal(await realpath(process.env.CORAGENT_PACKAGE_ROOT), product);
   const modules = ["research_agent", "research_agent.application", "research_agent.research", "research_agent.jobs", "research_agent.artifacts"];
   const program = `import importlib,json,sys; print(json.dumps({"prefix":sys.prefix,"origins":[importlib.import_module(name).__file__ for name in ${JSON.stringify(modules)}]}))`;
   const { stdout } = await promisify(execFile)(managedPython(), ["-I", "-c", program], { cwd: TEST_ROOT });

@@ -1,4 +1,4 @@
-"""Secure credential provisioning for installed ResearchAgent services."""
+"""Secure credential provisioning for installed CoRAgent services."""
 
 from __future__ import annotations
 
@@ -31,11 +31,11 @@ def provision_service_credentials(
     if with_web:
         token = web_token_path.expanduser() if web_token_path is not None else root / "etc/web" / "auth.token"
         if not token.is_absolute():
-            raise ValueError("TS Web token path must be an absolute path inside the installation root")
+            raise ValueError("CoRAgent Web token path must be an absolute path inside the installation root")
         if token.is_symlink():
-            raise ValueError(f"TS Web token path cannot be a symbolic link: {token}")
+            raise ValueError(f"CoRAgent Web token path cannot be a symbolic link: {token}")
         if root not in token.resolve().parents:
-            raise ValueError("TS Web token path must be an absolute path inside the installation root")
+            raise ValueError("CoRAgent Web token path must be an absolute path inside the installation root")
         specifications.append(("web_http", token.resolve()))
     if not specifications:
         return {}
@@ -163,7 +163,7 @@ def _new_token(used: set[str]) -> str:
 
 def _validate_token_value(value: str) -> None:
     if TOKEN_PATTERN.fullmatch(value) is None:
-        raise ValueError("TS Web token must contain 8 to 100 URL-safe characters")
+        raise ValueError("CoRAgent Web token must contain 8 to 100 URL-safe characters")
 
 
 def _write_secret(path: Path, value: str) -> None:

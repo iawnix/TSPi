@@ -18,11 +18,11 @@ done
 
 # Standalone recovery: obtain the dispatcher when the local installation is missing.
 command -v git >/dev/null 2>&1 || { printf 'Git is required for recovery.\n' >&2; exit 127; }
-bootstrap_root="$(mktemp -d "${TMPDIR:-/tmp}/research-agent-bootstrap.XXXXXX")"
+bootstrap_root="$(mktemp -d "${TMPDIR:-/tmp}/coragent-bootstrap.XXXXXX")"
 trap 'rm -rf -- "${bootstrap_root}"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-git clone --quiet --depth 1 --no-checkout -- "${RESEARCH_AGENT_INSTALL_REPO:-https://github.com/iawnix/TSPi.git}" "${bootstrap_root}/source"
-git -C "${bootstrap_root}/source" fetch --quiet --depth 1 origin "${RESEARCH_AGENT_INSTALL_REF:-main}"
+git clone --quiet --depth 1 --no-checkout -- "${CORAGENT_INSTALL_REPO:-https://github.com/iawnix/coragent.git}" "${bootstrap_root}/source"
+git -C "${bootstrap_root}/source" fetch --quiet --depth 1 origin "${CORAGENT_INSTALL_REF:-main}"
 git -C "${bootstrap_root}/source" checkout --quiet --detach FETCH_HEAD
 python3 -B "${bootstrap_root}/source/scripts/installer.py" uninstall "$@"

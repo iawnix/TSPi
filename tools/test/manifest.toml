@@ -1,4 +1,4 @@
-schema_version = "research-agent-test-manifest/1"
+schema_version = "coragent-test-manifest/1"
 
 [suites.static]
 kind = "static"

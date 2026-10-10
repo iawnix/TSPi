@@ -3,7 +3,7 @@ name: mechanism-reasoning
 description: 使用明确的物种身份、原子映射、基元步骤、替代假设与可证伪条件形成、比较并修订反应机理假设。
 ---
 
-# ResearchAgent 反应机理思考
+# CoRAgent 反应机理思考
 
 [English version](SKILL.md)
 

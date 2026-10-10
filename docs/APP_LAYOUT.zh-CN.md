@@ -1,10 +1,10 @@
-# Research Agent 0.18 安装布局
+# CoRAgent 0.18 安装布局
 
 仅支持全新独立应用布局。旧安装级 `.pi/` 和 `.agents/` 不受支持；请先卸载旧应用并归档数据，再安装。没有旧路径回退、迁移器或兼容链接。
 
 ```text
 <install>/
-  research-agent             # 唯一公开客户端入口，经 current 选择版本
+  coragent             # 唯一公开客户端入口，经 current 选择版本
   uninstall.sh              # 独立卸载入口
   current -> releases/<id>  # 唯一活动版本指针
   releases/<id>/            # 不可变代码、Skill 文本、脚本和模板
@@ -24,13 +24,13 @@
   workspaces/               # 默认研究数据根，可显式配置其它位置
 ```
 
-`bin/` 和公开的 `research-agentServer` 不再创建。systemd 调用
-`current/agent/libexec/research-agent-host`，并明确传入安装根目录。日常使用
-`./research-agent --workspace <name>`，服务管理使用 `systemctl --user … ts-app-server-research-agent.service`。
+`bin/` 和公开的 `coragentServer` 不再创建。systemd 调用
+`current/agent/libexec/coragent-host`，并明确传入安装根目录。日常使用
+`./coragent --workspace <name>`，服务管理使用 `systemctl --user … coragent.service`。
 
 Host Conda 基础环境及应用 overlay 存放在
-`~/soft/research-agent/host-envs/<installation-id>/{base,kernels}/<hash>`；安装器可通过
-`RESEARCH_AGENT_HOST_ENV_ROOT` 指定其它专属路径，该路径会持久记录，运行时不依赖此临时变量。
+`~/soft/coragent/host-envs/<installation-id>/{base,kernels}/<hash>`；安装器可通过
+`CORAGENT_HOST_ENV_ROOT` 指定其它专属路径，该路径会持久记录，运行时不依赖此临时变量。
 科学 Job 环境通过 `etc/job.toml` 单独指定；本地与远端解释器分别验证。
 
 Socket 和进程互斥锁位于安装身份隔离的系统 runtime 目录；持久回执不随它清理。

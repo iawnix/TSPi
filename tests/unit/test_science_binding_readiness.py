@@ -8,7 +8,7 @@ from research_agent.application.environment_check import check_environments
 
 
 def config():
-    settings = load_job_config(os.environ['RESEARCH_AGENT_JOB_CONFIG'])
+    settings = load_job_config(os.environ['CORAGENT_JOB_CONFIG'])
     settings['environments']['local']['backends'] = {
         'analysis': settings['environments']['local']['backends']['validation']}
     return settings

@@ -12,7 +12,7 @@ For single points and optimization, `chemical.xtb@1` provides a GFN2-xTB wrapper
 with `sp`, `opt`, and `opt-sp` tasks:
 
 ```bash
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.xtb --version 1 --input geometry=input.xyz --output prepared/xtb.json -- --task opt-sp --charge 0 --multiplicity 1
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config "$CORAGENT_JOB_CONFIG" --environment local --executor chemical.xtb --version 1 --input geometry=input.xyz --output prepared/xtb.json -- --task opt-sp --charge 0 --multiplicity 1
 ```
 
 Submit the returned request file and digest with `job_start`; supply node_id when

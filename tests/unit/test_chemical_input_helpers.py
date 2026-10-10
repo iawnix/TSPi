@@ -47,7 +47,7 @@ def test_opsin_configuration_calls_real_resolver_implementation(tmp_path, monkey
     import name_resolution
     config = tmp_path/'name-resolver.toml'
     config.write_text('default_resolver="opsin"\n[backends.opsin]\nenabled=true\ncache=false\n')
-    monkeypatch.setenv('RESEARCH_AGENT_NAME_RESOLVER_CONFIG', str(config))
+    monkeypatch.setenv('CORAGENT_NAME_RESOLVER_CONFIG', str(config))
     calls = []
     def reply(url, **kwargs):
         calls.append(url)
@@ -67,7 +67,7 @@ def resolver_config(tmp_path, monkeypatch):
     config.write_text('default_resolver="auto"\n[backends.pubchem]\ncache=false\n'
                       'endpoint="https://pubchem.example/rest/pug"\n'
                       '[backends.opsin]\ncache=false\nendpoint="https://opsin.example/opsin"\n')
-    monkeypatch.setenv('RESEARCH_AGENT_NAME_RESOLVER_CONFIG', str(config))
+    monkeypatch.setenv('CORAGENT_NAME_RESOLVER_CONFIG', str(config))
     return name_resolution
 
 
@@ -157,8 +157,8 @@ def test_failed_lookup_leads_to_inference_without_invalidating_the_molecule(reso
         return {}, 'sha256:empty'
     monkeypatch.setattr(resolver_config, '_http_json', reply)
     if failure == 'missing_config':
-        monkeypatch.delenv('RESEARCH_AGENT_NAME_RESOLVER_CONFIG')
-        monkeypatch.delenv('RESEARCH_AGENT_INSTALL_ROOT', raising=False)
+        monkeypatch.delenv('CORAGENT_NAME_RESOLVER_CONFIG')
+        monkeypatch.delenv('CORAGENT_INSTALL_ROOT', raising=False)
     elif failure == 'invalid_config':
         (tmp_path/'resolver.toml').write_text('not valid TOML')
     elif failure == 'bad_type_config':

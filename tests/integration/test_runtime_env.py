@@ -43,7 +43,7 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest.fixture(autouse=True)
 def explicit_runtime_selection(monkeypatch):
     # This suite tests manifest selection independently of the runner's CLI override.
-    monkeypatch.delenv("RESEARCH_AGENT_PYTHON", raising=False)
+    monkeypatch.delenv("CORAGENT_PYTHON", raising=False)
 
 
 def _write_runtime_specs(package: Path) -> None:
@@ -62,8 +62,8 @@ def test_resolve_package_root_honors_process_binding(monkeypatch, tmp_path: Path
 
 
 def test_package_bootstrap_replaces_an_inherited_package_root(monkeypatch) -> None:
-    monkeypatch.setenv(PACKAGE_ROOT_OVERRIDE, "/tmp/other-research-agent-release")
-    monkeypatch.setenv("RESEARCH_AGENT_DISABLE_RUNTIME_REEXEC", "1")
+    monkeypatch.setenv(PACKAGE_ROOT_OVERRIDE, "/tmp/other-coragent-release")
+    monkeypatch.setenv("CORAGENT_DISABLE_RUNTIME_REEXEC", "1")
 
     bootstrap_python_package(ROOT)
 
@@ -136,20 +136,20 @@ def test_kernel_prefix_binds_payload_and_control_environment(tmp_path: Path) -> 
 
 
 def test_default_env_store_is_package_relative_without_override(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("RESEARCH_AGENT_ENV_ROOT", raising=False)
-    monkeypatch.delenv("RESEARCH_AGENT_WORKSPACE_ROOT", raising=False)
+    monkeypatch.delenv("CORAGENT_ENV_ROOT", raising=False)
+    monkeypatch.delenv("CORAGENT_WORKSPACE_ROOT", raising=False)
     package = tmp_path / "skill"
     package.mkdir()
 
-    assert default_env_store(package) == Path(os.environ["RESEARCH_AGENT_HOST_ENV_ROOT"])
+    assert default_env_store(package) == Path(os.environ["CORAGENT_HOST_ENV_ROOT"])
 
 
 def test_installed_current_entrypoint_seeds_installation_owned_runtime_paths(tmp_path: Path) -> None:
-    installation = tmp_path / "research-agent"
+    installation = tmp_path / "coragent"
     layout_paths(installation).initialize()
     package_home = installation / "."
     release = package_home / "releases" / "release-a"
-    script = release / "web" / "bin" / "ts-web"
+    script = release / "web" / "bin" / "coragent-web"
     script.parent.mkdir(parents=True)
     script.write_text("# probe\n", encoding="utf-8")
     current = package_home / "current"
@@ -157,16 +157,16 @@ def test_installed_current_entrypoint_seeds_installation_owned_runtime_paths(tmp
     environment: dict[str, str] = {}
 
     resolved = seed_installation_runtime_from_entrypoint(
-        current / "web" / "bin" / "ts-web",
+        current / "web" / "bin" / "coragent-web",
         environ=environment,
     )
 
     runtime_home = installation / "var/state/installation/python"
     assert resolved == installation
     assert environment == {
-        "RESEARCH_AGENT_RUNTIME_HOME": str(runtime_home),
-        "RESEARCH_AGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
-        "RESEARCH_AGENT_ENV_ROOT": str(
+        "CORAGENT_RUNTIME_HOME": str(runtime_home),
+        "CORAGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
+        "CORAGENT_ENV_ROOT": str(
             layout_paths(installation).env_root
         ),
     }
@@ -177,21 +177,21 @@ def test_unified_suite_entrypoint_seeds_installation_owned_runtime_paths(
     tmp_path: Path,
     entrypoint_kind: str,
 ) -> None:
-    installation = tmp_path / "research-agent"
+    installation = tmp_path / "coragent"
     layout_paths(installation).initialize()
     package_home = installation / "."
     release = package_home / "releases" / "release-a"
-    script = release / "web" / "bin" / "ts-web"
+    script = release / "web" / "bin" / "coragent-web"
     script.parent.mkdir(parents=True)
     script.write_text("# probe\n", encoding="utf-8")
     current = package_home / "current"
     current.symlink_to("releases/release-a", target_is_directory=True)
-    launcher = installation / "TSWeb"
-    launcher.symlink_to("./current/web/bin/ts-web")
+    launcher = installation / "coragent-web"
+    launcher.symlink_to("./current/web/bin/coragent-web")
     entrypoint = (
         launcher
         if entrypoint_kind == "launcher"
-        else current / "web" / "bin" / "ts-web"
+        else current / "web" / "bin" / "coragent-web"
     )
     environment: dict[str, str] = {}
 
@@ -203,9 +203,9 @@ def test_unified_suite_entrypoint_seeds_installation_owned_runtime_paths(
     runtime_home = installation / "var/state/installation/python"
     assert resolved == installation
     assert environment == {
-        "RESEARCH_AGENT_RUNTIME_HOME": str(runtime_home),
-        "RESEARCH_AGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
-        "RESEARCH_AGENT_ENV_ROOT": str(
+        "CORAGENT_RUNTIME_HOME": str(runtime_home),
+        "CORAGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
+        "CORAGENT_ENV_ROOT": str(
             layout_paths(installation).env_root
         ),
     }
@@ -214,13 +214,13 @@ def test_unified_suite_entrypoint_seeds_installation_owned_runtime_paths(
 def test_unified_suite_entrypoint_rejects_target_outside_managed_releases(
     tmp_path: Path,
 ) -> None:
-    installation = tmp_path / "research-agent"
+    installation = tmp_path / "coragent"
     layout_paths(installation).initialize()
-    authored = installation / "checkout" / "bin" / "ts-web"
+    authored = installation / "checkout" / "bin" / "coragent-web"
     authored.parent.mkdir(parents=True)
     authored.write_text("# authored\n", encoding="utf-8")
-    launcher = installation / "TSWeb"
-    launcher.symlink_to("checkout/bin/ts-web")
+    launcher = installation / "coragent-web"
+    launcher.symlink_to("checkout/bin/coragent-web")
     environment: dict[str, str] = {}
 
     assert seed_installation_runtime_from_entrypoint(
@@ -233,17 +233,17 @@ def test_unified_suite_entrypoint_rejects_target_outside_managed_releases(
 def test_suite_web_launcher_seeds_installation_owned_runtime_paths(
     tmp_path: Path,
 ) -> None:
-    installation = tmp_path / "research-agent"
+    installation = tmp_path / "coragent"
     layout_paths(installation).initialize()
     package_home = installation / "."
     release = package_home / "releases" / "release-a"
-    script = release / "web" / "bin" / "ts-web"
+    script = release / "web" / "bin" / "coragent-web"
     script.parent.mkdir(parents=True)
     script.write_text("# historical probe\n", encoding="utf-8")
     current = package_home / "current"
     current.symlink_to("releases/release-a", target_is_directory=True)
-    launcher = installation / "TSWeb"
-    launcher.symlink_to("./current/web/bin/ts-web")
+    launcher = installation / "coragent-web"
+    launcher.symlink_to("./current/web/bin/coragent-web")
     environment: dict[str, str] = {}
 
     resolved = seed_installation_runtime_from_entrypoint(
@@ -254,9 +254,9 @@ def test_suite_web_launcher_seeds_installation_owned_runtime_paths(
     runtime_home = installation / "var/state/installation/python"
     assert resolved == installation
     assert environment == {
-        "RESEARCH_AGENT_RUNTIME_HOME": str(runtime_home),
-        "RESEARCH_AGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
-        "RESEARCH_AGENT_ENV_ROOT": str(layout_paths(installation).env_root),
+        "CORAGENT_RUNTIME_HOME": str(runtime_home),
+        "CORAGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
+        "CORAGENT_ENV_ROOT": str(layout_paths(installation).env_root),
     }
 
 
@@ -264,27 +264,27 @@ def test_runtime_path_seed_preserves_explicit_configuration_and_ignores_authored
     tmp_path: Path,
 ) -> None:
     explicit = {
-        "RESEARCH_AGENT_RUNTIME_HOME": "/configured/runtime",
-        "RESEARCH_AGENT_RUNTIME_MANIFEST": "/configured/env.json",
-        "RESEARCH_AGENT_ENV_ROOT": "/configured/envs",
+        "CORAGENT_RUNTIME_HOME": "/configured/runtime",
+        "CORAGENT_RUNTIME_MANIFEST": "/configured/env.json",
+        "CORAGENT_ENV_ROOT": "/configured/envs",
     }
-    stable = tmp_path / "." / "current" / "web" / "bin" / "ts-web"
+    stable = tmp_path / "." / "current" / "web" / "bin" / "coragent-web"
     release = tmp_path / "." / "releases" / "release-a" / "web" / "bin"
     release.mkdir(parents=True)
-    (release / "ts-web").write_text("#!/bin/sh\n", encoding="utf-8")
+    (release / "coragent-web").write_text("#!/bin/sh\n", encoding="utf-8")
     current = tmp_path / "." / "current"
     current.symlink_to("releases/release-a", target_is_directory=True)
 
     layout_paths(tmp_path).initialize()
     assert seed_installation_runtime_from_entrypoint(stable, environ=explicit) == tmp_path
     assert explicit == {
-        "RESEARCH_AGENT_RUNTIME_HOME": "/configured/runtime",
-        "RESEARCH_AGENT_RUNTIME_MANIFEST": "/configured/env.json",
-        "RESEARCH_AGENT_ENV_ROOT": "/configured/envs",
+        "CORAGENT_RUNTIME_HOME": "/configured/runtime",
+        "CORAGENT_RUNTIME_MANIFEST": "/configured/env.json",
+        "CORAGENT_ENV_ROOT": "/configured/envs",
     }
 
     authored_environment: dict[str, str] = {}
-    authored = tmp_path / "checkout" / "components" / "ts-web" / "bin" / "ts-web"
+    authored = tmp_path / "checkout" / "components" / "coragent-web" / "bin" / "coragent-web"
     assert seed_installation_runtime_from_entrypoint(
         authored,
         environ=authored_environment,
@@ -294,26 +294,26 @@ def test_runtime_path_seed_preserves_explicit_configuration_and_ignores_authored
 
 def test_authoritative_installation_seed_replaces_stale_runtime_paths(tmp_path: Path) -> None:
     environment = {
-        "RESEARCH_AGENT_RUNTIME_HOME": "/stale/runtime",
-        "RESEARCH_AGENT_RUNTIME_MANIFEST": "/stale/env.json",
-        "RESEARCH_AGENT_ENV_ROOT": "/stale/envs",
+        "CORAGENT_RUNTIME_HOME": "/stale/runtime",
+        "CORAGENT_RUNTIME_MANIFEST": "/stale/env.json",
+        "CORAGENT_ENV_ROOT": "/stale/envs",
     }
 
     seed_installation_runtime(tmp_path, environ=environment, authoritative=True)
 
     runtime_home = tmp_path / "var/state/installation/python"
     assert environment == {
-        "RESEARCH_AGENT_RUNTIME_HOME": str(runtime_home),
-        "RESEARCH_AGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
-        "RESEARCH_AGENT_ENV_ROOT": str(layout_paths(tmp_path).env_root),
+        "CORAGENT_RUNTIME_HOME": str(runtime_home),
+        "CORAGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
+        "CORAGENT_ENV_ROOT": str(layout_paths(tmp_path).env_root),
     }
 
 
 def test_workspace_root_owns_runtime_home_and_env_store(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("RESEARCH_AGENT_ENV_ROOT", raising=False)
-    monkeypatch.delenv("RESEARCH_AGENT_RUNTIME_HOME", raising=False)
+    monkeypatch.delenv("CORAGENT_ENV_ROOT", raising=False)
+    monkeypatch.delenv("CORAGENT_RUNTIME_HOME", raising=False)
     workspace = tmp_path / "workspace"
-    package = tmp_path / "pi" / "git" / "github.com" / "iawnix" / "ResearchAgent"
+    package = tmp_path / "pi" / "git" / "github.com" / "iawnix" / "CoRAgent"
     workspace.mkdir()
     package.mkdir(parents=True)
     _write_runtime_specs(package)
@@ -366,14 +366,14 @@ def test_configured_python_reads_runtime_manifest(tmp_path: Path) -> None:
 
 def test_seed_workspace_root_from_argv_sets_runtime_env(monkeypatch, tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
-    monkeypatch.delenv("RESEARCH_AGENT_WORKSPACE_ROOT", raising=False)
+    monkeypatch.delenv("CORAGENT_WORKSPACE_ROOT", raising=False)
 
     seed_workspace_root_from_argv(["report_workspace", "--root", str(workspace)])
 
     try:
-        assert os.environ["RESEARCH_AGENT_WORKSPACE_ROOT"] == str(workspace)
+        assert os.environ["CORAGENT_WORKSPACE_ROOT"] == str(workspace)
     finally:
-        os.environ.pop("RESEARCH_AGENT_WORKSPACE_ROOT", None)
+        os.environ.pop("CORAGENT_WORKSPACE_ROOT", None)
 
 
 def test_configured_python_ignores_stale_runtime_manifest(tmp_path: Path) -> None:
@@ -486,7 +486,7 @@ def test_runtime_process_binding_owns_python_commands(monkeypatch: pytest.Monkey
 
     bind_runtime_process_environment(executable)
 
-    assert os.environ["RESEARCH_AGENT_PYTHON"] == str(executable)
+    assert os.environ["CORAGENT_PYTHON"] == str(executable)
     assert os.environ["PATH"].split(os.pathsep)[0] == str(executable.parent)
     assert os.environ["PATH"].split(os.pathsep).count(str(executable.parent)) == 1
     assert os.environ["PYTHONNOUSERSITE"] == "1"
@@ -600,7 +600,7 @@ def test_damaged_control_base_requires_conda_for_repair(
 
 
 def test_install_env_dry_run_reports_hashed_prefix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("RESEARCH_AGENT_WORKSPACE_ROOT", raising=False)
+    monkeypatch.delenv("CORAGENT_WORKSPACE_ROOT", raising=False)
     completed = subprocess.run(
         [
             sys.executable,
@@ -629,7 +629,7 @@ def test_install_env_dry_run_reports_hashed_prefix(tmp_path: Path, monkeypatch: 
     assert payload["manifest_path"].endswith("/var/state/installation/python/env.json")
     assert payload["environment_lock"] == str(ROOT / "environment.lock.txt")
     assert payload["python_executable"].endswith("/bin/python")
-    assert payload["python_distribution"] == "research-agent"
+    assert payload["python_distribution"] == "coragent"
     assert payload["python_payload_sha256"] == python_payload_sha256(ROOT)
 
 
@@ -811,12 +811,12 @@ def test_ts_runtime_run_preserves_pythonpath_without_source_injection(monkeypatc
 def test_ts_runtime_isolated_run_strips_workspace_runtime_context(monkeypatch) -> None:
     calls: dict[str, object] = {}
     runtime_values = {
-        "RESEARCH_AGENT_WORKSPACE_ROOT": "/tmp/live-workspace",
-        "RESEARCH_AGENT_PYTHON": "/tmp/override-python",
-        "RESEARCH_AGENT_DISABLE_RUNTIME_REEXEC": "1",
-        "RESEARCH_AGENT_ENV_ROOT": "/tmp/live-envs",
-        "RESEARCH_AGENT_RUNTIME_HOME": "/tmp/live-runtime",
-        "RESEARCH_AGENT_RUNTIME_MANIFEST": "/tmp/live-runtime/env.json",
+        "CORAGENT_WORKSPACE_ROOT": "/tmp/live-workspace",
+        "CORAGENT_PYTHON": "/tmp/override-python",
+        "CORAGENT_DISABLE_RUNTIME_REEXEC": "1",
+        "CORAGENT_ENV_ROOT": "/tmp/live-envs",
+        "CORAGENT_RUNTIME_HOME": "/tmp/live-runtime",
+        "CORAGENT_RUNTIME_MANIFEST": "/tmp/live-runtime/env.json",
     }
     for name, value in runtime_values.items():
         monkeypatch.setenv(name, value)
@@ -855,7 +855,7 @@ def test_ts_runtime_isolated_run_cannot_modify_workspace_manifest(tmp_path: Path
     )
     before = manifest.read_bytes()
     env = dict(os.environ)
-    env["RESEARCH_AGENT_WORKSPACE_ROOT"] = str(workspace)
+    env["CORAGENT_WORKSPACE_ROOT"] = str(workspace)
 
     completed = subprocess.run(
         [
@@ -902,10 +902,10 @@ def test_ts_runtime_resolve_reports_external_manifest_path(tmp_path: Path) -> No
     workspace.mkdir()
     env = dict(os.environ)
     for name in (
-        "RESEARCH_AGENT_PYTHON",
-        "RESEARCH_AGENT_RUNTIME_HOME",
-        "RESEARCH_AGENT_RUNTIME_MANIFEST",
-        "RESEARCH_AGENT_ENV_ROOT",
+        "CORAGENT_PYTHON",
+        "CORAGENT_RUNTIME_HOME",
+        "CORAGENT_RUNTIME_MANIFEST",
+        "CORAGENT_ENV_ROOT",
     ):
         env.pop(name, None)
     completed = subprocess.run(
@@ -935,7 +935,7 @@ def test_ts_runtime_resolve_reports_external_manifest_path(tmp_path: Path) -> No
 def _runtime_probe(*, payload_sha256: str | None = None) -> dict[str, object]:
     result = probe_runtime_capabilities(require_distribution=False)
     result["distribution"] = {
-        "name": "research-agent", "installed": True, "version": "0.12.0",
+        "name": "coragent", "installed": True, "version": "0.12.0",
         "root": str(Path(sys.prefix).resolve()),
         "payload_sha256": payload_sha256 or python_payload_sha256(ROOT),
     }
@@ -947,7 +947,7 @@ def _write_test_python_payload(package: Path) -> str:
     source.mkdir(parents=True)
     (source / "__init__.py").write_text('"""test payload"""\n', encoding="utf-8")
     (package / "package.json").write_text(
-        '{"name":"@iawnix/research-agent","version":"0.12.0"}\n',
+        '{"name":"@iawnix/coragent","version":"0.12.0"}\n',
         encoding="utf-8",
     )
     return python_payload_sha256(package)

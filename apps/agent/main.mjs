@@ -3,13 +3,13 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
-import { startResearchAgentHost } from "./host/server.mjs";
-import { createResearchAgentHarnessBackend } from "./pi/backend.mjs";
+import { startCoRAgentHost } from "./host/server.mjs";
+import { createCoRAgentHarnessBackend } from "./pi/backend.mjs";
 
 import { packageRoot } from "./platform/resources.mjs";
 const args = process.argv.slice(2);
 const mode = args.shift() || "server";
-if (mode !== "server") throw new Error("Use ResearchAgent --workspace for the Pi client; this entrypoint starts the Host.");
+if (mode !== "server") throw new Error("Use CoRAgent --workspace for the Pi client; this entrypoint starts the Host.");
 const options = {};
 for (let index = 0; index < args.length; index++) {
   const match = /^--([^=]+)=(.*)$/u.exec(args[index]);
@@ -17,22 +17,22 @@ for (let index = 0; index < args.length; index++) {
   if (!["workspace", "directory", "server-id", "state-root", "session-dir", "provider", "model"].includes(key)) throw new Error(`Unknown Host option: ${args[index]}`);
   options[key] = match?.[2] || args[++index];
 }
-const installRoot = process.env.RESEARCH_AGENT_INSTALL_ROOT;
+const installRoot = process.env.CORAGENT_INSTALL_ROOT;
 if (!installRoot || !options.directory || !options["server-id"]) throw new Error("Host requires an installation, directory and server identity.");
-const stateRoot = resolve(options["state-root"] || process.env.RESEARCH_AGENT_HOST_STATE_ROOT);
-const workspaceRoot = resolve(process.env.RESEARCH_AGENT_WORKSPACE_ROOT || options.workspace || join(installRoot, "workspaces"));
+const stateRoot = resolve(options["state-root"] || process.env.CORAGENT_HOST_STATE_ROOT);
+const workspaceRoot = resolve(process.env.CORAGENT_WORKSPACE_ROOT || options.workspace || join(installRoot, "workspaces"));
 const socketPath = join(resolve(options.directory), `${options["server-id"]}.sock`);
-// The ResearchAgent Host owns <directory>/<server-id>.sock. Pi's experimental server
+// The CoRAgent Host owns <directory>/<server-id>.sock. Pi's experimental server
 // uses the same server-id-derived socket name, so keep its coordinator and
 // public socket in a private child directory to avoid endpoint collisions.
 const piServerDirectory = join(resolve(options.directory), "pi");
-const python = process.env.RESEARCH_AGENT_PYTHON || "python3";
+const python = process.env.CORAGENT_PYTHON || "python3";
 const monitorToken = randomBytes(32).toString("hex");
-const provider = options.provider ?? process.env.RESEARCH_AGENT_PROVIDER;
-const model = options.model ?? process.env.RESEARCH_AGENT_MODEL;
-if ((provider === undefined) !== (model === undefined)) throw new Error("RESEARCH_AGENT_PROVIDER and RESEARCH_AGENT_MODEL must be provided together");
-if (Boolean(process.env.RESEARCH_AGENT_LINK_URL) !== Boolean(process.env.RESEARCH_AGENT_LINK_HOST_TOKEN_FILE)) {
-  throw new Error("Both ResearchAgent Link URL and Host token file are required.");
+const provider = options.provider ?? process.env.CORAGENT_PROVIDER;
+const model = options.model ?? process.env.CORAGENT_MODEL;
+if ((provider === undefined) !== (model === undefined)) throw new Error("CORAGENT_PROVIDER and CORAGENT_MODEL must be provided together");
+if (Boolean(process.env.CORAGENT_LINK_URL) !== Boolean(process.env.CORAGENT_LINK_HOST_TOKEN_FILE)) {
+  throw new Error("Both CoRAgent Link URL and Host token file are required.");
 }
 let sessionBackend;
 let host;
@@ -62,7 +62,7 @@ function supervise(name, entry, argv, privateEnv = {}) {
       if (stopping) { health({ state: "stopped" }); return; }
       failures++;
       health({ state: "restarting", restarts: failures, error: detail });
-      process.stderr.write(`ResearchAgent ${name}: ${detail}; restarting\n`);
+      process.stderr.write(`CoRAgent ${name}: ${detail}; restarting\n`);
       const timer = setTimeout(() => { timers.delete(timer); start(); }, Math.min(30_000, 1000 * 2 ** Math.min(failures - 1, 5)));
       timers.add(timer);
     };
@@ -115,7 +115,7 @@ for (const signal of shutdownSignals) {
       if (shutdownFailureReported) return;
       shutdownFailureReported = true;
       const detail = error instanceof Error ? (error.stack || error.message) : String(error);
-      process.stderr.write(`ResearchAgent Host shutdown failed after ${signal}: ${detail}\n`);
+      process.stderr.write(`CoRAgent Host shutdown failed after ${signal}: ${detail}\n`);
     });
   };
   signalHandlers.set(signal, handler);
@@ -128,16 +128,16 @@ startupPromise = (async () => {
     mkdirSync(piServerDirectory, { recursive: true, mode: 0o700 });
     mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
     const pin = JSON.parse(readFileSync(join(packageRoot, "config/pi-source.json"), "utf8"));
-    const sourceRoot = resolve(process.env.RESEARCH_AGENT_PI_RUNTIME_ROOT);
+    const sourceRoot = resolve(process.env.CORAGENT_PI_RUNTIME_ROOT);
     if (sourceRoot.split("/").at(-1) !== pin.commit) throw new Error("Pi runtime pin mismatch");
-    if (process.env.RESEARCH_AGENT_PI_RUNTIME_ROOT && resolve(process.env.RESEARCH_AGENT_PI_RUNTIME_ROOT) !== sourceRoot) {
-      throw new Error("RESEARCH_AGENT_PI_RUNTIME_ROOT is installation-managed and cannot be overridden");
+    if (process.env.CORAGENT_PI_RUNTIME_ROOT && resolve(process.env.CORAGENT_PI_RUNTIME_ROOT) !== sourceRoot) {
+      throw new Error("CORAGENT_PI_RUNTIME_ROOT is installation-managed and cannot be overridden");
     }
     if (!existsSync(piModulePath("server", sourceRoot))) {
       throw new Error(`managed Pi experimental source is unavailable: ${sourceRoot}`);
     }
-    process.env.RESEARCH_AGENT_PI_RUNTIME_ROOT = sourceRoot;
-    sessionBackend = await createResearchAgentHarnessBackend({
+    process.env.CORAGENT_PI_RUNTIME_ROOT = sourceRoot;
+    sessionBackend = await createCoRAgentHarnessBackend({
       sourceRoot,
       packageRoot,
       installRoot,
@@ -146,14 +146,14 @@ startupPromise = (async () => {
       // launcher-provided hashed runtime directory is deliberately short so
       // the resulting paths stay below the POSIX AF_UNIX limit.
       serverDirectory: piServerDirectory,
-      sessionDir: resolve(options["session-dir"] || process.env.RESEARCH_AGENT_SESSION_ROOT),
+      sessionDir: resolve(options["session-dir"] || process.env.CORAGENT_SESSION_ROOT),
       stateRoot,
       serverId: options["server-id"],
       provider,
       model,
     });
     if (stopping) return;
-    host = await startResearchAgentHost({
+    host = await startCoRAgentHost({
       socketPath, workspaceRoot, stateRoot, packageRoot, python, serverId: options["server-id"],
       sessionBackend, monitorToken,
     });
@@ -172,11 +172,11 @@ await startupPromise;
 // carried a Python monitor CLI; the generic Job Runtime release may omit it.
 // Do not put the Host into a restart loop when that optional component is not
 // present.  Host session traffic remains available either way.
-if (process.env.RESEARCH_AGENT_MONITOR_DISABLED !== "1" && existsSync(join(packageRoot, "apps/agent-cli/monitor.py"))) supervise("monitor", "apps/agent/host/monitor/worker.mjs", [
+if (process.env.CORAGENT_MONITOR_DISABLED !== "1" && existsSync(join(packageRoot, "apps/agent-cli/monitor.py"))) supervise("monitor", "apps/agent/host/monitor/worker.mjs", [
   "--workspace-root", workspaceRoot, "--host-socket", socketPath, "--state-root", stateRoot,
-], { RESEARCH_AGENT_INTERNAL_MONITOR_TOKEN: monitorToken });
-if (process.env.RESEARCH_AGENT_LINK_URL || process.env.RESEARCH_AGENT_LINK_HOST_TOKEN_FILE) {
+], { CORAGENT_INTERNAL_MONITOR_TOKEN: monitorToken });
+if (process.env.CORAGENT_LINK_URL || process.env.CORAGENT_LINK_HOST_TOKEN_FILE) {
   supervise("link", "apps/agent/transport/link.mjs", [
-    "--relay-url", process.env.RESEARCH_AGENT_LINK_URL, "--token-file", process.env.RESEARCH_AGENT_LINK_HOST_TOKEN_FILE, "--socket-path", socketPath,
+    "--relay-url", process.env.CORAGENT_LINK_URL, "--token-file", process.env.CORAGENT_LINK_HOST_TOKEN_FILE, "--socket-path", socketPath,
   ]);
 }

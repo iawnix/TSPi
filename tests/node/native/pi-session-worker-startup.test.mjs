@@ -12,7 +12,7 @@ import { TEST_ROOT, TEST_SOCKET_ROOT, retainPiDiagnostics, managedPython, pinned
 
 const execute = promisify(execFile);
 const sourceRoot = pinnedPiSource();
-const packageRoot = resolve(process.env.RESEARCH_AGENT_TEST_PACKAGE_ROOT || process.cwd());
+const packageRoot = resolve(process.env.CORAGENT_TEST_PACKAGE_ROOT || process.cwd());
 
 test("real worker terminal isolates monitor refresh, command feedback and task cancellation", {
   timeout: 90_000,
@@ -35,8 +35,8 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
   });
   await new Promise(resolve => modelServer.listen(0, '127.0.0.1', resolve));
   try {
-    process.env.RESEARCH_AGENT_DEBUG = "1";
-    process.env.RESEARCH_AGENT_PI_DIAGNOSTIC_FILE = join(root, "pi-child.log");
+    process.env.CORAGENT_DEBUG = "1";
+    process.env.CORAGENT_PI_DIAGNOSTIC_FILE = join(root, "pi-child.log");
     process.env.PI_CODING_AGENT_DIR = join(root, "agent");
     process.env.PI_AGENT_DIR = process.env.PI_CODING_AGENT_DIR;
     await mkdir(process.env.PI_CODING_AGENT_DIR);
@@ -45,16 +45,16 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
       models: [{id:"fixture", name:"Fixture", reasoning:false, input:["text"],
         cost:{input:0, output:0, cacheRead:0, cacheWrite:0}, contextWindow:200000, maxTokens:4096}],
     } } }));
-    process.env.RESEARCH_AGENT_PYTHON = managedPython();
+    process.env.CORAGENT_PYTHON = managedPython();
     process.env.PYTHONDONTWRITEBYTECODE = "1";
     const workspaceRoot = join(root, "workspaces");
     await mkdir(workspaceRoot);
-    await execute(process.env.RESEARCH_AGENT_PYTHON, [
+    await execute(process.env.CORAGENT_PYTHON, [
       join(packageRoot, "apps/agent-cli/workspace_mode.py"),
       "--root", join(workspaceRoot, "startup"), "--workspace-id", "startup",
     ]);
-    const { createResearchAgentHarnessBackend } = await import(pathToFileURL(join(packageRoot, "apps/agent/pi/backend.mjs")));
-    backend = await createResearchAgentHarnessBackend({
+    const { createCoRAgentHarnessBackend } = await import(pathToFileURL(join(packageRoot, "apps/agent/pi/backend.mjs")));
+    backend = await createCoRAgentHarnessBackend({
       sourceRoot, packageRoot, workspaceRoot,
       serverDirectory: socketRoot, sessionDir: join(root, "sessions"),
       stateRoot: join(root, "state"), model: { provider: "fixture", id: "fixture" },
@@ -79,14 +79,14 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
       const active = await activateBuiltinClientServices(server);
       await active.plugins.prepareSession({ sessionId: created.session.session_id, packagePaths: null }, BACKGROUND_CONTEXT);
       await active.management.attach(created.session.session_id, BACKGROUND_CONTEXT);
-      const token = defineService("research-agent.client-queries");
+      const token = defineService("coragent.client-queries");
       services = server.session.open({ services: [token], assertAccess() {}, onError() {} });
       await services.ready(BACKGROUND_CONTEXT);
       const queries = services.use(token);
       const prompt = await queries.systemPrompt(BACKGROUND_CONTEXT);
       assert.equal(prompt.workspace_id, "startup");
       assert.equal(prompt.session_id, created.session.session_id);
-      assert.match(prompt.result.effective, /ResearchAgent/);
+      assert.match(prompt.result.effective, /CoRAgent/);
       assert.ok(prompt.result.contributors.length > 0);
       const telemetry = await queries.telemetry(BACKGROUND_CONTEXT);
       assert.equal(telemetry.session_id, created.session.session_id);
@@ -107,7 +107,7 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         fromSource("packages/coding-agent/src/modes/interactive/theme/theme.ts"),
         fromSource("packages/chord/src/index.ts"),
       ]);
-      const { createResearchAgentNativeClientFacet } = await import(pathToFileURL(join(packageRoot, "apps/agent/terminal/commands/facet.mjs")));
+      const { createCoRAgentNativeClientFacet } = await import(pathToFileURL(join(packageRoot, "apps/agent/terminal/commands/facet.mjs")));
       const { renderLayoutFrame } = await fromSource('packages/tui/src/layout.ts');
       initTheme("dark");
       const { VirtualTerminal } = await fromSource('packages/tui/test/virtual-terminal.ts');
@@ -138,7 +138,7 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         });
       }});
       let monitorRunning=1, monitorPending=0, refreshMonitor;
-      const facet = await createResearchAgentNativeClientFacet({ sourceRoot, session: {
+      const facet = await createCoRAgentNativeClientFacet({ sourceRoot, session: {
         workspaceId: "startup", sessionId: created.session.session_id, quit() { quit = true; },
         async monitorStatus() { return {workspace_id:'startup',
           monitors:Array.from({length:monitorRunning},()=>({session_id:created.session.session_id,last_state:'running',enabled:true})),
@@ -253,7 +253,7 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         terminal.sendInput("\u001b");
         await new Promise((resolve) => setImmediate(resolve));
         submit("/sys-prompt");
-        await waitFor(() => component.render(100).join("\n").includes("You are ResearchAgent"));
+        await waitFor(() => component.render(100).join("\n").includes("You are CoRAgent"));
         terminal.sendInput('\x1b[C');
         const scrolledDocument=component.render(100).join('\n');
         testUI.setActivity({render:()=>['Monitor !'],invalidate(){}});
@@ -403,7 +403,7 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         assert.equal(restored,transcript);assert.equal(restored.scrollTop,position);assert.equal(restored.isFollowingEnd,false);
         assert.equal((await backend.readSession('startup',created.session.session_id)).session.is_streaming,true);
         submit('/sys-prompt');
-        await waitFor(()=>component.render(100).join('\n').includes('You are ResearchAgent'));
+        await waitFor(()=>component.render(100).join('\n').includes('You are CoRAgent'));
         assert.ok(!renderLayoutFrame(component.layoutRoot,100,24,()=>{}).primaryScrollView);
         terminal.sendInput('\x1b');
         await new Promise(resolve=>setImmediate(resolve));
@@ -421,13 +421,13 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
       }
       assert.equal((await backend.readSession("startup", created.session.session_id)).session.online, true);
       const second = await backend.createSession({ workspace_id: "startup", session_id: "second", model: { provider: "fixture", id: "fixture" } });
-      const { startResearchAgentHost } = await import(pathToFileURL(join(packageRoot, "apps/agent/host/server.mjs")));
+      const { startCoRAgentHost } = await import(pathToFileURL(join(packageRoot, "apps/agent/host/server.mjs")));
       const { connectHost } = await import(pathToFileURL(join(packageRoot, "apps/agent/transport/host-client.mjs")));
       const { runTerminalSessions } = await import(pathToFileURL(join(packageRoot, "apps/agent/terminal/session.mjs")));
       const { runClientTui } = await fromSource("packages/coding-agent/src/experimental/client-tui.ts");
       const { defineFacet } = await fromSource("packages/chord/src/index.ts");
       const { SlashCommands } = await fromSource("packages/coding-agent/src/experimental/services/slash-commands.ts");
-      const host = await startResearchAgentHost({ socketPath: join(root, "host.sock"), workspaceRoot, stateRoot: join(root, "hs"), sessionBackend: backend, monitorPollMs: 0 });
+      const host = await startCoRAgentHost({ socketPath: join(root, "host.sock"), workspaceRoot, stateRoot: join(root, "hs"), sessionBackend: backend, monitorPollMs: 0 });
       const peer = await connectHost({ socketPath: host.socketPath });
       const opened = [];
       let currentSession;
@@ -440,7 +440,7 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
           async createFacet(session) {
             currentSession = session;
             return createStaticFacetLoader([
-              await createResearchAgentNativeClientFacet({ sourceRoot, session }),
+              await createCoRAgentNativeClientFacet({ sourceRoot, session }),
               defineFacet({ id: "test-terminal-driver", setup(env) {
                 const commands = env.use(SlashCommands);
                 env.onActivate(() => {

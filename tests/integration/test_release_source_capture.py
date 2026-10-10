@@ -49,7 +49,7 @@ def test_dirty_release_capture_requires_explicit_local_override(tmp_path: Path) 
 def _repository(root: Path) -> Path:
     files = {
         "README.md": "captured source\n",
-        "package.json": '{"name":"@iawnix/research-agent"}\n',
+        "package.json": '{"name":"@iawnix/coragent"}\n',
         "backend/pyproject.toml": "[build-system]\nrequires = []\n",
         "scripts/build_release.py": "# build fixture\n",
         "scripts/check_package.py": "# check fixture\n",
@@ -61,8 +61,8 @@ def _repository(root: Path) -> Path:
         path.write_text(content, encoding="utf-8")
     (root / "scripts" / "build_release.py").chmod(0o755)
     _git(root, "init", "-q")
-    _git(root, "config", "user.name", "ResearchAgent Test")
-    _git(root, "config", "user.email", "research-agent-test@example.invalid")
+    _git(root, "config", "user.name", "CoRAgent Test")
+    _git(root, "config", "user.email", "coragent-test@example.invalid")
     _git(root, "add", ".")
     _git(root, "commit", "-qm", "initial")
     return root

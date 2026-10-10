@@ -21,13 +21,13 @@ def test_public_package_install_accepts_jobs_reuses_environment_and_uninstalls(t
     pin = json.loads((ROOT/'config/pi-source.json').read_text())
     pi_root = root/'runtimes/pi'/pin['commit']
     pi_root.mkdir(parents=True)
-    subprocess.run(['cp','--reflink=auto','-a',os.environ['RESEARCH_AGENT_TEST_PI_RUNTIME_ROOT']+'/.',str(pi_root)],check=True)
+    subprocess.run(['cp','--reflink=auto','-a',os.environ['CORAGENT_TEST_PI_RUNTIME_ROOT']+'/.',str(pi_root)],check=True)
     config = tmp_path/'job.toml'
     config.write_text('default_environment="local"\n[environments.local]\nkind="local"\nsupervisor="process"\n')
-    conda = os.environ.get('RESEARCH_AGENT_TEST_CONDA') or shutil.which('conda')
-    assert conda, 'Prepare with RESEARCH_AGENT_TEST_CONDA set'
+    conda = os.environ.get('CORAGENT_TEST_CONDA') or shutil.which('conda')
+    assert conda, 'Prepare with CORAGENT_TEST_CONDA set'
     environment = dict(os.environ, CONDA_OFFLINE='true')
-    for key in ('RESEARCH_AGENT_JOB_CONFIG', 'RESEARCH_AGENT_INSTALL_ROOT', 'RESEARCH_AGENT_RUNTIME_MANIFEST'):
+    for key in ('CORAGENT_JOB_CONFIG', 'CORAGENT_INSTALL_ROOT', 'CORAGENT_RUNTIME_MANIFEST'):
         environment.pop(key, None)
     agent_config = tmp_path/'model-config'
     agent_config.mkdir()
@@ -62,7 +62,7 @@ def test_public_package_install_accepts_jobs_reuses_environment_and_uninstalls(t
 def test_remote_provisioning_transports_and_executes_real_helper_offline(tmp_path, monkeypatch):
     # Replace only SSH transport with a local shell in the runner's network
     # namespace. The bundle, target helper, Conda install and probe are real.
-    conda = os.environ.get('RESEARCH_AGENT_TEST_CONDA') or shutil.which('conda')
+    conda = os.environ.get('CORAGENT_TEST_CONDA') or shutil.which('conda')
     assert conda
     profile = jobs.profiles(ROOT)['wrapper']
     content = jobs.resource(Path(profile['root']), profile['lock']).read_bytes()

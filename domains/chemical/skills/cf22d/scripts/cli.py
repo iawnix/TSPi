@@ -3,7 +3,7 @@ import argparse
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run one ResearchAgent PySCF/CF22D workflow", allow_abbrev=False)
+    parser = argparse.ArgumentParser(description="Run one CoRAgent PySCF/CF22D workflow", allow_abbrev=False)
     parser.add_argument("--xyz", required=True)
     parser.add_argument("--task", choices=("sp", "opt", "ts", "freq", "thermo", "opt_freq", "ts_freq", "opt-sp"), required=True)
     parser.add_argument("--output-dir", default=".")

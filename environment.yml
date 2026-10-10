@@ -1,4 +1,4 @@
-name: research-agent-control
+name: coragent-control
 channels:
   - conda-forge
   - nodefaults

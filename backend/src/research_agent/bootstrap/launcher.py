@@ -1,4 +1,4 @@
-"""Lifecycle launcher for one installed ResearchAgent App Server and its clients."""
+"""Lifecycle launcher for one installed CoRAgent App Server and its clients."""
 
 from __future__ import annotations
 
@@ -40,9 +40,9 @@ from .session_guard import (
 )
 
 
-PACKAGE_NAME = "@iawnix/research-agent"
-SUITE_PACKAGE_NAME = "@iawnix/research-agent"
-SUITE_SCHEMA_VERSIONS = ("research-agent-package-release/4",)
+PACKAGE_NAME = "@iawnix/coragent"
+SUITE_PACKAGE_NAME = "@iawnix/coragent"
+SUITE_SCHEMA_VERSIONS = ("coragent-package-release/4",)
 SESSION_ID = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,158}[A-Za-z0-9])?$")
 APP_SERVER_ID = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
@@ -67,17 +67,17 @@ SMTP_PRESETS = {
     "custom": {"host": None, "port": 465, "security": "ssl"},
 }
 SMTP_SECURITY = {"ssl", "starttls"}
-WORKSPACE_ROOT_SCHEMA = "research-agent-workspace-root/1"
-MODEL_ICON_CONFIG_SCHEMA = "research-agent-model-icons/1"
+WORKSPACE_ROOT_SCHEMA = "coragent-workspace-root/1"
+MODEL_ICON_CONFIG_SCHEMA = "coragent-model-icons/1"
 MODEL_ICON_CONFIG_RELATIVE = Path("etc/model-icons.json")
-SERVICE_CONFIG_SCHEMA = "research-agent-service/1"
+SERVICE_CONFIG_SCHEMA = "coragent-service/1"
 SERVICE_CONFIG_RELATIVE = Path("etc/installation.json")
-REMOTE_HOST_CONFIG_SCHEMA = "research-agent-remote-host/1"
+REMOTE_HOST_CONFIG_SCHEMA = "coragent-remote-host/1"
 REMOTE_HOST_CONFIG_RELATIVE = Path("etc/remote-host.json")
-REMOTE_ENVIRONMENT_ENV = "RESEARCH_AGENT_REMOTE_ENVIRONMENT"
+REMOTE_ENVIRONMENT_ENV = "CORAGENT_REMOTE_ENVIRONMENT"
 PI_AGENT_SETTINGS_RELATIVE = Path("etc/pi/settings.json")
-RESEARCH_AGENT_THEME_RELATIVE = Path("apps/agent/terminal/themes/research-agent.json")
-RESEARCH_AGENT_THEME_NAME = "research-agent"
+CORAGENT_THEME_RELATIVE = Path("apps/agent/terminal/themes/coragent.json")
+CORAGENT_THEME_NAME = "coragent"
 EMAIL_ADDRESS = re.compile(r"^[^@\s]+@[^@\s]+$")
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 PROXY_VARIABLES = (
@@ -89,21 +89,21 @@ PROXY_VARIABLES = (
     "ALL_PROXY",
 )
 PROXY_SCHEMES = {"http", "https", "socks", "socks5"}
-APP_SERVER_SERVICE = "research-agent.service"
+APP_SERVER_SERVICE = "coragent.service"
 HOST_START_TIMEOUT_SECONDS = 15
 HOST_READY_TIMEOUT_SECONDS = 10.0
 HOST_READY_POLL_SECONDS = 0.1
 HOST_IDENTITY_TIMEOUT_SECONDS = 0.75
 
 
-class ResearchAgentHostError(RuntimeError):
+class CoRAgentHostError(RuntimeError):
     def __init__(self, message: str, *, exit_code: int = 1, code: str | None = None):
         super().__init__(message)
         self.exit_code = exit_code
         self.code = code
 
 
-class ResearchAgentHostUnavailableError(ResearchAgentHostError):
+class CoRAgentHostUnavailableError(CoRAgentHostError):
     """The installation Host has not created a usable endpoint yet."""
 
 
@@ -144,10 +144,10 @@ class Installation:
 
 
 USAGE = """Usage:
-  research-agent --workspace <name> [--session-id <id> | -c] [Pi arguments...]
-  research-agent phone pair
-  research-agent phone devices
-  research-agent phone revoke <device-id>
+  coragent --workspace <name> [--session-id <id> | -c] [Pi arguments...]
+  coragent phone pair
+  coragent phone devices
+  coragent phone revoke <device-id>
 
 Options:
   --workspace <name>   Open a research workspace.
@@ -165,16 +165,16 @@ The terminal runs Pi's native experimental client TUI against an installation-
 owned durable Harness server. Session history is isolated under the installation
 Host state; Phone and monitor requests address the same Pi lane. The Native
 Pi Harness is the only supported runtime backend.
-The managed Host service is research-agent.service.
+The managed Host service is coragent.service.
 To select another Host session, open the terminal and run /resume. Startup
 -r/--resume is not supported by the Host-mediated client.
 """
 
 
-SERVER_USAGE = """Internal Research Agent Host entrypoint.
+SERVER_USAGE = """Internal CoRAgent Host entrypoint.
 Usage: host [--help]
-Managed service: research-agent.service
-Use systemctl --user start|stop|restart|status research-agent.service.
+Managed service: coragent.service
+Use systemctl --user start|stop|restart|status coragent.service.
 This process owns the Host, Pi Workers and Monitor; it accepts no workspace selection.
 """
 
@@ -185,7 +185,7 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
             return LaunchRequest(None, "research", None, False, False, (), phone_action=argv[1])
         if len(argv) == 3 and argv[1] == "revoke":
             return LaunchRequest(None, "research", None, False, False, (), phone_action="revoke", phone_device_id=argv[2])
-        raise ResearchAgentHostError("usage: research-agent phone pair|devices|revoke <device-id>", exit_code=2)
+        raise CoRAgentHostError("usage: coragent phone pair|devices|revoke <device-id>", exit_code=2)
     show_help = False
     workspace_name: str | None = None
     session_id: str | None = None
@@ -205,13 +205,13 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
             pi_args.extend(argv[index + 1 :])
             break
         if value == "--standalone":
-            raise ResearchAgentHostError(
-                "--standalone was removed; use ResearchAgent --workspace <name> to connect to the installation Host",
+            raise CoRAgentHostError(
+                "--standalone was removed; use CoRAgent --workspace <name> to connect to the installation Host",
                 exit_code=2,
             )
         elif value in {"--app-server", "--app-client"}:
-            raise ResearchAgentHostError(
-                f"{value} was removed; use ResearchAgent --workspace <name> to connect to the installation Host",
+            raise CoRAgentHostError(
+                f"{value} was removed; use CoRAgent --workspace <name> to connect to the installation Host",
                 exit_code=2,
             )
         elif value == "--gateway":
@@ -219,17 +219,17 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
         elif value in {"--host", "--service-host"}:
             host = True
         elif value == "--native-runtime":
-            raise ResearchAgentHostError(
-                "--native-runtime was removed; ResearchAgent always runs through the Native Pi Harness",
+            raise CoRAgentHostError(
+                "--native-runtime was removed; CoRAgent always runs through the Native Pi Harness",
                 exit_code=2,
             )
         elif value == "--mode" or value.startswith("--mode=") or value == "--workspace-mode" or value.startswith("--workspace-mode="):
-            raise ResearchAgentHostError("workspace mode selection was removed; ResearchAgent always uses research", exit_code=2)
+            raise CoRAgentHostError("workspace mode selection was removed; CoRAgent always uses research", exit_code=2)
         elif value == "--allow-writes":
-            raise ResearchAgentHostError("--allow-writes was removed; App Server is the guarded writable Root Agent", exit_code=2)
+            raise CoRAgentHostError("--allow-writes was removed; App Server is the guarded writable Root Agent", exit_code=2)
         elif value in {"--phone", "--phone-worker", "--phone-access"} or value.startswith("--phone-access="):
-            raise ResearchAgentHostError(
-                f"{value.split('=', 1)[0]} was removed; configure ResearchAgent Link during installation",
+            raise CoRAgentHostError(
+                f"{value.split('=', 1)[0]} was removed; configure CoRAgent Link during installation",
                 exit_code=2,
             )
         elif value in {
@@ -239,18 +239,18 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
             "--session-writer-check",
             "--phone-models",
         }:
-            raise ResearchAgentHostError(f"{value} was removed with the shared Session Host", exit_code=2)
+            raise CoRAgentHostError(f"{value} was removed with the shared Session Host", exit_code=2)
         elif value == "--workspace":
             index += 1
             if index >= len(argv) or not argv[index]:
-                raise ResearchAgentHostError("--workspace requires a name", exit_code=2)
+                raise CoRAgentHostError("--workspace requires a name", exit_code=2)
             workspace_name = argv[index]
         elif value.startswith("--workspace="):
             workspace_name = value.removeprefix("--workspace=")
         elif value in {"--remote-host", "--remote-host-socket", "--remote-proxy-path", "--ssh-config", "--ssh-option"}:
             index += 1
             if index >= len(argv) or not argv[index]:
-                raise ResearchAgentHostError(f"{value} requires a value", exit_code=2)
+                raise CoRAgentHostError(f"{value} requires a value", exit_code=2)
             if value == "--remote-host":
                 remote_host = argv[index]
             elif value == "--remote-host-socket":
@@ -274,14 +274,14 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
         elif value == "--session-id":
             index += 1
             if index >= len(argv) or not argv[index]:
-                raise ResearchAgentHostError(f"{value} requires a value", exit_code=2)
+                raise CoRAgentHostError(f"{value} requires a value", exit_code=2)
             session_id = argv[index]
         elif value.startswith("--session-id="):
             session_id = value.removeprefix("--session-id=")
         elif value in {"-c", "--continue"}:
             continue_latest = True
         elif value in {"-r", "--resume"}:
-            raise ResearchAgentHostError(
+            raise CoRAgentHostError(
                 "startup -r/--resume is not supported by the Host-mediated client; "
                 "open the workspace and use /resume inside the terminal",
                 exit_code=2,
@@ -292,10 +292,10 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
             pi_args.append(value)
         index += 1
     if session_id and continue_latest:
-        raise ResearchAgentHostError("--session-id and --continue cannot be combined", exit_code=2)
+        raise CoRAgentHostError("--session-id and --continue cannot be combined", exit_code=2)
     remote_values = (remote_host_socket, remote_proxy_path, ssh_config, *ssh_options)
     if remote_host is None and any(value is not None and value != "" for value in remote_values):
-        raise ResearchAgentHostError("--remote-host is required when SSH terminal options are supplied", exit_code=2)
+        raise CoRAgentHostError("--remote-host is required when SSH terminal options are supplied", exit_code=2)
     return LaunchRequest(
         workspace_name=workspace_name,
         workspace_mode="research",
@@ -316,41 +316,41 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
 def resolve_installation(package_root: str | Path, install_root: str | Path) -> Installation:
     requested_install = Path(install_root).expanduser()
     if requested_install.is_symlink():
-        raise ResearchAgentHostError(f"installation root cannot be a symbolic link: {requested_install}")
+        raise CoRAgentHostError(f"installation root cannot be a symbolic link: {requested_install}")
     if not requested_install.is_dir():
-        raise ResearchAgentHostError(f"installation root is not a directory: {requested_install}")
+        raise CoRAgentHostError(f"installation root is not a directory: {requested_install}")
     root = requested_install.resolve()
     expected_agent = Path(package_root).expanduser().resolve()
     layout = paths(root)
     layout.read_config()
     if (root / ".pi").exists() or (root / ".agents").exists():
-        raise ResearchAgentHostError("old installation layout is unsupported; install a fresh release")
+        raise CoRAgentHostError("old installation layout is unsupported; install a fresh release")
     package_home = root
     releases_root = package_home / "releases"
     current = package_home / "current"
     if not current.is_symlink():
-        raise ResearchAgentHostError(
-            f"no selected ResearchAgent Package release: {current}\n"
-            "ResearchAgent: install a validated package before starting a research workspace"
+        raise CoRAgentHostError(
+            f"no selected CoRAgent Package release: {current}\n"
+            "CoRAgent: install a validated package before starting a research workspace"
         )
     try:
         suite_root = current.resolve(strict=True)
         releases = releases_root.resolve(strict=True)
     except OSError as exc:
-        raise ResearchAgentHostError(f"selected ResearchAgent Package is unavailable: {current}: {exc}") from exc
+        raise CoRAgentHostError(f"selected CoRAgent Package is unavailable: {current}: {exc}") from exc
     if suite_root.parent != releases:
-        raise ResearchAgentHostError(f"selected ResearchAgent Package escaped the release store: {suite_root}")
+        raise CoRAgentHostError(f"selected CoRAgent Package escaped the release store: {suite_root}")
     selected_agent = suite_root / "agent"
     if selected_agent.is_symlink() or not selected_agent.is_dir():
-        raise ResearchAgentHostError(f"selected ResearchAgent Package has no regular Agent component: {selected_agent}")
+        raise CoRAgentHostError(f"selected CoRAgent Package has no regular Agent component: {selected_agent}")
     selected_agent_resolved = selected_agent.resolve()
     if selected_agent_resolved != expected_agent:
-        raise ResearchAgentHostError(
-            "launcher Agent does not match the selected ResearchAgent Package: "
+        raise CoRAgentHostError(
+            "launcher Agent does not match the selected CoRAgent Package: "
             f"launcher={expected_agent}; selected={selected_agent_resolved}. "
             "This usually means an old standalone Agent is still being invoked; "
-            "close old sessions, reinstall the selected ResearchAgent Package, "
-            "then restart research-agent.service."
+            "close old sessions, reinstall the selected CoRAgent Package, "
+            "then restart coragent.service."
         )
     _validate_suite_identity(suite_root, expected_agent)
     runtime_home = layout.runtime_home
@@ -377,22 +377,22 @@ def _configured_service(root: Path) -> tuple[str, Path | None]:
     value = paths(root).read_config().get("service")
     if value is None: return "user", None
     if not isinstance(value, dict) or set(value) != {"schema_version", "scope", "runtime_dir"}:
-        raise ResearchAgentHostError(f"service configuration is invalid: {path}")
+        raise CoRAgentHostError(f"service configuration is invalid: {path}")
     if value.get("schema_version") != SERVICE_CONFIG_SCHEMA:
-        raise ResearchAgentHostError(f"service configuration is invalid: {path}")
+        raise CoRAgentHostError(f"service configuration is invalid: {path}")
     scope = value.get("scope")
     runtime_value = value.get("runtime_dir")
     if scope not in {"none", "user", "system"}:
-        raise ResearchAgentHostError(f"service configuration is invalid: {path}")
+        raise CoRAgentHostError(f"service configuration is invalid: {path}")
     if scope == "none":
         if runtime_value is not None:
-            raise ResearchAgentHostError(f"service configuration is invalid: {path}")
+            raise CoRAgentHostError(f"service configuration is invalid: {path}")
         return scope, None
     if not isinstance(runtime_value, str) or not runtime_value.startswith("/") or "\x00" in runtime_value:
-        raise ResearchAgentHostError(f"service configuration is invalid: {path}")
+        raise CoRAgentHostError(f"service configuration is invalid: {path}")
     runtime_dir = Path(runtime_value)
     if runtime_dir == Path("/") or runtime_dir.is_symlink():
-        raise ResearchAgentHostError(f"service runtime directory is invalid: {runtime_dir}")
+        raise CoRAgentHostError(f"service runtime directory is invalid: {runtime_dir}")
     return scope, runtime_dir
 
 
@@ -401,17 +401,17 @@ def _configured_remote_host(path: Path) -> dict[str, object] | None:
     if not path.exists() and not path.is_symlink():
         return None
     if path.is_symlink() or not path.is_file():
-        raise ResearchAgentHostError(f"remote Host configuration is unsafe: {path}")
+        raise CoRAgentHostError(f"remote Host configuration is unsafe: {path}")
     info = path.stat()
     if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077:
-        raise ResearchAgentHostError(f"remote Host configuration must be owner-only: {path}")
+        raise CoRAgentHostError(f"remote Host configuration must be owner-only: {path}")
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ResearchAgentHostError(f"remote Host configuration is invalid: {path}: {exc}") from exc
+        raise CoRAgentHostError(f"remote Host configuration is invalid: {path}: {exc}") from exc
     expected = {"schema_version", "ssh_host", "host_socket", "proxy_path", "ssh_config", "ssh_options"}
     if not isinstance(value, dict) or set(value) != expected or value.get("schema_version") != REMOTE_HOST_CONFIG_SCHEMA:
-        raise ResearchAgentHostError(f"remote Host configuration is invalid: {path}")
+        raise CoRAgentHostError(f"remote Host configuration is invalid: {path}")
     ssh_host = value.get("ssh_host")
     host_socket = value.get("host_socket")
     proxy_path = value.get("proxy_path")
@@ -426,7 +426,7 @@ def _configured_remote_host(path: Path) -> dict[str, object] | None:
         or any(not isinstance(item, str) or not item or any(char in item for char in "\x00\r\n") for item in ssh_options)
         or any(char in item for item in (ssh_host, host_socket, proxy_path, ssh_config or "") for char in "\x00\r\n")
     ):
-        raise ResearchAgentHostError(f"remote Host configuration is invalid: {path}")
+        raise CoRAgentHostError(f"remote Host configuration is invalid: {path}")
     return {
         "remote_host": ssh_host,
         "remote_host_socket": host_socket,
@@ -454,7 +454,7 @@ def _configured_workspace_root(root: Path) -> Path:
     value = paths(root).read_config().get("workspace_root", str(root / "workspaces"))
     requested = Path(value).expanduser()
     if not requested.is_absolute() or requested.is_symlink():
-        raise ResearchAgentHostError(f"configured workspace root must be an absolute physical path: {requested}")
+        raise CoRAgentHostError(f"configured workspace root must be an absolute physical path: {requested}")
     resolved = requested.resolve()
     home = Path.home().resolve()
     if (
@@ -464,24 +464,24 @@ def _configured_workspace_root(root: Path) -> Path:
         or resolved == root
         or resolved in root.parents
     ):
-        raise ResearchAgentHostError(f"configured workspace root must be a dedicated directory: {resolved}")
+        raise CoRAgentHostError(f"configured workspace root must be a dedicated directory: {resolved}")
     for protected in (root / "etc", root / "var", root / "runtimes", root / "releases"):
         if resolved == protected or protected in resolved.parents:
-            raise ResearchAgentHostError(f"configured workspace root overlaps installation state: {resolved}")
+            raise CoRAgentHostError(f"configured workspace root overlaps installation state: {resolved}")
     return resolved
 
 
 def _validate_suite_identity(suite_root: Path, agent_root: Path) -> None:
-    manifest_path = suite_root / ".research-agent-package-release.json"
+    manifest_path = suite_root / ".coragent-package-release.json"
     package_path = agent_root / "package.json"
     for path, label in ((manifest_path, "Package manifest"), (package_path, "Agent package manifest")):
         if path.is_symlink() or not path.is_file():
-            raise ResearchAgentHostError(f"selected ResearchAgent Package has no valid {label}: {path}")
+            raise CoRAgentHostError(f"selected CoRAgent Package has no valid {label}: {path}")
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         package = json.loads(package_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ResearchAgentHostError(f"selected ResearchAgent Package metadata is invalid: {exc}") from exc
+        raise CoRAgentHostError(f"selected CoRAgent Package metadata is invalid: {exc}") from exc
     suite_package = manifest.get("package") if isinstance(manifest, dict) else None
     components = manifest.get("components") if isinstance(manifest, dict) else None
     agent = components.get("agent") if isinstance(components, dict) else None
@@ -499,42 +499,42 @@ def _validate_suite_identity(suite_root: Path, agent_root: Path) -> None:
         or suite_package.get("version") != package.get("version")
         or agent.get("version") != package.get("version")
     ):
-        raise ResearchAgentHostError(f"selected ResearchAgent Package identity is invalid: {suite_root}")
+        raise CoRAgentHostError(f"selected CoRAgent Package identity is invalid: {suite_root}")
 
 
 def _validate_agent_identity(agent_root: Path) -> None:
-    """Validate a standalone ``research-agent`` release selected by its launcher."""
+    """Validate a standalone ``coragent`` release selected by its launcher."""
 
-    release_path = agent_root / ".research-agent-release.json"
+    release_path = agent_root / ".coragent-release.json"
     package_path = agent_root / "package.json"
-    for path, label in ((release_path, "ResearchAgent release manifest"), (package_path, "Agent package manifest")):
+    for path, label in ((release_path, "CoRAgent release manifest"), (package_path, "Agent package manifest")):
         if path.is_symlink() or not path.is_file():
-            raise ResearchAgentHostError(f"selected ResearchAgent Package has no valid {label}: {path}")
+            raise CoRAgentHostError(f"selected CoRAgent Package has no valid {label}: {path}")
     try:
         manifest = json.loads(release_path.read_text(encoding="utf-8"))
         package = json.loads(package_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ResearchAgentHostError(f"selected ResearchAgent Package metadata is invalid: {exc}") from exc
+        raise CoRAgentHostError(f"selected CoRAgent Package metadata is invalid: {exc}") from exc
     package_meta = manifest.get("package") if isinstance(manifest, dict) else None
     if (
         not isinstance(manifest, dict)
-        or manifest.get("schema_version") not in {"research-agent-release/1"}
+        or manifest.get("schema_version") not in {"coragent-release/1"}
         or manifest.get("release_id") != agent_root.name
         or not isinstance(package_meta, dict)
-        or package_meta.get("name") != "@iawnix/research-agent"
+        or package_meta.get("name") != "@iawnix/coragent"
         or not isinstance(package, dict)
         or package.get("name") != package_meta.get("name")
         or package.get("version") != package_meta.get("version")
     ):
-        raise ResearchAgentHostError(f"selected ResearchAgent Package identity is invalid: {agent_root}")
+        raise CoRAgentHostError(f"selected CoRAgent Package identity is invalid: {agent_root}")
 
 
 def configure_runtime_environment(installation: Installation) -> None:
     os.environ.pop(ENV_OVERRIDE, None)
     os.environ.pop(DISABLE_REEXEC, None)
-    os.environ["RESEARCH_AGENT_RUNTIME_HOME"] = str(installation.runtime_home)
-    os.environ["RESEARCH_AGENT_RUNTIME_MANIFEST"] = str(installation.runtime_manifest)
-    os.environ["RESEARCH_AGENT_ENV_ROOT"] = str(installation.env_root)
+    os.environ["CORAGENT_RUNTIME_HOME"] = str(installation.runtime_home)
+    os.environ["CORAGENT_RUNTIME_MANIFEST"] = str(installation.runtime_manifest)
+    os.environ["CORAGENT_ENV_ROOT"] = str(installation.env_root)
 
 
 def normalize_proxy_environment() -> None:
@@ -567,37 +567,37 @@ def normalize_proxy_environment() -> None:
         if valid:
             if normalized != value:
                 os.environ[variable] = normalized
-                print(f"ResearchAgent: normalized {variable} to an HTTP proxy URL", file=sys.stderr)
+                print(f"CoRAgent: normalized {variable} to an HTTP proxy URL", file=sys.stderr)
         else:
             os.environ.pop(variable, None)
-            print(f"ResearchAgent: ignoring invalid {variable} proxy setting", file=sys.stderr)
+            print(f"CoRAgent: ignoring invalid {variable} proxy setting", file=sys.stderr)
 
 
 def prepare_workspace(installation: Installation, workspace_name: str) -> Path:
     if not WORKSPACE_ID_PATTERN.fullmatch(workspace_name):
-        raise ResearchAgentHostError(
+        raise CoRAgentHostError(
             f"invalid workspace name: {workspace_name}\n"
-            "ResearchAgent: use 1-80 letters, digits, dots, underscores, or hyphens; start with a letter or digit"
+            "CoRAgent: use 1-80 letters, digits, dots, underscores, or hyphens; start with a letter or digit"
         )
     container = installation.workspaces_root
     if container.is_symlink():
-        raise ResearchAgentHostError(f"workspace container cannot be a symbolic link: {container}")
+        raise CoRAgentHostError(f"workspace container cannot be a symbolic link: {container}")
     container.mkdir(parents=True, exist_ok=True, mode=0o700)
     if not container.is_dir():
-        raise ResearchAgentHostError(f"workspace container is not a directory: {container}")
+        raise CoRAgentHostError(f"workspace container is not a directory: {container}")
     requested = container / workspace_name
     if requested.is_symlink():
-        raise ResearchAgentHostError(f"workspace cannot be a symbolic link: {requested}")
+        raise CoRAgentHostError(f"workspace cannot be a symbolic link: {requested}")
     if requested.exists() and not requested.is_dir():
-        raise ResearchAgentHostError(f"workspace path is not a directory: {requested}")
+        raise CoRAgentHostError(f"workspace path is not a directory: {requested}")
     requested.mkdir(mode=0o700, exist_ok=True)
     workspace = requested.resolve()
     if workspace.parent != container.resolve():
-        raise ResearchAgentHostError(f"resolved workspace escaped the installation workspace container: {workspace}")
+        raise CoRAgentHostError(f"resolved workspace escaped the installation workspace container: {workspace}")
     pi_root = workspace / ".pi"
     sessions = pi_root / "sessions"
     if pi_root.is_symlink() or sessions.is_symlink():
-        raise ResearchAgentHostError(f"workspace Pi state paths cannot be symbolic links: {workspace}")
+        raise CoRAgentHostError(f"workspace Pi state paths cannot be symbolic links: {workspace}")
     sessions.mkdir(parents=True, exist_ok=True, mode=0o700)
     pi_root.chmod(0o700)
     sessions.chmod(0o700)
@@ -607,30 +607,30 @@ def prepare_workspace(installation: Installation, workspace_name: str) -> Path:
 
 def resolve_existing_workspace(installation: Installation, workspace_name: str) -> Path:
     if not WORKSPACE_ID_PATTERN.fullmatch(workspace_name):
-        raise ResearchAgentHostError(f"invalid workspace name: {workspace_name}", exit_code=2)
+        raise CoRAgentHostError(f"invalid workspace name: {workspace_name}", exit_code=2)
     container = installation.workspaces_root
     requested = container / workspace_name
     if container.is_symlink() or requested.is_symlink() or not requested.is_dir():
-        raise ResearchAgentHostError(
+        raise CoRAgentHostError(
             f"workspace is unavailable: {requested}\n"
-            "Create it first with ResearchAgent --workspace <name>.\n"
+            "Create it first with CoRAgent --workspace <name>.\n"
             "If this installation was upgraded unsuccessfully, rerun install.sh."
         )
     workspace = requested.resolve()
     if workspace.parent != container.resolve():
-        raise ResearchAgentHostError(f"resolved workspace escaped the installation workspace container: {workspace}")
+        raise CoRAgentHostError(f"resolved workspace escaped the installation workspace container: {workspace}")
     return workspace
 
 
 def _configure_workspace_pi_settings(path: Path) -> None:
     if path.is_symlink():
-        raise ResearchAgentHostError(f"workspace Pi settings cannot be a symbolic link: {path}")
+        raise CoRAgentHostError(f"workspace Pi settings cannot be a symbolic link: {path}")
     try:
         settings = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     except (OSError, json.JSONDecodeError) as exc:
-        raise ResearchAgentHostError(f"invalid workspace Pi settings: {path}: {exc}") from exc
+        raise CoRAgentHostError(f"invalid workspace Pi settings: {path}: {exc}") from exc
     if not isinstance(settings, dict):
-        raise ResearchAgentHostError(f"workspace Pi settings must contain a JSON object: {path}")
+        raise CoRAgentHostError(f"workspace Pi settings must contain a JSON object: {path}")
     if settings.get("quietStartup") is True:
         return
     settings["quietStartup"] = True
@@ -638,34 +638,34 @@ def _configure_workspace_pi_settings(path: Path) -> None:
 
 
 def _restore_native_pi_settings(installation: Installation) -> None:
-    """Remove appearance settings written by older ResearchAgent launchers."""
+    """Remove appearance settings written by older CoRAgent launchers."""
     path = installation.root / PI_AGENT_SETTINGS_RELATIVE
     if path.is_symlink():
-        raise ResearchAgentHostError(f"Pi agent settings cannot be a symbolic link: {path}")
+        raise CoRAgentHostError(f"Pi agent settings cannot be a symbolic link: {path}")
     if not path.exists():
         return
     if path.exists() and not path.is_file():
-        raise ResearchAgentHostError(f"Pi agent settings must be a regular file: {path}")
+        raise CoRAgentHostError(f"Pi agent settings must be a regular file: {path}")
     try:
         settings = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ResearchAgentHostError(f"invalid Pi agent settings: {path}: {exc}") from exc
+        raise CoRAgentHostError(f"invalid Pi agent settings: {path}: {exc}") from exc
     if not isinstance(settings, dict):
-        raise ResearchAgentHostError(f"Pi agent settings must contain a JSON object: {path}")
+        raise CoRAgentHostError(f"Pi agent settings must contain a JSON object: {path}")
 
     changed = False
     selected_theme = settings.get("theme")
     if selected_theme is not None and not isinstance(selected_theme, str):
-        raise ResearchAgentHostError(f"Pi agent setting 'theme' must be a string: {path}")
-    if selected_theme == RESEARCH_AGENT_THEME_NAME:
+        raise CoRAgentHostError(f"Pi agent setting 'theme' must be a string: {path}")
+    if selected_theme == CORAGENT_THEME_NAME:
         settings["theme"] = "dark"
         changed = True
 
     themes = settings.get("themes")
     if themes is not None:
         if not isinstance(themes, list) or any(not isinstance(theme, str) for theme in themes):
-            raise ResearchAgentHostError(f"Pi agent settings themes must be an array of strings: {path}")
-        current_theme_path = str(installation.package_root / RESEARCH_AGENT_THEME_RELATIVE)
+            raise CoRAgentHostError(f"Pi agent settings themes must be an array of strings: {path}")
+        current_theme_path = str(installation.package_root / CORAGENT_THEME_RELATIVE)
         package_home = (installation.root).resolve()
 
         def is_managed_theme(theme: str) -> bool:
@@ -678,7 +678,7 @@ def _restore_native_pi_settings(installation: Installation) -> None:
                 relative = candidate.resolve().relative_to(package_home)
             except (OSError, ValueError):
                 return False
-            return relative.parts[-5:] == ("apps", "agent", "terminal", "themes", "research-agent.json")
+            return relative.parts[-5:] == ("apps", "agent", "terminal", "themes", "coragent.json")
 
         filtered_themes = [theme for theme in themes if not is_managed_theme(theme)]
         if filtered_themes != themes:
@@ -708,16 +708,16 @@ def _atomic_write_json(path: Path, value: dict) -> None:
 
 
 def configure_remote(installation: Installation) -> None:
-    configured = os.environ.get("RESEARCH_AGENT_JOB_CONFIG")
+    configured = os.environ.get("CORAGENT_JOB_CONFIG")
     if not configured:
         if installation.job_config_default and installation.job_config_default.is_file():
             configured = str(installation.job_config_default)
     if not configured:
-        os.environ.pop("RESEARCH_AGENT_JOB_CONFIG", None)
+        os.environ.pop("CORAGENT_JOB_CONFIG", None)
         os.environ.pop(REMOTE_ENVIRONMENT_ENV, None)
-        os.environ["RESEARCH_AGENT_REMOTE_DISPLAY_TARGET"] = "not configured"
+        os.environ["CORAGENT_REMOTE_DISPLAY_TARGET"] = "not configured"
         return
-    path = _require_config_file(configured, "RESEARCH_AGENT_JOB_CONFIG")
+    path = _require_config_file(configured, "CORAGENT_JOB_CONFIG")
     try:
         with path.open("rb") as handle:
             config = tomllib.load(handle)
@@ -757,8 +757,8 @@ def configure_remote(installation: Installation) -> None:
                 environment = None
         if remote_name is None:
             os.environ.pop(REMOTE_ENVIRONMENT_ENV, None)
-            os.environ["RESEARCH_AGENT_JOB_CONFIG"] = str(path)
-            os.environ["RESEARCH_AGENT_REMOTE_DISPLAY_TARGET"] = "not configured"
+            os.environ["CORAGENT_JOB_CONFIG"] = str(path)
+            os.environ["CORAGENT_REMOTE_DISPLAY_TARGET"] = "not configured"
             return
         if not isinstance(environment, dict) or environment.get("kind") != "remote":
             raise ValueError("selected remote environment must declare kind=remote")
@@ -770,24 +770,24 @@ def configure_remote(installation: Installation) -> None:
             raise ValueError(f"remote environment {remote_name!r} has an invalid scheduler")
         scheduler = scheduler.title()
     except (OSError, TypeError, ValueError, tomllib.TOMLDecodeError) as exc:
-        raise ResearchAgentHostError(f"invalid remote configuration: {path}: {exc}") from exc
-    os.environ["RESEARCH_AGENT_JOB_CONFIG"] = str(path)
+        raise CoRAgentHostError(f"invalid remote configuration: {path}: {exc}") from exc
+    os.environ["CORAGENT_JOB_CONFIG"] = str(path)
     os.environ[REMOTE_ENVIRONMENT_ENV] = remote_name
-    os.environ["RESEARCH_AGENT_REMOTE_DISPLAY_TARGET"] = f"{host} · {scheduler}"
+    os.environ["CORAGENT_REMOTE_DISPLAY_TARGET"] = f"{host} · {scheduler}"
 
 
 def configure_notifications(installation: Installation) -> None:
-    configured = os.environ.get("RESEARCH_AGENT_NOTIFICATION_CONFIG")
+    configured = os.environ.get("CORAGENT_NOTIFICATION_CONFIG")
     if not configured and installation.notification_config_default.is_file():
         configured = str(installation.notification_config_default)
-        os.environ["RESEARCH_AGENT_NOTIFICATION_CONFIG"] = configured
+        os.environ["CORAGENT_NOTIFICATION_CONFIG"] = configured
     if not configured:
-        os.environ.pop("RESEARCH_AGENT_NOTIFICATION_CONFIG", None)
-        os.environ["RESEARCH_AGENT_NOTIFICATION_DISPLAY_TARGET"] = "not configured"
+        os.environ.pop("CORAGENT_NOTIFICATION_CONFIG", None)
+        os.environ["CORAGENT_NOTIFICATION_DISPLAY_TARGET"] = "not configured"
         return
-    path = _require_config_file(configured, "RESEARCH_AGENT_NOTIFICATION_CONFIG")
+    path = _require_config_file(configured, "CORAGENT_NOTIFICATION_CONFIG")
     if stat.S_IMODE(path.stat().st_mode) & 0o077:
-        raise ResearchAgentHostError(f"RESEARCH_AGENT_NOTIFICATION_CONFIG must not be accessible by group or others: {path}")
+        raise CoRAgentHostError(f"CORAGENT_NOTIFICATION_CONFIG must not be accessible by group or others: {path}")
     try:
         with path.open("rb") as handle:
             config = tomllib.load(handle)
@@ -879,9 +879,9 @@ def configure_notifications(installation: Installation) -> None:
         else:
             raise ValueError("notifications.email.provider must be clawemail or smtp")
     except (KeyError, OSError, TypeError, ValueError, tomllib.TOMLDecodeError) as exc:
-        raise ResearchAgentHostError(f"invalid notification configuration: {path}: {exc}") from exc
-    os.environ["RESEARCH_AGENT_NOTIFICATION_CONFIG"] = str(path)
-    os.environ["RESEARCH_AGENT_NOTIFICATION_DISPLAY_TARGET"] = recipient if enabled else "disabled"
+        raise CoRAgentHostError(f"invalid notification configuration: {path}: {exc}") from exc
+    os.environ["CORAGENT_NOTIFICATION_CONFIG"] = str(path)
+    os.environ["CORAGENT_NOTIFICATION_DISPLAY_TARGET"] = recipient if enabled else "disabled"
 
 
 def _normalize_notification_provider(email: dict) -> dict:
@@ -898,13 +898,13 @@ def _normalize_notification_provider(email: dict) -> dict:
 def _require_config_file(value: str, label: str) -> Path:
     path = Path(value).expanduser()
     if not path.is_absolute() or path.is_symlink() or not path.is_file() or not os.access(path, os.R_OK):
-        raise ResearchAgentHostError(f"invalid {label}: {path}")
+        raise CoRAgentHostError(f"invalid {label}: {path}")
     return path.resolve()
 
 
 def configure_model_icon_environment(installation: Installation) -> bool:
     """Enable the optional model icon font when its installer marker is valid."""
-    if "RESEARCH_AGENT_ICON_STYLE" in os.environ:
+    if "CORAGENT_ICON_STYLE" in os.environ:
         return False
     marker = installation.model_icons_config
     if marker is None or marker.is_symlink() or not marker.is_file():
@@ -932,26 +932,26 @@ def configure_model_icon_environment(installation: Installation) -> bool:
         return False
     if digest != digest_value:
         return False
-    os.environ["RESEARCH_AGENT_ICON_STYLE"] = "research-agent"
+    os.environ["CORAGENT_ICON_STYLE"] = "coragent"
     return True
 
 
 def configure_process_environment(installation: Installation, workspace: Path, workspace_name: str) -> None:
     os.environ[PACKAGE_ROOT_OVERRIDE] = str(installation.package_root)
-    os.environ["RESEARCH_AGENT_INSTALL_ROOT"] = str(installation.root)
-    os.environ["RESEARCH_AGENT_WORKSPACE_ROOT"] = str(workspace)
+    os.environ["CORAGENT_INSTALL_ROOT"] = str(installation.root)
+    os.environ["CORAGENT_WORKSPACE_ROOT"] = str(workspace)
     os.environ["PI_CODING_AGENT_DIR"] = str(installation.root / "etc/pi")
     # Keep the Native Pi client on the package's standard presentation path.
-    os.environ.pop("RESEARCH_AGENT_CUSTOM_UI", None)
+    os.environ.pop("CORAGENT_CUSTOM_UI", None)
     _restore_native_pi_settings(installation)
     # ``configure_remote`` runs before this function and may have validated a
     # caller-selected job profile. Preserve that path for the terminal and
     # Host instead of silently switching back to the installation default.
-    if not os.environ.get("RESEARCH_AGENT_JOB_CONFIG"):
+    if not os.environ.get("CORAGENT_JOB_CONFIG"):
         if installation.job_config_default and installation.job_config_default.is_file():
-            os.environ["RESEARCH_AGENT_JOB_CONFIG"] = str(installation.job_config_default)
+            os.environ["CORAGENT_JOB_CONFIG"] = str(installation.job_config_default)
         else:
-            os.environ.pop("RESEARCH_AGENT_JOB_CONFIG", None)
+            os.environ.pop("CORAGENT_JOB_CONFIG", None)
     python_cache = installation.process_cache_root / "python" / workspace_name
     pytest_cache = installation.process_cache_root / "pytest" / workspace_name
     for path in (installation.process_cache_root, python_cache.parent, pytest_cache.parent, python_cache, pytest_cache):
@@ -969,32 +969,32 @@ def configure_process_environment(installation: Installation, workspace: Path, w
 def configure_host_process_environment(installation: Installation) -> None:
     """Configure the installation-wide environment used by the Host process."""
     os.environ[PACKAGE_ROOT_OVERRIDE] = str(installation.package_root)
-    os.environ["RESEARCH_AGENT_INSTALL_ROOT"] = str(installation.root)
+    os.environ["CORAGENT_INSTALL_ROOT"] = str(installation.root)
     # The Host's Pi App Server and every SessionWorker must resolve the pinned
     # Pi SDK from the installation-owned checkout.  Client launches set this
     # in their terminal path; the systemd Host has no terminal bootstrap, so
     # bind it explicitly before the server process is spawned.
-    os.environ["RESEARCH_AGENT_PI_RUNTIME_ROOT"] = str(resolve_pi_source(installation))
-    os.environ["RESEARCH_AGENT_HOST_STATE_ROOT"] = str(paths(installation.root).host_state)
-    os.environ["RESEARCH_AGENT_SESSION_ROOT"] = str(paths(installation.root).sessions)
-    os.environ["RESEARCH_AGENT_WORKSPACE_ROOT"] = str(installation.workspaces_root)
+    os.environ["CORAGENT_PI_RUNTIME_ROOT"] = str(resolve_pi_source(installation))
+    os.environ["CORAGENT_HOST_STATE_ROOT"] = str(paths(installation.root).host_state)
+    os.environ["CORAGENT_SESSION_ROOT"] = str(paths(installation.root).sessions)
+    os.environ["CORAGENT_WORKSPACE_ROOT"] = str(installation.workspaces_root)
     os.environ["PI_CODING_AGENT_DIR"] = str(installation.root / "etc/pi")
     diagnostic_path = installation.root / "var/log/worker-diagnostics.log"
     if diagnostic_path.is_symlink() or (diagnostic_path.exists() and not diagnostic_path.is_file()):
-        raise ResearchAgentHostError(f"Pi Worker diagnostics path is not a regular file: {diagnostic_path}")
+        raise CoRAgentHostError(f"Pi Worker diagnostics path is not a regular file: {diagnostic_path}")
     diagnostic_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     # A new Host process owns a new diagnostic window. Do not surface a stale
     # Worker traceback from an earlier release as the cause of a later error.
     diagnostic_path.write_text("", encoding="utf-8")
     diagnostic_path.chmod(0o600)
-    os.environ["RESEARCH_AGENT_PI_DIAGNOSTIC_FILE"] = str(diagnostic_path)
-    os.environ.pop("RESEARCH_AGENT_CUSTOM_UI", None)
+    os.environ["CORAGENT_PI_DIAGNOSTIC_FILE"] = str(diagnostic_path)
+    os.environ.pop("CORAGENT_CUSTOM_UI", None)
     from .link import LinkError, configure_link_environment
 
     try:
         configure_link_environment(installation.root)
     except LinkError as exc:
-        raise ResearchAgentHostError(str(exc)) from exc
+        raise CoRAgentHostError(str(exc)) from exc
     python_cache = installation.process_cache_root / "python" / "host"
     pytest_cache = installation.process_cache_root / "pytest" / "host"
     for path in (installation.process_cache_root, python_cache.parent, pytest_cache.parent, python_cache, pytest_cache):
@@ -1009,7 +1009,7 @@ def configure_host_process_environment(installation: Installation) -> None:
 def bind_workspace_mode(workspace: Path, workspace_name: str) -> dict[str, object]:
     """Create/attach the framework manifest before the Pi client starts.
 
-    ``ResearchAgent`` is the trusted Host boundary, so research admission is
+    ``CoRAgent`` is the trusted Host boundary, so research admission is
     completed here.  The immutable mode is then exported to the downstream
     client; Research State and capability implementations remain outside this module.
     """
@@ -1025,7 +1025,7 @@ def bind_workspace_mode(workspace: Path, workspace_name: str) -> dict[str, objec
         manifest = admit_research_workspace(workspace)
         return manifest
     except WorkspaceModeError as exc:
-        raise ResearchAgentHostError(f"ResearchAgent workspace mode initialization failed: {exc}") from exc
+        raise CoRAgentHostError(f"CoRAgent workspace mode initialization failed: {exc}") from exc
 
 
 def acquire_root_agent_lock(workspace: Path, *, observer_on_contention: bool = False) -> int | None:
@@ -1038,9 +1038,9 @@ def acquire_root_agent_lock(workspace: Path, *, observer_on_contention: bool = F
             if observer_on_contention:
                 os.close(descriptor)
                 return None
-            raise ResearchAgentHostError(
+            raise CoRAgentHostError(
                 f"another Root Agent already owns workspace {workspace}\n"
-                "ResearchAgent: choose another --workspace name or stop the existing Root Agent",
+                "CoRAgent: choose another --workspace name or stop the existing Root Agent",
                 code="session_writer_active",
             ) from exc
         _validate_root_agent_lock(descriptor, lock_path)
@@ -1058,7 +1058,7 @@ def acquire_root_agent_lock(workspace: Path, *, observer_on_contention: bool = F
 
 def _open_root_agent_lock(lock_path: Path) -> int:
     if lock_path.is_symlink():
-        raise ResearchAgentHostError(f"Root Agent lock cannot be a symbolic link: {lock_path}")
+        raise CoRAgentHostError(f"Root Agent lock cannot be a symbolic link: {lock_path}")
     flags = os.O_RDWR | os.O_CREAT | os.O_NONBLOCK
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
@@ -1074,10 +1074,10 @@ def _open_root_agent_lock(lock_path: Path) -> int:
 def _validate_root_agent_lock(descriptor: int, lock_path: Path) -> None:
     opened = os.fstat(descriptor)
     if not stat.S_ISREG(opened.st_mode):
-        raise ResearchAgentHostError(f"Root Agent lock must be a regular file: {lock_path}")
+        raise CoRAgentHostError(f"Root Agent lock must be a regular file: {lock_path}")
     current = lock_path.lstat()
     if lock_path.parent.is_symlink() or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino):
-        raise ResearchAgentHostError(f"Root Agent lock changed while opening: {lock_path}")
+        raise CoRAgentHostError(f"Root Agent lock changed while opening: {lock_path}")
 
 
 def _local_timestamp() -> str:
@@ -1090,9 +1090,9 @@ def build_host_server_command(installation: Installation, request: LaunchRequest
     """Build the installation Host; its registry scans actual workspaces."""
     for option in ("--directory", "--server-id", "--session-dir", "--workspace"):
         if _has_cli_option(request.pi_args, option):
-            raise ResearchAgentHostError(f"{option} is managed by the ResearchAgent Host launcher", exit_code=2)
+            raise CoRAgentHostError(f"{option} is managed by the CoRAgent Host launcher", exit_code=2)
     if request.pi_args:
-        raise ResearchAgentHostError("Pi arguments belong to ResearchAgent --workspace, not the Host service", exit_code=2)
+        raise CoRAgentHostError("Pi arguments belong to CoRAgent --workspace, not the Host service", exit_code=2)
     host_workspace, state_root = _prepare_host_state(installation)
     server_id = _host_server_id(installation, create=True)
     socket_directory = _host_socket_directory(installation, create=True)
@@ -1120,11 +1120,11 @@ def resolve_host_socket(installation: Installation) -> Path:
     try:
         socket_mode = socket_path.stat().st_mode
     except FileNotFoundError as exc:
-        raise ResearchAgentHostUnavailableError("ResearchAgent Host is not running") from exc
+        raise CoRAgentHostUnavailableError("CoRAgent Host is not running") from exc
     except OSError as exc:
-        raise ResearchAgentHostError(f"cannot inspect ResearchAgent Host endpoint: {socket_path}: {exc}") from exc
+        raise CoRAgentHostError(f"cannot inspect CoRAgent Host endpoint: {socket_path}: {exc}") from exc
     if not stat.S_ISSOCK(socket_mode):
-        raise ResearchAgentHostError(f"ResearchAgent Host endpoint is not a Unix socket: {socket_path}")
+        raise CoRAgentHostError(f"CoRAgent Host endpoint is not a Unix socket: {socket_path}")
     probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     probe.settimeout(0.25)
     try:
@@ -1138,12 +1138,12 @@ def resolve_host_socket(installation: Installation) -> Path:
         except FileNotFoundError:
             pass
         except OSError as unlink_error:
-            raise ResearchAgentHostError(
-                f"stale ResearchAgent Host socket cannot be removed: {socket_path}: {unlink_error}"
+            raise CoRAgentHostError(
+                f"stale CoRAgent Host socket cannot be removed: {socket_path}: {unlink_error}"
             ) from unlink_error
-        raise ResearchAgentHostUnavailableError("ResearchAgent Host socket is stale") from exc
+        raise CoRAgentHostUnavailableError("CoRAgent Host socket is stale") from exc
     except OSError as exc:
-        raise ResearchAgentHostError(f"cannot connect to ResearchAgent Host endpoint: {socket_path}: {exc}") from exc
+        raise CoRAgentHostError(f"cannot connect to CoRAgent Host endpoint: {socket_path}: {exc}") from exc
     finally:
         probe.close()
     return socket_path
@@ -1173,9 +1173,9 @@ def _validate_host_release(installation: Installation, socket_path: Path) -> Non
     try:
         socket_info = socket_path.stat()
     except FileNotFoundError as exc:
-        raise ResearchAgentHostUnavailableError("ResearchAgent Host socket disappeared during identity check") from exc
+        raise CoRAgentHostUnavailableError("CoRAgent Host socket disappeared during identity check") from exc
     except OSError as exc:
-        raise ResearchAgentHostError(f"cannot inspect ResearchAgent Host endpoint: {socket_path}: {exc}") from exc
+        raise CoRAgentHostError(f"cannot inspect CoRAgent Host endpoint: {socket_path}: {exc}") from exc
     if not stat.S_ISSOCK(socket_info.st_mode):
         return
     probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -1193,15 +1193,15 @@ def _validate_host_release(installation: Installation, socket_path: Path) -> Non
         frame = bytes(data).split(b"\n", 1)[0]
         response = json.loads(frame.decode("utf-8")) if frame else {}
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, socket.timeout) as exc:
-        raise ResearchAgentHostError(f"cannot verify ResearchAgent Host release identity: {exc}") from exc
+        raise CoRAgentHostError(f"cannot verify CoRAgent Host release identity: {exc}") from exc
     finally:
         probe.close()
     actual = response.get("result", {}).get("release_id") if isinstance(response, dict) else None
     if actual != expected:
         shown = actual if isinstance(actual, str) and actual else "unknown"
-        raise ResearchAgentHostError(
-            f"ResearchAgent Host release mismatch: selected {expected}, running {shown}; "
-            "restart research-agent.service and retry",
+        raise CoRAgentHostError(
+            f"CoRAgent Host release mismatch: selected {expected}, running {shown}; "
+            "restart coragent.service and retry",
             code="host_release_mismatch",
         )
 
@@ -1212,18 +1212,18 @@ def ensure_host_running(installation: Installation) -> Path:
         endpoint = resolve_host_socket(installation)
         _validate_host_release(installation, endpoint)
         return endpoint
-    except ResearchAgentHostUnavailableError:
+    except CoRAgentHostUnavailableError:
         pass
 
     if installation.service_scope == "none":
-        raise ResearchAgentHostError(
-            "ResearchAgent Host service is disabled; configure a systemd service before opening a workspace"
+        raise CoRAgentHostError(
+            "CoRAgent Host service is disabled; configure a systemd service before opening a workspace"
         )
 
     systemctl = shutil.which("systemctl")
     if systemctl is None:
-        raise ResearchAgentHostError(
-            f"ResearchAgent Host is not running and systemctl is unavailable; start {APP_SERVER_SERVICE}"
+        raise CoRAgentHostError(
+            f"CoRAgent Host is not running and systemctl is unavailable; start {APP_SERVER_SERVICE}"
         )
     scope = [] if installation.service_scope == "system" else ["--user"]
     command = [systemctl, *scope, "start", APP_SERVER_SERVICE]
@@ -1237,10 +1237,10 @@ def ensure_host_running(installation: Installation) -> Path:
             timeout=HOST_START_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:
-        raise ResearchAgentHostError(f"timed out starting {APP_SERVER_SERVICE}") from exc
+        raise CoRAgentHostError(f"timed out starting {APP_SERVER_SERVICE}") from exc
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip() or "systemctl returned no diagnostic"
-        raise ResearchAgentHostError(f"could not start {APP_SERVER_SERVICE}: {detail}")
+        raise CoRAgentHostError(f"could not start {APP_SERVER_SERVICE}: {detail}")
 
     deadline = time.monotonic() + HOST_READY_TIMEOUT_SECONDS
     while True:
@@ -1248,11 +1248,11 @@ def ensure_host_running(installation: Installation) -> Path:
             endpoint = resolve_host_socket(installation)
             _validate_host_release(installation, endpoint)
             return endpoint
-        except ResearchAgentHostUnavailableError:
+        except CoRAgentHostUnavailableError:
             if time.monotonic() >= deadline:
                 break
             time.sleep(HOST_READY_POLL_SECONDS)
-    raise ResearchAgentHostError(
+    raise CoRAgentHostError(
         f"{APP_SERVER_SERVICE} started but the Host did not become ready within "
         f"{HOST_READY_TIMEOUT_SECONDS:g} seconds; inspect it with systemctl {' '.join(scope + ['status', APP_SERVER_SERVICE])}"
     )
@@ -1294,7 +1294,7 @@ def build_host_client_command(
     # attaching to a process left behind by a package upgrade.
     release_root = installation.package_root.parent
     if release_root.name == "releases":
-        # Standalone ResearchAgent layout:
+        # Standalone CoRAgent layout:
         #   ./releases/<release-id>
         command.extend(["--expected-release-id", installation.package_root.name])
     elif release_root.parent.name == "releases":
@@ -1316,7 +1316,7 @@ def _validate_remote_terminal_request(request: LaunchRequest) -> None:
     }
     missing = [name for name, value in fields.items() if not isinstance(value, str) or not value]
     if missing:
-        raise ResearchAgentHostError(
+        raise CoRAgentHostError(
             "SSH terminal requires " + ", ".join(missing) + " when --remote-host is used",
             exit_code=2,
         )
@@ -1324,11 +1324,11 @@ def _validate_remote_terminal_request(request: LaunchRequest) -> None:
         request.remote_host or "", request.remote_host_socket or "", request.remote_proxy_path or "",
         request.ssh_config or "", *request.ssh_options,
     )):
-        raise ResearchAgentHostError("SSH terminal options must not contain control characters", exit_code=2)
+        raise CoRAgentHostError("SSH terminal options must not contain control characters", exit_code=2)
     if not request.remote_host_socket.startswith("/") or not request.remote_proxy_path.startswith("/"):
-        raise ResearchAgentHostError("SSH terminal socket and proxy paths must be absolute", exit_code=2)
+        raise CoRAgentHostError("SSH terminal socket and proxy paths must be absolute", exit_code=2)
     if request.ssh_config is not None and not request.ssh_config.startswith("/"):
-        raise ResearchAgentHostError("--ssh-config must be an absolute path", exit_code=2)
+        raise CoRAgentHostError("--ssh-config must be an absolute path", exit_code=2)
 
 
 def resolve_pi_source(installation: Installation) -> Path:
@@ -1337,16 +1337,16 @@ def resolve_pi_source(installation: Installation) -> Path:
     try:
         pin = json.loads(pin_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ResearchAgentHostError(f"cannot read the pinned Pi source descriptor: {pin_path}") from exc
+        raise CoRAgentHostError(f"cannot read the pinned Pi source descriptor: {pin_path}") from exc
     commit = pin.get("commit") if isinstance(pin, dict) else None
     if not isinstance(commit, str) or not commit:
-        raise ResearchAgentHostError(f"pinned Pi source descriptor has no commit: {pin_path}")
+        raise CoRAgentHostError(f"pinned Pi source descriptor has no commit: {pin_path}")
     source = (installation.root / "runtimes/pi" / commit).resolve()
-    configured = os.environ.get("RESEARCH_AGENT_PI_RUNTIME_ROOT")
+    configured = os.environ.get("CORAGENT_PI_RUNTIME_ROOT")
     if configured and Path(configured).expanduser().resolve() != source:
-        raise ResearchAgentHostError("RESEARCH_AGENT_PI_RUNTIME_ROOT is installation-managed and cannot be overridden")
+        raise CoRAgentHostError("CORAGENT_PI_RUNTIME_ROOT is installation-managed and cannot be overridden")
     if not source.is_dir() or source.is_symlink():
-        raise ResearchAgentHostError(f"installed Pi Runtime is missing or invalid: {source}")
+        raise CoRAgentHostError(f"installed Pi Runtime is missing or invalid: {source}")
     return source
 
 
@@ -1356,7 +1356,7 @@ def build_harness_client_command(installation: Installation, request: LaunchRequ
     entry = source / "packages/coding-agent/src/experimental/source-resolver.ts"
     client = installation.package_root / "apps/agent/pi/client.mjs"
     if not entry.is_file() or not client.is_file():
-        raise ResearchAgentHostError("Pi harness client source is unavailable; prepare the pinned Pi source or reinstall ResearchAgent")
+        raise CoRAgentHostError("Pi harness client source is unavailable; prepare the pinned Pi source or reinstall CoRAgent")
     command = [_node_binary(), "--import", str(entry), str(client)]
     if request.session_id:
         command.extend(["--session-id", request.session_id])
@@ -1369,18 +1369,18 @@ def build_harness_client_command(installation: Installation, request: LaunchRequ
 def launch_harness_client(installation: Installation, request: LaunchRequest, workspace: Path) -> NoReturn:
     """Run Pi's native remote TUI against the installation-owned harness."""
     if request.session_id and not SESSION_ID.fullmatch(request.session_id):
-        raise ResearchAgentHostError("invalid session identity", exit_code=2)
-    os.environ["RESEARCH_AGENT_SESSION_CWD"] = str(workspace)
-    os.environ["RESEARCH_AGENT_WORKSPACE_ID"] = request.workspace_name
-    os.environ["RESEARCH_AGENT_PI_RUNTIME_ROOT"] = str(resolve_pi_source(installation))
-    os.environ["RESEARCH_AGENT_HOST_STATE_ROOT"] = str(paths(installation.root).host_state)
-    os.environ["RESEARCH_AGENT_SESSION_ROOT"] = str(paths(installation.root).sessions)
+        raise CoRAgentHostError("invalid session identity", exit_code=2)
+    os.environ["CORAGENT_SESSION_CWD"] = str(workspace)
+    os.environ["CORAGENT_WORKSPACE_ID"] = request.workspace_name
+    os.environ["CORAGENT_PI_RUNTIME_ROOT"] = str(resolve_pi_source(installation))
+    os.environ["CORAGENT_HOST_STATE_ROOT"] = str(paths(installation.root).host_state)
+    os.environ["CORAGENT_SESSION_ROOT"] = str(paths(installation.root).sessions)
     os.environ["PI_SERVER_DIR"] = str(installation.root / "var/state/host/pi-server")
     os.environ["PI_EXPERIMENTAL"] = "1"
-    os.environ["RESEARCH_AGENT_PACKAGE_ROOT"] = str(installation.package_root)
+    os.environ["CORAGENT_PACKAGE_ROOT"] = str(installation.package_root)
     os.environ["PI_SESSION_WORKER_ENTRY"] = str(installation.package_root / "apps/agent/pi/worker.mjs")
-    os.environ["RESEARCH_AGENT_WORKSPACE_ROOT"] = str(installation.workspaces_root)
-    os.environ.pop("RESEARCH_AGENT_CUSTOM_UI", None)
+    os.environ["CORAGENT_WORKSPACE_ROOT"] = str(installation.workspaces_root)
+    os.environ.pop("CORAGENT_CUSTOM_UI", None)
     exec_pi(build_harness_client_command(installation, request), workspace)
 
 
@@ -1392,7 +1392,7 @@ def build_gateway_command(
 ) -> list[str]:
     """Build a browser adapter attached to an existing installation Host session."""
     if not request.session_id:
-        raise ResearchAgentHostError("--gateway requires --session-id", exit_code=2)
+        raise CoRAgentHostError("--gateway requires --session-id", exit_code=2)
     endpoint = socket_path or resolve_host_socket(installation)
     command = [
         _node_binary(),
@@ -1411,14 +1411,14 @@ def build_gateway_command(
 def _node_binary() -> str:
     node = shutil.which("node")
     if not node:
-        raise ResearchAgentHostError("Node.js executable not found", exit_code=127)
+        raise CoRAgentHostError("Node.js executable not found", exit_code=127)
     return node
 
 
 def _app_server_entry(installation: Installation) -> Path:
     entry = installation.package_root / "apps/agent/main.mjs"
     if entry.is_symlink() or not entry.is_file():
-        raise ResearchAgentHostError("selected Package has no native Pi App Server entrypoint")
+        raise CoRAgentHostError("selected Package has no native Pi App Server entrypoint")
     return entry
 
 
@@ -1435,16 +1435,16 @@ def _prepare_host_state(installation: Installation) -> tuple[Path, Path]:
     # mkdir/chmod on an existing directory fails with EROFS when ProtectSystem
     # is strict.  Runtime-owned children remain mutable below.
     if installation_pi.is_symlink():
-        raise ResearchAgentHostError(f"Host state path cannot be a symbolic link: {installation_pi}")
+        raise CoRAgentHostError(f"Host state path cannot be a symbolic link: {installation_pi}")
     if not installation_pi.exists():
         try:
             installation_pi.mkdir(mode=0o700, parents=True)
         except OSError as exc:
-            raise ResearchAgentHostError(f"Host state path is not a directory: {installation_pi}") from exc
+            raise CoRAgentHostError(f"Host state path is not a directory: {installation_pi}") from exc
     if not installation_pi.is_dir():
-        raise ResearchAgentHostError(f"Host state path is not a directory: {installation_pi}")
+        raise CoRAgentHostError(f"Host state path is not a directory: {installation_pi}")
     if stat.S_IMODE(installation_pi.stat().st_mode) != 0o700:
-        raise ResearchAgentHostError(f"Host state path must be owner-only: {installation_pi}")
+        raise CoRAgentHostError(f"Host state path must be owner-only: {installation_pi}")
     for path in (
         state_root,
         host_workspace,
@@ -1452,17 +1452,17 @@ def _prepare_host_state(installation: Installation) -> tuple[Path, Path]:
         paths(installation.root).sessions,
     ):
         if path.is_symlink():
-            raise ResearchAgentHostError(f"Host state path cannot be a symbolic link: {path}")
+            raise CoRAgentHostError(f"Host state path cannot be a symbolic link: {path}")
         path.mkdir(mode=0o700, parents=True, exist_ok=True)
         if not path.is_dir():
-            raise ResearchAgentHostError(f"Host state path is not a directory: {path}")
+            raise CoRAgentHostError(f"Host state path is not a directory: {path}")
         path.chmod(0o700)
     workspaces_root = installation.workspaces_root
     if workspaces_root.is_symlink():
-        raise ResearchAgentHostError(f"workspace container cannot be a symbolic link: {workspaces_root}")
+        raise CoRAgentHostError(f"workspace container cannot be a symbolic link: {workspaces_root}")
     workspaces_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     if not workspaces_root.is_dir():
-        raise ResearchAgentHostError(f"workspace container is not a directory: {workspaces_root}")
+        raise CoRAgentHostError(f"workspace container is not a directory: {workspaces_root}")
     workspaces_root.chmod(0o700)
     return host_workspace, state_root
 
@@ -1484,9 +1484,9 @@ def _host_server_id(installation: Installation, *, create: bool) -> str:
     try:
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError as exc:
-        raise ResearchAgentHostUnavailableError("ResearchAgent Host is not initialized") from exc
+        raise CoRAgentHostUnavailableError("CoRAgent Host is not initialized") from exc
     except OSError as exc:
-        raise ResearchAgentHostError(f"cannot read ResearchAgent Host identity: {path}: {exc}") from exc
+        raise CoRAgentHostError(f"cannot read CoRAgent Host identity: {path}: {exc}") from exc
     with os.fdopen(descriptor, "r", encoding="ascii") as handle:
         info = os.fstat(handle.fileno())
         if (
@@ -1496,10 +1496,10 @@ def _host_server_id(installation: Installation, *, create: bool) -> str:
             or info.st_nlink != 1
             or info.st_size > 64
         ):
-            raise ResearchAgentHostError(f"Host identity must be an owner-only regular file: {path}")
+            raise CoRAgentHostError(f"Host identity must be an owner-only regular file: {path}")
         server_id = handle.read(65).strip()
     if not APP_SERVER_ID.fullmatch(server_id):
-        raise ResearchAgentHostError(f"invalid Host identity: {path}")
+        raise CoRAgentHostError(f"invalid Host identity: {path}")
     return server_id
 
 
@@ -1509,21 +1509,21 @@ def _private_socket_directory(
     create: bool,
     configured_runtime_dir: Path | None = None,
 ) -> Path:
-    configured = os.environ.get("RESEARCH_AGENT_APP_SERVER_RUNTIME_DIR", "").strip()
+    configured = os.environ.get("CORAGENT_APP_SERVER_RUNTIME_DIR", "").strip()
     if not configured and configured_runtime_dir is not None:
         configured = str(configured_runtime_dir)
     if configured:
         base = Path(configured).expanduser()
         if not base.is_absolute():
-            raise ResearchAgentHostError("RESEARCH_AGENT_APP_SERVER_RUNTIME_DIR must be absolute")
+            raise CoRAgentHostError("CORAGENT_APP_SERVER_RUNTIME_DIR must be absolute")
         bases = [base]
     else:
         xdg = os.environ.get("XDG_RUNTIME_DIR", "").strip()
         candidate = Path(xdg) if xdg else Path(f"/run/user/{os.getuid()}")
         bases = []
         if candidate.is_dir():
-            bases.append(candidate / "ra")
-        bases.append(Path(tempfile.gettempdir()) / f"research-agent-{os.getuid()}")
+            bases.append(candidate / "coragent")
+        bases.append(Path(tempfile.gettempdir()) / f"coragent-{os.getuid()}")
     key = hashlib.sha256(os.fsencode(identity_root.resolve())).hexdigest()[:12]
     last_error: OSError | None = None
     for base in bases:
@@ -1531,30 +1531,30 @@ def _private_socket_directory(
         longest_socket = directory / "pi" / f"server-{'0' * 36}-{'0' * 12}.sock"
         if len(os.fsencode(longest_socket)) >= 108:
             if configured:
-                raise ResearchAgentHostError(
+                raise CoRAgentHostError(
                     f"App Server runtime directory is too long for Unix sockets: {directory}; "
-                    "set RESEARCH_AGENT_APP_SERVER_RUNTIME_DIR to a shorter private directory"
+                    "set CORAGENT_APP_SERVER_RUNTIME_DIR to a shorter private directory"
                 )
             continue
         try:
             for path in (base, directory):
                 if path.is_symlink():
-                    raise ResearchAgentHostError(f"App Server runtime directory cannot be a symbolic link: {path}")
+                    raise CoRAgentHostError(f"App Server runtime directory cannot be a symbolic link: {path}")
                 if create:
                     path.mkdir(mode=0o700, parents=True, exist_ok=True)
                 if path.exists():
                     info = path.stat()
                     if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
-                        raise ResearchAgentHostError(f"App Server runtime directory must be owned by the current user: {path}")
+                        raise CoRAgentHostError(f"App Server runtime directory must be owned by the current user: {path}")
                     if create:
                         path.chmod(0o700)
             return directory
         except OSError as exc:
             if configured:
-                raise ResearchAgentHostError(f"cannot prepare App Server runtime directory: {base}: {exc}") from exc
+                raise CoRAgentHostError(f"cannot prepare App Server runtime directory: {base}: {exc}") from exc
             last_error = exc
     detail = f": {last_error}" if last_error else ""
-    raise ResearchAgentHostError(f"cannot prepare a private App Server runtime directory{detail}")
+    raise CoRAgentHostError(f"cannot prepare a private App Server runtime directory{detail}")
 
 
 def _host_socket_directory(installation: Installation, *, create: bool) -> Path:
@@ -1580,35 +1580,35 @@ def launch_terminal(installation: Installation, request: LaunchRequest, workspac
 
     The Harness Host is the only owner of the Pi server and session worker.
     The terminal process is just Pi's official experimental client, connected
-    to the descriptor selected by ``research-agent-terminal-client.mjs``.
+    to the descriptor selected by ``coragent-terminal-client.mjs``.
     """
     if request.session_id and not SESSION_ID.fullmatch(request.session_id):
-        raise ResearchAgentHostError("invalid session identity", exit_code=2)
-    os.environ["RESEARCH_AGENT_PI_RUNTIME_ROOT"] = str(resolve_pi_source(installation))
-    os.environ["RESEARCH_AGENT_HOST_STATE_ROOT"] = str(paths(installation.root).host_state)
-    os.environ["RESEARCH_AGENT_SESSION_ROOT"] = str(paths(installation.root).sessions)
-    os.environ["RESEARCH_AGENT_SESSION_CWD"] = str(workspace)
+        raise CoRAgentHostError("invalid session identity", exit_code=2)
+    os.environ["CORAGENT_PI_RUNTIME_ROOT"] = str(resolve_pi_source(installation))
+    os.environ["CORAGENT_HOST_STATE_ROOT"] = str(paths(installation.root).host_state)
+    os.environ["CORAGENT_SESSION_ROOT"] = str(paths(installation.root).sessions)
+    os.environ["CORAGENT_SESSION_CWD"] = str(workspace)
     if request.remote_host is not None:
         _validate_remote_terminal_request(request)
         socket_path = None
     else:
         try:
             socket_path = ensure_host_running(installation)
-        except ResearchAgentHostError as exc:
-            raise ResearchAgentHostError(f"Pi harness Host is unavailable: {exc}") from exc
+        except CoRAgentHostError as exc:
+            raise CoRAgentHostError(f"Pi harness Host is unavailable: {exc}") from exc
     exec_pi(build_host_client_command(installation, request, socket_path=socket_path, workspace_path=workspace), workspace)
 
 
 def prepare_remote_terminal_cwd(installation: Installation, workspace_name: str) -> Path:
     """Create an isolated local cwd for an SSH terminal's presentation process."""
     if not WORKSPACE_ID_PATTERN.fullmatch(workspace_name):
-        raise ResearchAgentHostError(f"invalid workspace name: {workspace_name}", exit_code=2)
+        raise CoRAgentHostError(f"invalid workspace name: {workspace_name}", exit_code=2)
     root = installation.root / "var/cache/remote-terminal" / workspace_name
     if root.is_symlink():
-        raise ResearchAgentHostError(f"remote terminal cwd cannot be a symbolic link: {root}")
+        raise CoRAgentHostError(f"remote terminal cwd cannot be a symbolic link: {root}")
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     if not root.is_dir():
-        raise ResearchAgentHostError(f"remote terminal cwd is not a directory: {root}")
+        raise CoRAgentHostError(f"remote terminal cwd is not a directory: {root}")
     root.chmod(0o700)
     return root
 
@@ -1622,40 +1622,40 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
     try:
         assert_installation_available(install_root)
     except (OSError, ValueError, RuntimeError) as exc:
-        raise ResearchAgentHostError(str(exc), code="installation_maintenance_required") from exc
-    if request.host and "--service-host" not in argv and os.environ.get("RESEARCH_AGENT_SYSTEMD_HOST") != "1":
+        raise CoRAgentHostError(str(exc), code="installation_maintenance_required") from exc
+    if request.host and "--service-host" not in argv and os.environ.get("CORAGENT_SYSTEMD_HOST") != "1":
         try:
             service_scope, _runtime_dir = _configured_service(Path(install_root).expanduser().resolve())
-        except ResearchAgentHostError:
+        except CoRAgentHostError:
             service_scope = "user"
         scope = [] if service_scope == "system" else ["--user"]
-        raise ResearchAgentHostError(
-            "ResearchAgent Host is managed by systemd; use:\n"
+        raise CoRAgentHostError(
+            "CoRAgent Host is managed by systemd; use:\n"
             f"  systemctl {' '.join(scope + ['start', APP_SERVER_SERVICE])}\n"
             f"  systemctl {' '.join(scope + ['status', APP_SERVER_SERVICE])}",
             exit_code=2,
         )
     normalize_proxy_environment()
     if request.host and request.gateway:
-        raise ResearchAgentHostError("--host and --gateway cannot be combined", exit_code=2)
+        raise CoRAgentHostError("--host and --gateway cannot be combined", exit_code=2)
     if request.remote_host is not None and (request.host or request.gateway):
-        raise ResearchAgentHostError("SSH terminal options are only valid for the default workspace client", exit_code=2)
+        raise CoRAgentHostError("SSH terminal options are only valid for the default workspace client", exit_code=2)
     if request.host and (request.workspace_name or request.session_id or request.continue_latest):
-        raise ResearchAgentHostError("--host does not accept workspace or session selection", exit_code=2)
+        raise CoRAgentHostError("--host does not accept workspace or session selection", exit_code=2)
     if request.gateway and not request.workspace_name:
-        raise ResearchAgentHostError("--gateway requires --workspace", exit_code=2)
+        raise CoRAgentHostError("--gateway requires --workspace", exit_code=2)
     if request.gateway and not request.session_id:
-        raise ResearchAgentHostError("--gateway requires --session-id", exit_code=2)
+        raise CoRAgentHostError("--gateway requires --session-id", exit_code=2)
     installation = resolve_installation(package_root, install_root)
     request = resolve_remote_terminal_request(installation, request)
     if request.remote_host is not None and (request.host or request.gateway):
-        raise ResearchAgentHostError("SSH terminal options are only valid for the default workspace client", exit_code=2)
-    os.environ["RESEARCH_AGENT_INSTALL_ROOT"] = str(installation.root)
+        raise CoRAgentHostError("SSH terminal options are only valid for the default workspace client", exit_code=2)
+    os.environ["CORAGENT_INSTALL_ROOT"] = str(installation.root)
     configure_model_icon_environment(installation)
     try:
         require_guarded_installation(installation.root)
     except SessionGuardError as exc:
-        raise ResearchAgentHostError(str(exc), code=exc.code) from exc
+        raise CoRAgentHostError(str(exc), code=exc.code) from exc
 
     if request.phone_action:
         from .link import (
@@ -1677,38 +1677,38 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
                 revoke_phone_device(installation.root, request.phone_device_id)
                 print(f"Revoked Phone device {request.phone_device_id}")
         except LinkError as exc:
-            raise ResearchAgentHostError(str(exc)) from exc
+            raise CoRAgentHostError(str(exc)) from exc
         return 0
 
     default_client = not (request.host or request.gateway)
     if default_client:
         if not request.workspace_name:
-            raise ResearchAgentHostError(f"a research workspace is required\n{USAGE}", exit_code=2)
+            raise CoRAgentHostError(f"a research workspace is required\n{USAGE}", exit_code=2)
         # Bootstrap imports jsonschema and the control kernel. Select the
         # installation-owned runtime before importing those modules; the
-        # user's shell environment must not determine ResearchAgent's dependencies.
+        # user's shell environment must not determine CoRAgent's dependencies.
         configure_runtime_environment(installation)
         try:
             python = ensure_runtime_python(installation.package_root, required=True)
             if python is None:
-                raise RuntimeEnvironmentError("managed TS Python runtime could not be selected")
+                raise RuntimeEnvironmentError("managed CoRAgent Python runtime could not be selected")
             bind_runtime_process_environment(python)
         except RuntimeEnvironmentError as exc:
-            raise ResearchAgentHostError(str(exc)) from exc
+            raise CoRAgentHostError(str(exc)) from exc
         configure_remote(installation)
         configure_notifications(installation)
         if request.remote_host is not None:
             _validate_remote_terminal_request(request)
             workspace = prepare_remote_terminal_cwd(installation, request.workspace_name)
-            os.environ["RESEARCH_AGENT_WORKSPACE_MODE"] = "research"
-            os.environ["RESEARCH_AGENT_WORKSPACE_ID"] = request.workspace_name
-            os.environ["RESEARCH_AGENT_WORKSPACE_MODE"] = "research"
+            os.environ["CORAGENT_WORKSPACE_MODE"] = "research"
+            os.environ["CORAGENT_WORKSPACE_ID"] = request.workspace_name
+            os.environ["CORAGENT_WORKSPACE_MODE"] = "research"
         else:
             workspace = prepare_workspace(installation, request.workspace_name)
             manifest = bind_workspace_mode(workspace, request.workspace_name)
-            os.environ["RESEARCH_AGENT_WORKSPACE_MODE"] = str(manifest["workspace_mode"])
-            os.environ["RESEARCH_AGENT_WORKSPACE_ID"] = str(manifest["workspace_id"])
-            os.environ["RESEARCH_AGENT_WORKSPACE_MODE"] = str(manifest["workspace_mode"])
+            os.environ["CORAGENT_WORKSPACE_MODE"] = str(manifest["workspace_mode"])
+            os.environ["CORAGENT_WORKSPACE_ID"] = str(manifest["workspace_id"])
+            os.environ["CORAGENT_WORKSPACE_MODE"] = str(manifest["workspace_mode"])
         configure_process_environment(installation, workspace, request.workspace_name)
         launch_terminal(installation, request, workspace)
 
@@ -1716,10 +1716,10 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
     try:
         python = ensure_runtime_python(installation.package_root, required=True)
         if python is None:
-            raise RuntimeEnvironmentError("managed TS Python runtime could not be selected")
+            raise RuntimeEnvironmentError("managed CoRAgent Python runtime could not be selected")
         bind_runtime_process_environment(python)
     except RuntimeEnvironmentError as exc:
-        raise ResearchAgentHostError(str(exc)) from exc
+        raise CoRAgentHostError(str(exc)) from exc
     configure_remote(installation)
     if request.host:
         configure_notifications(installation)
@@ -1731,10 +1731,10 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
             try:
                 descriptors.append(acquire_directory_guard(installation.root, host_workspace, exclusive=True))
             except SessionGuardError as exc:
-                raise ResearchAgentHostError("Host is already running; manage research-agent.service with systemctl --user") from exc
+                raise CoRAgentHostError("Host is already running; manage coragent.service with systemctl --user") from exc
             exec_pi(build_host_server_command(installation, request), host_workspace)
         except SessionGuardError as exc:
-            raise ResearchAgentHostError(str(exc), code=exc.code) from exc
+            raise CoRAgentHostError(str(exc), code=exc.code) from exc
         finally:
             for descriptor in reversed(descriptors):
                 os.close(descriptor)
@@ -1744,10 +1744,10 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         # The gateway attaches through the same native client session lookup
         # as the TUI. Bind the requested workspace explicitly so an ID shared
         # by multiple projects cannot resolve against the Host's private cwd.
-        os.environ["RESEARCH_AGENT_SESSION_CWD"] = str(workspace)
+        os.environ["CORAGENT_SESSION_CWD"] = str(workspace)
         socket_path = ensure_host_running(installation)
         exec_pi(build_gateway_command(installation, request, socket_path=socket_path), workspace)
-    raise ResearchAgentHostError(f"a research workspace is required\n{USAGE}", exit_code=2)
+    raise CoRAgentHostError(f"a research workspace is required\n{USAGE}", exit_code=2)
 
 
 def main(
@@ -1760,9 +1760,9 @@ def main(
     arguments = list(sys.argv[1:] if argv is None else argv)
     try:
         return launch(arguments, package_root=package, install_root=install_root)
-    except ResearchAgentHostError as exc:
-        print(f"ResearchAgent: {exc}", file=sys.stderr)
+    except CoRAgentHostError as exc:
+        print(f"CoRAgent: {exc}", file=sys.stderr)
         return exc.exit_code
     except (OSError, ValueError) as exc:
-        print(f"ResearchAgent: startup failed: {exc}", file=sys.stderr)
+        print(f"CoRAgent: startup failed: {exc}", file=sys.stderr)
         return 1

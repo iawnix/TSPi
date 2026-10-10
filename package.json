@@ -1,13 +1,13 @@
 {
-  "name": "@iawnix/research-agent",
-  "version": "0.18.0",
+  "name": "@iawnix/coragent",
+  "version": "0.19.0",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
   "description": "Pi package for research questions, immutable results and memory, generic Job Runtime, and artifact evidence.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/iawnix/TSPi.git"
+    "url": "git+https://github.com/iawnix/coragent.git"
   },
   "keywords": [
     "pi-package",
@@ -19,8 +19,8 @@
     "research-memory"
   ],
   "scripts": {
-    "install-env": "python3 scripts/install_env.py --package-root . --workspace-root \"${RESEARCH_AGENT_WORKSPACE_ROOT:?set RESEARCH_AGENT_WORKSPACE_ROOT to the TS workspace root}\" --json",
-    "install-env:core": "python3 scripts/install_env.py --package-root . --workspace-root \"${RESEARCH_AGENT_WORKSPACE_ROOT:?set RESEARCH_AGENT_WORKSPACE_ROOT to the TS workspace root}\" --json",
+    "install-env": "python3 scripts/install_env.py --package-root . --workspace-root \"${CORAGENT_WORKSPACE_ROOT:?set CORAGENT_WORKSPACE_ROOT to the CoRAgent workspace root}\" --json",
+    "install-env:core": "python3 scripts/install_env.py --package-root . --workspace-root \"${CORAGENT_WORKSPACE_ROOT:?set CORAGENT_WORKSPACE_ROOT to the CoRAgent workspace root}\" --json",
     "test:list": "python3 tools/test/runner.py list",
     "test:fast": "python3 tools/test/runner.py fast -- -q",
     "lint:public": "python3 tools/lint_public_surface.py",
@@ -30,7 +30,7 @@
     "test:package": "python3 tools/test/runner.py package",
     "test:native-pi": "python3 tools/test/runner.py native-pi",
     "test:framework": "node --test tests/node/research-memory.test.mjs",
-    "test:research-agent": "python3 tools/test/runner.py native-pi",
+    "test:coragent": "python3 tools/test/runner.py native-pi",
     "test:remote-smoke": "python3 tools/test/runner.py remote-smoke --",
     "test:live-eval": "python3 tools/test/runner.py live-eval --",
     "release:agent": "python3 scripts/build_release.py --output-dir dist/agent --json",
@@ -57,9 +57,9 @@
     "assets",
     "scripts",
     "docs",
-    "research-agent",
+    "coragent",
     "install.sh",
-    "libexec/research-agent-host",
+    "libexec/coragent-host",
     "LICENSE",
     "README.md",
     "README.zh-CN.md",
@@ -109,11 +109,11 @@
       "./domains/chemical/skills"
     ],
     "themes": [
-      "./apps/agent/terminal/themes/research-agent.json"
+      "./apps/agent/terminal/themes/coragent.json"
     ],
     "extensions": []
   },
-  "researchAgent": {
+  "coragent": {
     "execution": [
       "domains/chemical/execution.json"
     ],

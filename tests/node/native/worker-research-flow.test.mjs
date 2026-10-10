@@ -12,7 +12,7 @@ import { TEST_ROOT, TEST_SOCKET_ROOT, retainPiDiagnostics, managedPython, pinned
 
 const execute = promisify(execFile);
 const sourceRoot = pinnedPiSource();
-const packageRoot = resolve(process.env.RESEARCH_AGENT_TEST_PACKAGE_ROOT || process.cwd());
+const packageRoot = resolve(process.env.CORAGENT_TEST_PACKAGE_ROOT || process.cwd());
 const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
 
 test("Worker reads installed Skills, runs a Job, publishes a Node result after a Monitor next_run and restart", {
@@ -30,8 +30,8 @@ test("Worker reads installed Skills, runs a Job, publishes a Node result after a
   const requests = [];
   let stage = "prepare";
   try {
-    process.env.RESEARCH_AGENT_DEBUG = "1";
-    process.env.RESEARCH_AGENT_PI_DIAGNOSTIC_FILE = join(root, "pi-child.log");
+    process.env.CORAGENT_DEBUG = "1";
+    process.env.CORAGENT_PI_DIAGNOSTIC_FILE = join(root, "pi-child.log");
     const agentDir = join(root, "agent");
     const workspaceRoot = join(root, "workspaces");
     const workspace = join(workspaceRoot, "flow");
@@ -39,11 +39,11 @@ test("Worker reads installed Skills, runs a Job, publishes a Node result after a
     await mkdir(agentDir); await mkdir(workspaceRoot);
     const config = join(root, "email.toml");
     await writeFile(config, '[notifications.email]\nenabled=true\nprovider="smtp"\npreset="custom"\nhost="127.0.0.1"\nport=9\nsecurity="ssl"\nusername="sender@example.test"\nrecipient="reader@example.test"\npassword_env="FIXTURE_MAIL_PASSWORD"\n', { mode: 0o600 });
-    Object.assign(process.env, { PI_CODING_AGENT_DIR: agentDir, PI_AGENT_DIR: agentDir, RESEARCH_AGENT_PYTHON: python,
-      PYTHONDONTWRITEBYTECODE: "1", RESEARCH_AGENT_NOTIFICATION_CONFIG: config });
+    Object.assign(process.env, { PI_CODING_AGENT_DIR: agentDir, PI_AGENT_DIR: agentDir, CORAGENT_PYTHON: python,
+      PYTHONDONTWRITEBYTECODE: "1", CORAGENT_NOTIFICATION_CONFIG: config });
     const jobConfig = join(root, "job.toml");
     await writeFile(jobConfig, 'default_environment="local"\n[environments.local]\nkind="local"\nsupervisor="process"\n');
-    process.env.RESEARCH_AGENT_JOB_CONFIG = jobConfig;
+    process.env.CORAGENT_JOB_CONFIG = jobConfig;
     await execute(python, [join(packageRoot, "apps/agent-cli/workspace_mode.py"), "--root", workspace, "--workspace-id", "flow"]);
     const fixtureJobId = "job_" + createHash("sha256").update("fixture_run").digest("hex").slice(0, 48);
     const preparedPath = join(workspace, "prepared.json");
@@ -111,14 +111,14 @@ test("Worker reads installed Skills, runs a Job, publishes a Node result after a
       models: [{ id: "fixture", name: "Fixture", reasoning: false, input: ["text"],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 400000, maxTokens: 4096 }],
     } } }));
-    const { createResearchAgentHarnessBackend } = await import(pathToFileURL(join(packageRoot, "apps/agent/pi/backend.mjs")));
+    const { createCoRAgentHarnessBackend } = await import(pathToFileURL(join(packageRoot, "apps/agent/pi/backend.mjs")));
     const packageAlias = join(root, "current-package");
     await symlink(packageRoot, packageAlias, "dir");
     const backendOptions = { sourceRoot, packageRoot: packageAlias, workspaceRoot,
       serverDirectory: socketRoot, sessionDir: join(root, "sessions"), stateRoot: join(root, "state"),
       model: { provider: "fixture", id: "fixture" } };
     stage = "start-backend";
-    backend = await createResearchAgentHarnessBackend(backendOptions);
+    backend = await createCoRAgentHarnessBackend(backendOptions);
     stage = "create-session";
     const created = await backend.createSession({ workspace_id: "flow", model: { provider: "fixture", id: "fixture" } });
     const session_id = created.session.session_id;
@@ -132,7 +132,7 @@ test("Worker reads installed Skills, runs a Job, publishes a Node result after a
     for (let i = 0; i < 250; i++) {
       read = await backend.readSession("flow", session_id);
       if (!read.session.is_streaming && existsSync(join(workspace, `operations/jobs/${fixtureJobId}.json`)) && !monitorDelivered) {
-        if (!restarted) { await backend.close(); backend = await createResearchAgentHarnessBackend(backendOptions); restarted=true; }
+        if (!restarted) { await backend.close(); backend = await createCoRAgentHarnessBackend(backendOptions); restarted=true; }
         await runJson("tick",workspace);
         const pending=await runJson("pending",workspace);
         if (pending.deliveries.length) {
@@ -218,7 +218,7 @@ test("Worker reads installed Skills, runs a Job, publishes a Node result after a
     const activityBeforeRestart = (await backend.listSessions("flow"))[0].updated_at;
     assert.equal(Date.parse(activityBeforeRestart), Math.max(...read.snapshot.messages.map(message => message.timestamp)));
     await backend.close();
-    backend = await createResearchAgentHarnessBackend(backendOptions);
+    backend = await createCoRAgentHarnessBackend(backendOptions);
     assert.equal((await backend.listSessions("flow"))[0].updated_at, activityBeforeRestart);
     const recovered = await backend.sendInput(monitorRequest);
     assert.equal(recovered.accepted, true);

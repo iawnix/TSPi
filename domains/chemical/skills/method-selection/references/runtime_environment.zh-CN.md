@@ -1,6 +1,6 @@
 # 执行环境选择
 
-`RESEARCH_AGENT_PYTHON` 是安装管理的控制解释器，用于准备请求和整理已有证据，不提供科学库。
+`CORAGENT_PYTHON` 是安装管理的控制解释器，用于准备请求和整理已有证据，不提供科学库。
 
 根据方法 Skill 选择预设入口、原生命令或任务脚本，以及 `job.toml` 中的命名环境。
 所选绑定提供目标 Python 或原生程序；预设入口还声明自己的依赖。
@@ -12,7 +12,7 @@
 准备请求时已经核验所选目标。准备前需要诊断时，只检查选定的入口和环境：
 
 ```bash
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.environment_check --config "$RESEARCH_AGENT_JOB_CONFIG" --environment <环境> --executor <id> --version <版本>
+"$CORAGENT_PYTHON" -m research_agent.application.environment_check --config "$CORAGENT_JOB_CONFIG" --environment <环境> --executor <id> --version <版本>
 ```
 
 使用没有预设入口的原生命令或任务脚本时，将 executor/version 换成 `--backend <绑定>`。

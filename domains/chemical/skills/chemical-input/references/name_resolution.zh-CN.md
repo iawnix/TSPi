@@ -8,8 +8,8 @@
 下一个后端。每次调用至多尝试每个已启用后端一次，保留 404、限流、超时和响应异常诊断。
 必要时使用有针对性的翻译或规范化查询；继续查询难以增加信息时转入候选推断。
 
-配置来自 RESEARCH_AGENT_NAME_RESOLVER_CONFIG 或
-RESEARCH_AGENT_INSTALL_ROOT/etc/name-resolver.toml。受管 Job 使用显式绑定：
+配置来自 CORAGENT_NAME_RESOLVER_CONFIG 或
+CORAGENT_INSTALL_ROOT/etc/name-resolver.toml。受管 Job 使用显式绑定：
 安装器在 job.toml 中补齐本地 structure 后端的解析配置路径。保留显式设置，
 远程目标需提供远端可读的路径。修改绑定后重新准备请求。缺少配置时返回
 `next_step=infer_candidates`，Agent 可根据输入描述继续推断。

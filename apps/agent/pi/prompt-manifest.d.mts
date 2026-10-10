@@ -16,7 +16,7 @@ export interface SystemPromptContributor {
 }
 
 export interface SystemPromptManifest {
-  readonly schema_version: "research-agent-system-prompt/2";
+  readonly schema_version: "coragent-system-prompt/2";
   readonly runtime: SystemPromptRuntime;
   readonly effective: string;
   readonly sha256: string;
@@ -64,7 +64,7 @@ export function createSystemPromptTool(
   parameters: TSchema;
   execute(
     params: Record<string, never>,
-    api: import("@earendil-works/pi-durable").ToolExecutionApi & { readonly researchAgent: import("../tools/context.mjs").ToolExecutionContext },
+    api: import("@earendil-works/pi-durable").ToolExecutionApi & { readonly coragent: import("../tools/context.mjs").ToolExecutionContext },
     context: import("@earendil-works/chord").Context,
   ): Promise<{
     content: Array<{ type: "text"; text: string }>;

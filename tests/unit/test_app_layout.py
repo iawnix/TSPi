@@ -44,7 +44,7 @@ def test_doctor_requires_matching_release_receipt(tmp_path):
 
 @pytest.mark.parametrize('store', ['/', 'relative'])
 def test_environment_store_cannot_be_a_broad_or_relative_path(tmp_path, monkeypatch, store):
-    monkeypatch.setenv('RESEARCH_AGENT_HOST_ENV_ROOT', store)
+    monkeypatch.setenv('CORAGENT_HOST_ENV_ROOT', store)
     with pytest.raises(ValueError, match='Host environment store'):
         paths(tmp_path/'install').initialize()
 

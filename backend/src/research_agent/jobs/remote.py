@@ -99,7 +99,7 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
             # Compute output must not overwrite the controller's authoritative
             # spec, receipts, status or dispatch inputs during collection.
             for path in ('spec.json', 'receipt.json', 'status.json', 'input_manifest.json',
-                         'supervisor.json', 'remote.json', 'cancel.request', '.research-agent', '.scratch'):
+                         'supervisor.json', 'remote.json', 'cancel.request', '.coragent', '.scratch'):
                 command.append('--exclude=/' + path)
             command.extend([f"{self.host}:{destination}/", str(source) + "/"])
         else:
@@ -136,7 +136,7 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
 
     def stage_inputs(self, spec: JobSpec) -> dict[str, Any]:
         remote_dir = self._remote_dir(spec)
-        self._run_ssh(f"umask 077; mkdir -p {shlex.quote(remote_dir)}/logs {shlex.quote(remote_dir)}/.research-agent")
+        self._run_ssh(f"umask 077; mkdir -p {shlex.quote(remote_dir)}/logs {shlex.quote(remote_dir)}/.coragent")
         self._rsync(spec.cwd, remote_dir)
         for path in spec.inputs:
             if not path.resolve().is_relative_to(spec.cwd.resolve()):
@@ -148,9 +148,9 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
         timeout = execution_timeout(spec.timeout_seconds, spec.metadata.get('resources', {}))
         argv = list(spec.command)
         if timeout is not None:
-            record_exit = ('"$@"; code=$?; printf "%s\\n" "$code" > .research-agent/command.exit; exit "$code"')
+            record_exit = ('"$@"; code=$?; printf "%s\\n" "$code" > .coragent/command.exit; exit "$code"')
             argv = ['timeout', '--signal=TERM', '--kill-after=5', str(timeout),
-                    '/bin/sh', '-c', record_exit, 'research-agent-command', *argv]
+                    '/bin/sh', '-c', record_exit, 'coragent-command', *argv]
         stdin = '/dev/null'
         if spec.stdin:
             path = spec.stdin.resolve()
@@ -163,13 +163,13 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
         script = ('set +e\numask 077\n'
                   + 'mkdir -p -- ' + shlex.quote(scratch) + ' || exit 125\n'
                   + 'cd ' + shlex.quote(remote_dir) + ' || exit 125\n'
-                  + 'rm -f .research-agent/command.exit\n'
+                  + 'rm -f .coragent/command.exit\n'
                   + shlex.join(argv) + ' < ' + shlex.quote(stdin) + ' > logs/stdout.log 2> logs/stderr.log\n'
                   + 'code=$?\n')
         # A program may itself exit 124/137. Its own exit receipt distinguishes
         # that failure from termination of the timeout process group.
         if timeout is not None:
-            script += ('if { [ "$code" = 124 ] || [ "$code" = 137 ]; } && [ ! -f .research-agent/command.exit ]; then '
+            script += ('if { [ "$code" = 124 ] || [ "$code" = 137 ]; } && [ ! -f .coragent/command.exit ]; then '
                        'printf "timed_out\\n" > status.state.tmp; mv status.state.tmp status.state; fi\n')
         script += 'printf "%s\\n" "$code" > status.exit.tmp; mv status.exit.tmp status.exit\nexit "$code"\n'
         # Scheduler/login variables are not inherited by the scientific process.
@@ -227,11 +227,11 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
             handle.write(wrapper)
             local_wrapper = Path(handle.name)
         try:
-            self._rsync(local_wrapper, remote_dir + '/.research-agent/run.sh')
+            self._rsync(local_wrapper, remote_dir + '/.coragent/run.sh')
         finally:
             local_wrapper.unlink(missing_ok=True)
         qsub = shlex.join(self._qsub_arguments(spec))
-        result = self._run_ssh(f"cd {shlex.quote(remote_dir)} && chmod 700 .research-agent/run.sh && {qsub} .research-agent/run.sh > scheduler.id && cat scheduler.id")
+        result = self._run_ssh(f"cd {shlex.quote(remote_dir)} && chmod 700 .coragent/run.sh && {qsub} .coragent/run.sh > scheduler.id && cat scheduler.id")
         scheduler_id = result.stdout.strip().splitlines()[-1].strip() if result.stdout.strip() else ''
         if not re.fullmatch(r'[A-Za-z0-9_.\[\]-]+', scheduler_id):
             raise RuntimeError('qsub returned no valid scheduler id; reconcile before retrying')

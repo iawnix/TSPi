@@ -24,7 +24,7 @@ def prepare(root, params):
         raise ValueError('validator_request_invalid: use validator identity, inputs, Job identity and a named platform')
     from research_agent.jobs.config_contract import load_job_config, resolve_binding, binding_digest
     from research_agent.jobs.environment import probe_binding, guarded_command
-    config_path = os.environ.get('RESEARCH_AGENT_JOB_CONFIG')
+    config_path = os.environ.get('CORAGENT_JOB_CONFIG')
     if not config_path:
         raise ValueError('job_config_required')
     settings = load_job_config(config_path)
@@ -50,7 +50,7 @@ def prepare(root, params):
     inputs = [{'source': str(script), 'destination': 'validator.py', 'sha256': script_digest}]
     destinations = set()
     reserved = {'validator.py', 'validator_inputs.json', 'validator_result.json',
-                'spec.json', 'receipt.json', 'status.json', 'logs', '.research-agent'}
+                'spec.json', 'receipt.json', 'status.json', 'logs', '.coragent'}
     for destination, resource in descriptor.get('resources', {}).items():
         target = Path(destination)
         if (target.is_absolute() or '..' in target.parts or not target.parts

@@ -1,7 +1,7 @@
 """Small canonical command service shared by CLI and host adapters.
 
 The command names in this module are the public application boundary.  Pi
-tools, slash commands, and TS Web are transports; they should not invent a
+tools, slash commands, and CoRAgent Web are transports; they should not invent a
 second research vocabulary of their own.
 """
 
@@ -19,8 +19,8 @@ from jsonschema import Draft202012Validator
 
 def _load_command_catalog() -> dict[str, Any]:
     value = json.loads(files("research_agent.application").joinpath("command_catalog.json").read_text(encoding="utf-8"))
-    if value.get("schema_version") != "research-agent-command-catalog/1" or not isinstance(value.get("commands"), list):
-        raise RuntimeError("invalid ResearchAgent command catalog")
+    if value.get("schema_version") != "coragent-command-catalog/1" or not isinstance(value.get("commands"), list):
+        raise RuntimeError("invalid CoRAgent command catalog")
     return value
 
 

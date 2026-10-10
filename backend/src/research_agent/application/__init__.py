@@ -1,1 +1,1 @@
-"""ResearchAgent application orchestration."""
+"""CoRAgent application orchestration."""

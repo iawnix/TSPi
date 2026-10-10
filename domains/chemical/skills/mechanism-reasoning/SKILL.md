@@ -3,7 +3,7 @@ name: mechanism-reasoning
 description: Form, compare, and revise reaction-mechanism hypotheses using explicit species identities, atom mappings, elementary steps, alternatives, and falsifiers.
 ---
 
-# ResearchAgent Mechanism Reasoning
+# CoRAgent Mechanism Reasoning
 
 [Chinese version](SKILL.zh-CN.md)
 

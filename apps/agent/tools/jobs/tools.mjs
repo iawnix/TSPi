@@ -10,7 +10,7 @@ export function createJobTools({ commandBridge }) {
     ...TOOL_CONTRACTS[key],
     async execute(params, api, context) {
       context?.abortSignal.throwIfAborted();
-      const toolContext = api.researchAgent;
+      const toolContext = api.coragent;
       const root = boundWorkspaceRoot(params, toolContext);
       const { root: _root, ...request } = params;
       const invoke = () => commandBridge.execute_command(`job.${operation}`, operation === "start" ? {

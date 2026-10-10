@@ -1,10 +1,10 @@
 # Research Memory architecture
 
-Implementation status: Research Memory semantics are retained in the current ResearchAgent module boundaries. Earlier Memory acceptance does not certify this refactor; see the [current implementation record](RESEARCH_AGENT_REFACTOR_STATUS.zh-CN.md).
+Implementation status: Research Memory semantics are retained in the current CoRAgent module boundaries. Earlier Memory acceptance does not certify this refactor; see the [current implementation record](CORAGENT_REFACTOR_STATUS.zh-CN.md).
 
 ## Ownership
 
-ResearchAgent uses the native Pi Harness as its only Agent loop. Workspace is the persistent research container, independent of individual sessions. Research Memory organizes original requests, local questions, repeated attempts, explicit relations and results. It does not schedule science or certify conclusions.
+CoRAgent uses the native Pi Harness as its only Agent loop. Workspace is the persistent research container, independent of individual sessions. Research Memory organizes original requests, local questions, repeated attempts, explicit relations and results. It does not schedule science or certify conclusions.
 
 | Component | Owns |
 | --- | --- |
@@ -63,6 +63,6 @@ Managed research Jobs explicitly bind node_id and the inspected Node revision at
 
 ## Skills and delivery
 
-Pi loads installed Skills natively. ResearchAgent verifies installed resource digests. Read the actual Skill path supplied by Pi; relative references resolve from that Skill directory. `research-memory` teaches five small operations; research-workflow coordinates Jobs and materials; domain Skills teach scientific methods. `reaction_mapping.md` belongs to `chemical-input/references/`.
+Pi loads installed Skills natively. CoRAgent verifies installed resource digests. Read the actual Skill path supplied by Pi; relative references resolve from that Skill directory. `research-memory` teaches five small operations; research-workflow coordinates Jobs and materials; domain Skills teach scientific methods. `reaction_mapping.md` belongs to `chemical-input/references/`.
 
 Process completion, file existence and Node closure do not establish a scientific result. Email uses existing user authorization and its own durable send identity. If Memory recording fails after transport acceptance, recover the record without resending. Installation, runtime and scientific claims each require their own evidence.

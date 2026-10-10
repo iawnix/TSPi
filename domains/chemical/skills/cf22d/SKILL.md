@@ -10,7 +10,7 @@ Use `chemical.cf22d@1` with the target's `pyscf` binding. The executor supports
 CF22D and its dispersion implementation must be available in that environment.
 
 ```bash
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.cf22d --version 1 --input geometry=input.xyz --output prepared/cf22d.json -- --task opt-sp --basis def2-tzvp --charge 0 --multiplicity 1
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config "$CORAGENT_JOB_CONFIG" --environment local --executor chemical.cf22d --version 1 --input geometry=input.xyz --output prepared/cf22d.json -- --task opt-sp --basis def2-tzvp --charge 0 --multiplicity 1
 ```
 
 Submit the returned request file/digest with `job_start` and the intended node_id.

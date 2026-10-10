@@ -12,11 +12,11 @@ import { createStateTool, createResearchDecisionTools } from "../../apps/agent/t
 import { createDecisionContextInjector } from "../../apps/agent/tools/decision-context.mjs";
 
 const { values } = parseArgs({ options: { "agent-dir": { type: "string" }, output: { type: "string" }, runs: { type: "string", default: "2" } } });
-const testRoot = resolve(process.env.RESEARCH_AGENT_TEST_ROOT || "/home/iaw/project/TSPi/local_debug");
-const piRoot = process.env.RESEARCH_AGENT_TEST_PI_RUNTIME_ROOT;
+const testRoot = resolve(process.env.CORAGENT_TEST_ROOT || "/home/iaw/project/TSPi/local_debug");
+const piRoot = process.env.CORAGENT_TEST_PI_RUNTIME_ROOT;
 if (!piRoot || !values["agent-dir"] || !values.output) throw new Error("Supply pinned Pi, --agent-dir and --output");
 const output = resolve(values.output);
-if (!output.startsWith(testRoot + "/")) throw new Error("Output must be under RESEARCH_AGENT_TEST_ROOT");
+if (!output.startsWith(testRoot + "/")) throw new Error("Output must be under CORAGENT_TEST_ROOT");
 const runs = Number(values.runs);
 if (!Number.isInteger(runs) || runs < 1 || runs > 3) throw new Error("runs must be 1..3");
 const temporary = await mkdtemp(join(testRoot, "eval-recovery-"));
@@ -47,7 +47,7 @@ try {
         { type: "set_focus", claim_ids: ["claim_fixture"], node_ids: ["node_fixture"] },
         { type: "create_strategy_plan", id: "strategy_fixture", claim_id: "claim_fixture", node_id: "node_fixture", objective: "Read output", rationale: "Check marker", status: "active" },
       ] });
-      job = await bridge.execute_command("job.start", { job_id: `job_recovery_${run}`, node_id: "node_fixture", command: [process.env.RESEARCH_AGENT_PYTHON, "-c", "print('evidence')"], timeout_seconds: 5 });
+      job = await bridge.execute_command("job.start", { job_id: `job_recovery_${run}`, node_id: "node_fixture", command: [process.env.CORAGENT_PYTHON, "-c", "print('evidence')"], timeout_seconds: 5 });
       let status;
       for (let poll = 0; poll < 100; poll++) {
         status = await bridge.execute_command("job.status", { job_id: job.job_id });
@@ -63,7 +63,7 @@ try {
         const tool = tools.find(tool => tool.name === call.name);
         if (!tool) throw new Error("Unsupported recovery tool");
         const args = validateToolArguments(tool, call);
-        return tool.execute(args, { callId: call.id, research-agent: toolContext }, { abortSignal: AbortSignal.timeout(30_000) });
+        return tool.execute(args, { callId: call.id, coragent: toolContext }, { abortSignal: AbortSignal.timeout(30_000) });
       };
       const invalid = { type: "toolCall", id: "call_injected", name: "research_interpretation", arguments: { interpretation: {
         id: "interpretation_fixture", claim_id: "claim_fixture", node_id: "node_fixture", attempt_ref: job.attempt_id,

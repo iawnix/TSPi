@@ -1,10 +1,10 @@
 # Research Memory 架构
 
-实施状态：本文保留既有 Research Memory 语义，并描述 ResearchAgent 当前模块边界。此前 Research Memory 验收不代表本次重构已通过；当前进度见[实施记录](RESEARCH_AGENT_REFACTOR_STATUS.zh-CN.md)。
+实施状态：本文保留既有 Research Memory 语义，并描述 CoRAgent 当前模块边界。此前 Research Memory 验收不代表本次重构已通过；当前进度见[实施记录](CORAGENT_REFACTOR_STATUS.zh-CN.md)。
 
 ## 所有权
 
-ResearchAgent 只使用 Pi 原生 Harness 循环。Workspace 是跨会话存在的研究容器；Research Memory 组织原始要求、局部问题、多次尝试、显式关系与产出，不负责科学调度或自动证明结论。
+CoRAgent 只使用 Pi 原生 Harness 循环。Workspace 是跨会话存在的研究容器；Research Memory 组织原始要求、局部问题、多次尝试、显式关系与产出，不负责科学调度或自动证明结论。
 
 | 组件 | 负责 |
 | --- | --- |
@@ -63,6 +63,6 @@ next_run 是实际调度模式：持久化认证执行事件，会话忙或自�
 
 ## Skill 与交付
 
-Pi 原生加载 Skill。ResearchAgent 验证安装资源摘要。使用 Pi 提供的真实 Skill 路径，相对引用以该 Skill 目录为基准。research-memory 教五种小操作，research-workflow 协调 Job 和材料，领域 Skill 提供科学方法。reaction_mapping.md 位于 chemical-input/references/。
+Pi 原生加载 Skill。CoRAgent 验证安装资源摘要。使用 Pi 提供的真实 Skill 路径，相对引用以该 Skill 目录为基准。research-memory 教五种小操作，research-workflow 协调 Job 和材料，领域 Skill 提供科学方法。reaction_mapping.md 位于 chemical-input/references/。
 
 进程完成、文件存在和 Node 关闭都不证明科学结论。Email 使用已有用户授权和独立投递回执；运输接受后 Memory 记录失败，只恢复记录，不重发。安装、运行和科学结论分别需要对应证据。

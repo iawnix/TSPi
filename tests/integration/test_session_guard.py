@@ -28,7 +28,7 @@ def _install_state(root: Path) -> Path:
     release.mkdir(parents=True)
     state.write_text(
         json.dumps({
-            "schema_version": "research-agent-package-install/1",
+            "schema_version": "coragent-package-install/1",
             "current_release_id": "release-1",
             "package_root": str(release),
             "session_guard_contract": session_guard.CONTRACT,
@@ -52,7 +52,7 @@ def test_guarded_installation_requires_private_bound_state(tmp_path: Path) -> No
 def test_legacy_standalone_layout_is_rejected(tmp_path: Path) -> None:
     release = tmp_path / "releases/release-1"
     release.mkdir(parents=True)
-    (release / ".research-agent-release.json").write_text("{}\n", encoding="utf-8")
+    (release / ".coragent-release.json").write_text("{}\n", encoding="utf-8")
     (tmp_path / "current").symlink_to("releases/release-1")
     assert not installation_is_guarded(tmp_path)
     with pytest.raises(SessionGuardError, match="upgrade is incomplete"):
@@ -113,7 +113,7 @@ def test_upgrade_uses_persisted_external_workspace_root(tmp_path: Path) -> None:
     control.mkdir(parents=True)
     (control / "workspace-root.json").write_text(
         json.dumps({
-            "schema_version": "research-agent-workspace-root/1",
+            "schema_version": "coragent-workspace-root/1",
             "workspace_root": str(external_root),
         }) + "\n",
         encoding="utf-8",
@@ -176,9 +176,9 @@ def test_installer_detects_an_unguarded_workspace_writer(
     (process / "cmdline").write_bytes(
         b"node\0pi/cli.js\0--session-dir\0" + os.fsencode(workspace / ".pi/sessions") + b"\0"
     )
-    (process / "environ").write_bytes(b"RESEARCH_AGENT_WORKSPACE_ROOT=" + os.fsencode(workspace) + b"\0")
+    (process / "environ").write_bytes(b"CORAGENT_WORKSPACE_ROOT=" + os.fsencode(workspace) + b"\0")
     monkeypatch.setattr(session_guard, "_PROC_ROOT", proc)
 
-    with pytest.raises(SessionGuardError, match="unguarded ResearchAgent writer") as error:
+    with pytest.raises(SessionGuardError, match="unguarded CoRAgent writer") as error:
         assert_no_unguarded_writers(workspace)
     assert error.value.code == "session_writer_active"

@@ -19,17 +19,17 @@ def _package(root):
         'inputs': {'data': 'data.json'}, 'outputs': [],
         'resources': {'run.py': 'sha256:' + hashlib.sha256(script.read_bytes()).hexdigest()},
     }
-    catalog = {'schema_version': 'research-agent-execution/1', 'name': 'science', 'version': '0.18.0',
+    catalog = {'schema_version': 'coragent-execution/1', 'name': 'science', 'version': '0.18.0',
                'executors': [descriptor], 'validators': [], 'acceptance_profiles': []}
     path = domain / 'execution.json'
     path.write_text(json.dumps(catalog))
-    (root / 'package.json').write_text(json.dumps({'researchAgent': {'execution': ['domains/science/execution.json']}}))
+    (root / 'package.json').write_text(json.dumps({'coragent': {'execution': ['domains/science/execution.json']}}))
     return path, catalog
 
 
 def test_executor_works_without_a_skill_or_node(tmp_path, monkeypatch):
     _, expected = _package(tmp_path)
-    monkeypatch.setenv('RESEARCH_AGENT_PACKAGE_ROOT', str(tmp_path))
+    monkeypatch.setenv('CORAGENT_PACKAGE_ROOT', str(tmp_path))
     monkeypatch.setenv('PATH', '')
     base, descriptor = executors.registered_executor('science.example', '1')
     assert base == tmp_path / 'domains/science'

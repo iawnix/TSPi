@@ -36,8 +36,8 @@ def install_wheel(wheel: Path, overlay: Path):
 
 
 def wheel_validation(files, extra, workers):
-    test_root=Path(os.environ['RESEARCH_AGENT_TEST_ENV_ROOT'])
-    run_root=Path(os.environ['RESEARCH_AGENT_TEST_RUN_ROOT'])
+    test_root=Path(os.environ['CORAGENT_TEST_ENV_ROOT'])
+    run_root=Path(os.environ['CORAGENT_TEST_RUN_ROOT'])
     identity=key(ROOT,['backend/pyproject.toml','backend/src/**/*','package.json','scripts/_wheel.py','tools/test/installed.py'],sys.version+sys.prefix)
     cache=test_root/'builds'/identity
     with locked(test_root,'wheel-'+identity):

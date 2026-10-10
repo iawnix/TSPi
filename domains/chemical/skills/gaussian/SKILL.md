@@ -10,12 +10,12 @@ defaults are M062X/6-31G**, Opt=Tight or SP, SCF=Tight, and Int=UltraFine.
 Use `chemical.gaussian-input@1` for a complete explicit Gaussian input.
 Both use the target's `gaussian` binding.
 
-Read runner options with `"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --executor chemical.gaussian-input --version 1 --help`.
+Read runner options with `"$CORAGENT_PYTHON" -m research_agent.application.executors --executor chemical.gaussian-input --version 1 --help`.
 For software diagnosis, use the [targeted environment check](../method-selection/references/runtime_environment.md)
 with this recipe and the chosen environment.
 
 ```bash
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.gaussian --version 1 --input geometry=input.xyz --output prepared/gaussian.json -- --task opt-sp --charge 0 --multiplicity 1
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config "$CORAGENT_JOB_CONFIG" --environment local --executor chemical.gaussian --version 1 --input geometry=input.xyz --output prepared/gaussian.json -- --task opt-sp --charge 0 --multiplicity 1
 ```
 
 Submit the returned request file/digest with `job_start` and the intended node_id.
@@ -33,7 +33,7 @@ with `--dependency /absolute/source.chk=previous.chk`; input references must
 be relative staged paths. Collect checkpoints needed by subsequent calculations.
 
 ```bash
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.gaussian-input --version 1 --input input=ts.gjf --collect results/ts.chk --output prepared/ts.json -- --method M062X --basis '6-31G**' --charge 0 --multiplicity 1 --threads 12 --memory-mb 4000 --validation saddle
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config "$CORAGENT_JOB_CONFIG" --environment local --executor chemical.gaussian-input --version 1 --input input=ts.gjf --collect results/ts.chk --output prepared/ts.json -- --method M062X --basis '6-31G**' --charge 0 --multiplicity 1 --threads 12 --memory-mb 4000 --validation saddle
 ```
 
 `--validation opt/sp/frequency/minimum/saddle/irc/none` selects runner checks.

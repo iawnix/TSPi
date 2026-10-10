@@ -3,7 +3,7 @@ name: candidate-generation
 description: Generate transition-state candidate geometries with chemically informed construction, scans, QST, NEB, or conformer and orientation sampling.
 ---
 
-# ResearchAgent TS Candidate Generation
+# CoRAgent TS Candidate Generation
 
 [Chinese version](SKILL.zh-CN.md)
 

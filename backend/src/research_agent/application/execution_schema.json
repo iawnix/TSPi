@@ -2,7 +2,7 @@
   "type": "object",
   "properties": {
     "schema_version": {
-      "const": "research-agent-execution/1"
+      "const": "coragent-execution/1"
     },
     "name": {
       "type": "string",

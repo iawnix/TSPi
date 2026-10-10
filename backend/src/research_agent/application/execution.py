@@ -20,7 +20,7 @@ _JOB_ID = re.compile(r"^job_[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$")
 _RUNTIMES: dict[tuple[str, str], JobRuntime] = {}
 
 def _runtime(root: Path) -> JobRuntime:
-    configured = os.environ.get("RESEARCH_AGENT_JOB_CONFIG")
+    configured = os.environ.get("CORAGENT_JOB_CONFIG")
     if not configured:
         raise ValueError("job_config_required: configure the installation job.toml explicitly")
     config = Path(configured).expanduser()
@@ -405,7 +405,7 @@ def _stage_start(root, runtime, params, job_id, preparation=None, prepared_param
         from research_agent.jobs.config_contract import SUBMISSION_FIELDS, load_job_config, resolve_submission
         # Registered entries carry their already resolved, verified submission.
         # Raw Jobs receive the same resolver before submission fingerprint commit.
-        submission = resolve_submission(load_job_config(os.environ['RESEARCH_AGENT_JOB_CONFIG']),
+        submission = resolve_submission(load_job_config(os.environ['CORAGENT_JOB_CONFIG']),
             _platform_name(prepared_params) or runtime.default,
             requested={key: value for key, value in metadata.items() if key in SUBMISSION_FIELDS})
         metadata.update(submission)

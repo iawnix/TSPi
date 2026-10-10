@@ -25,12 +25,12 @@ def test_operational_ids_are_workspace_wide_monotonic_and_private(tmp_path: Path
     assert allocate_operational_id(workspace, "op")["identifier"] == "op_1"
     assert allocate_operational_id(workspace, "calc")["identifier"] == "calc_2"
 
-    state_path = workspace / ".research-agent-operational-ids.json"
-    lock_path = workspace / ".research-agent-operational-ids.lock"
+    state_path = workspace / ".coragent-operational-ids.json"
+    lock_path = workspace / ".coragent-operational-ids.lock"
     assert stat.S_IMODE(state_path.stat().st_mode) == 0o600
     assert stat.S_IMODE(lock_path.stat().st_mode) == 0o600
     assert json.loads(state_path.read_text(encoding="utf-8")) == {
-        "schema_version": "research-agent-operational-id-state/1",
+        "schema_version": "coragent-operational-id-state/1",
         "high_water": {"calc": 2, "op": 1, "sub": 1},
     }
 
@@ -77,6 +77,6 @@ def test_operational_allocator_rejects_invalid_kind_and_symlink_state(tmp_path: 
 
     target = tmp_path / "state.json"
     target.write_text("{}\n", encoding="utf-8")
-    (workspace / ".research-agent-operational-ids.json").symlink_to(target)
+    (workspace / ".coragent-operational-ids.json").symlink_to(target)
     with pytest.raises(ValueError, match="state must be a regular file"):
         allocate_operational_id(workspace, "sub")

@@ -78,8 +78,8 @@ def check() -> list[str]:
         if path.exists():
             errors.append(f"duplicate Pi sub-agent runtime remains: {relative}")
     forbidden_runtime_markers = (
-        "RESEARCH_AGENT_" + "RUNTIME_MODULE",
-        "RESEARCH_AGENT_" + "KERNEL_MODULE",
+        "CORAGENT_" + "RUNTIME_MODULE",
+        "CORAGENT_" + "KERNEL_MODULE",
         "load_pi_" + "runtime(",
     )
     for root in (ROOT / "apps", ROOT / "packages", ROOT / "scripts"):

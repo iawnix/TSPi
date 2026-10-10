@@ -178,26 +178,26 @@ async function main() {
       });
     }
     const connect = appProxy ? descriptorConnect({ ...descriptor, socket_path: appProxy.socketPath }) : descriptorConnect(descriptor);
-    const sourceRoot = process.env.RESEARCH_AGENT_PI_RUNTIME_ROOT;
-    if (!sourceRoot) throw new Error("RESEARCH_AGENT_PI_RUNTIME_ROOT is required for the native Pi client");
+    const sourceRoot = process.env.CORAGENT_PI_RUNTIME_ROOT;
+    if (!sourceRoot) throw new Error("CORAGENT_PI_RUNTIME_ROOT is required for the native Pi client");
     const resolver = piModulePath("resolver", sourceRoot);
     const client = resolve(packageRoot, "apps/agent/pi/client.mjs");
     const childArgs = ["--import", resolver, client, "--connect", connect, "--session-id", descriptor.session_id, ...kept];
-    process.env.RESEARCH_AGENT_SESSION_CWD = workspaceRoot;
+    process.env.CORAGENT_SESSION_CWD = workspaceRoot;
     process.env.PI_EXPERIMENTAL = "1";
     process.env.PI_SERVER_DIR = appProxy?.directory || descriptor.server_directory || dirname(descriptor.socket_path);
-    process.env.RESEARCH_AGENT_PACKAGE_ROOT = packageRoot;
+    process.env.CORAGENT_PACKAGE_ROOT = packageRoot;
     const child = spawn(process.execPath, childArgs, {
       cwd: workspaceRoot,
       env: {
         ...process.env,
-        RESEARCH_AGENT_HOST_SOCKET: hostProxy?.socketPath || socketPath,
-        RESEARCH_AGENT_HOST_RELEASE_ID: remote ? "" : expectedReleaseId,
-        RESEARCH_AGENT_WORKSPACE_ID: workspaceId,
-        ...(options.install_root ? { RESEARCH_AGENT_INSTALL_ROOT: options.install_root } : {}),
+        CORAGENT_HOST_SOCKET: hostProxy?.socketPath || socketPath,
+        CORAGENT_HOST_RELEASE_ID: remote ? "" : expectedReleaseId,
+        CORAGENT_WORKSPACE_ID: workspaceId,
+        ...(options.install_root ? { CORAGENT_INSTALL_ROOT: options.install_root } : {}),
         ...(options.state_root ? {
-          RESEARCH_AGENT_STATE_ROOT: options.state_root,
-          RESEARCH_AGENT_DIAGNOSTIC_FILE: `${options.state_root.replace(/\/$/u, "")}/worker-diagnostics.log`,
+          CORAGENT_STATE_ROOT: options.state_root,
+          CORAGENT_DIAGNOSTIC_FILE: `${options.state_root.replace(/\/$/u, "")}/worker-diagnostics.log`,
         } : {}),
       },
       stdio: "inherit",
@@ -217,7 +217,7 @@ main().catch((error) => {
   const diagnosticFile = options.state_root
     ? `${options.state_root.replace(/\/$/u, "")}/worker-diagnostics.log`
     : undefined;
-  process.stderr.write(`ResearchAgent: ${formatTerminalFailure(error, {
+  process.stderr.write(`CoRAgent: ${formatTerminalFailure(error, {
     installRoot: options.install_root,
     diagnosticFile,
   })}\n`);

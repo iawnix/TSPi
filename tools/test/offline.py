@@ -13,7 +13,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
     flags = fcntl.ioctl(sock.fileno(),0x8913,name)
     current = struct.unpack('16sH14s',flags)[1]
     fcntl.ioctl(sock.fileno(),0x8914,struct.pack('16sH14s',b'lo',current | 1,b''))
-for dependency in json.loads(os.environ.get('RESEARCH_AGENT_TEST_DEPENDENCIES','[]')):
+for dependency in json.loads(os.environ.get('CORAGENT_TEST_DEPENDENCIES','[]')):
     subprocess.run(['/usr/bin/mount','--bind',dependency,dependency],check=True)
     subprocess.run(['/usr/bin/mount','-o','remount,bind,ro',dependency],check=True)
 if ctypes.CDLL(None,use_errno=True).prctl(36,1,0,0,0)!=0:

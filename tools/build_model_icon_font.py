@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build the small, dependency-light ResearchAgent model icon font.
+"""Build the small, dependency-light CoRAgent model icon font.
 
 The font intentionally uses Supplementary Private Use Area codepoints. Nerd
 Fonts heavily occupy the Basic Private Use Area, so putting these glyphs there
-would let a terminal's primary font shadow ResearchAgent's fallback font.
+would let a terminal's primary font shadow CoRAgent's fallback font.
 """
 
 from __future__ import annotations
@@ -21,11 +21,11 @@ DESCENT = -200
 ADVANCE = 1000
 
 GLYPH_CODES = {
-    "research-agent-deepseek": 0xF0000,
-    "research-agent-gpt": 0xF0001,
-    "research-agent-glm": 0xF0002,
-    "research-agent-seeddance": 0xF0003,
-    "research-agent-model": 0xF0004,
+    "coragent-deepseek": 0xF0000,
+    "coragent-gpt": 0xF0001,
+    "coragent-glm": 0xF0002,
+    "coragent-seeddance": 0xF0003,
+    "coragent-model": 0xF0004,
 }
 
 
@@ -104,11 +104,11 @@ def generic_model() -> object:
 def build(output: Path) -> None:
     glyphs = {
         ".notdef": TTGlyphPen(None).glyph(),
-        "research-agent-deepseek": deepseek(),
-        "research-agent-gpt": gpt(),
-        "research-agent-glm": glm(),
-        "research-agent-seeddance": seeddance(),
-        "research-agent-model": generic_model(),
+        "coragent-deepseek": deepseek(),
+        "coragent-gpt": gpt(),
+        "coragent-glm": glm(),
+        "coragent-seeddance": seeddance(),
+        "coragent-model": generic_model(),
     }
     builder = FontBuilder(UPM, isTTF=True)
     builder.setupGlyphOrder(list(glyphs))
@@ -127,11 +127,11 @@ def build(output: Path) -> None:
     )
     builder.setupNameTable(
         {
-            "familyName": "ResearchAgent Model Icons",
+            "familyName": "CoRAgent Model Icons",
             "styleName": "Regular",
-            "fullName": "ResearchAgent Model Icons Regular",
-            "uniqueFontIdentifier": "ResearchAgent Model Icons Regular",
-            "psName": "ResearchAgent-Model-Icons-Regular",
+            "fullName": "CoRAgent Model Icons Regular",
+            "uniqueFontIdentifier": "CoRAgent Model Icons Regular",
+            "psName": "CoRAgent-Model-Icons-Regular",
             "version": "Version 2.0",
         }
     )
@@ -147,7 +147,7 @@ def build(output: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("output", nargs="?", type=Path, default=Path("assets/fonts/research-agent-model-icons.ttf"))
+    parser.add_argument("output", nargs="?", type=Path, default=Path("assets/fonts/coragent-model-icons.ttf"))
     args = parser.parse_args()
     build(args.output)
     return 0

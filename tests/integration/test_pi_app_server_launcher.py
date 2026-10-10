@@ -24,8 +24,8 @@ PACKAGE_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8")
 def test_host_socket_limit_includes_private_pi_subdirectory(tmp_path, monkeypatch):
     # The public Host socket fits here, but the longest private Pi socket does not.
     base = "/" + "x" * 31
-    monkeypatch.setenv("RESEARCH_AGENT_APP_SERVER_RUNTIME_DIR", base)
-    with pytest.raises(launcher.ResearchAgentHostError, match="too long for Unix sockets"):
+    monkeypatch.setenv("CORAGENT_APP_SERVER_RUNTIME_DIR", base)
+    with pytest.raises(launcher.CoRAgentHostError, match="too long for Unix sockets"):
         launcher._private_socket_directory(tmp_path, create=False)
 
 
@@ -48,9 +48,9 @@ def _installation(tmp_path: Path) -> launcher.Installation:
     entry = package / "apps/agent/main.mjs"
     entry.parent.mkdir(parents=True)
     entry.write_text("// test entry\n", encoding="utf-8")
-    theme = package / "apps/agent/terminal/themes/research-agent.json"
+    theme = package / "apps/agent/terminal/themes/coragent.json"
     theme.parent.mkdir(parents=True)
-    theme.write_text(json.dumps({"name": "research-agent"}) + "\n", encoding="utf-8")
+    theme.write_text(json.dumps({"name": "coragent"}) + "\n", encoding="utf-8")
     root = tmp_path / "install"
     root.mkdir()
     return launcher.Installation(
@@ -61,7 +61,7 @@ def _installation(tmp_path: Path) -> launcher.Installation:
         notification_config_default=root / "etc/email.toml",
         runtime_home=root / "var/state/installation/python",
         runtime_manifest=root / "var/state/installation/python/env.json",
-        env_root=root / ".agents/envs/research-agent",
+        env_root=root / ".agents/envs/coragent",
         process_cache_root=root / "var/cache",
         model_icons_config=root / "etc/model-icons.json",
     )
@@ -95,8 +95,8 @@ def test_native_pi_settings_remove_launcher_managed_theme(
     settings.write_text(
         json.dumps(
             {
-                "theme": "research-agent",
-                "themes": [str(installation.package_root / launcher.RESEARCH_AGENT_THEME_RELATIVE)],
+                "theme": "coragent",
+                "themes": [str(installation.package_root / launcher.CORAGENT_THEME_RELATIVE)],
             }
         )
         + "\n",
@@ -114,7 +114,7 @@ def test_native_pi_settings_preserve_custom_theme_and_remove_old_release_theme(
     installation = _installation(tmp_path)
     settings = installation.root / launcher.PI_AGENT_SETTINGS_RELATIVE
     settings.parent.mkdir(parents=True)
-    theme_path = installation.root / "./releases/old/agent/apps/agent/terminal/themes/research-agent.json"
+    theme_path = installation.root / "./releases/old/agent/apps/agent/terminal/themes/coragent.json"
     settings.write_text(
         json.dumps({"theme": "lab-dark", "themes": [str(theme_path), "./custom-theme.json"]}) + "\n",
         encoding="utf-8",
@@ -134,7 +134,7 @@ def test_native_pi_settings_reject_invalid_json_and_symlinks(tmp_path: Path) -> 
     settings.parent.mkdir(parents=True)
     settings.write_text("not json\n", encoding="utf-8")
 
-    with pytest.raises(launcher.ResearchAgentHostError, match="invalid Pi agent settings"):
+    with pytest.raises(launcher.CoRAgentHostError, match="invalid Pi agent settings"):
         launcher._restore_native_pi_settings(installation)
 
     settings.unlink()
@@ -142,13 +142,13 @@ def test_native_pi_settings_reject_invalid_json_and_symlinks(tmp_path: Path) -> 
     target.write_text("{}\n", encoding="utf-8")
     settings.symlink_to(target)
 
-    with pytest.raises(launcher.ResearchAgentHostError, match="Pi agent settings cannot be a symbolic link"):
+    with pytest.raises(launcher.CoRAgentHostError, match="Pi agent settings cannot be a symbolic link"):
         launcher._restore_native_pi_settings(installation)
 
 
 def test_native_pi_settings_do_not_require_the_release_theme(tmp_path: Path) -> None:
     installation = _installation(tmp_path)
-    (installation.package_root / launcher.RESEARCH_AGENT_THEME_RELATIVE).unlink()
+    (installation.package_root / launcher.CORAGENT_THEME_RELATIVE).unlink()
 
     launcher._restore_native_pi_settings(installation)
 
@@ -162,12 +162,12 @@ def test_research_agent_launcher_disables_retired_custom_renderer(
     installation = _installation(tmp_path)
     workspace = installation.workspaces_root / "reaction-a"
     workspace.mkdir(parents=True)
-    monkeypatch.setenv("RESEARCH_AGENT_CUSTOM_UI", "1")
+    monkeypatch.setenv("CORAGENT_CUSTOM_UI", "1")
     original_environment = dict(os.environ)
 
     try:
         launcher.configure_process_environment(installation, workspace, "reaction-a")
-        assert "RESEARCH_AGENT_CUSTOM_UI" not in os.environ
+        assert "CORAGENT_CUSTOM_UI" not in os.environ
     finally:
         os.environ.clear()
         os.environ.update(original_environment)
@@ -182,28 +182,28 @@ def test_research_agent_launcher_preserves_validated_custom_compute_profile(
     workspace.mkdir(parents=True)
     custom = tmp_path / "job.toml"
     custom.write_text("default_environment = 'local'\n", encoding="utf-8")
-    monkeypatch.setenv("RESEARCH_AGENT_JOB_CONFIG", str(custom))
+    monkeypatch.setenv("CORAGENT_JOB_CONFIG", str(custom))
 
     launcher.configure_process_environment(installation, workspace, "reaction-a")
 
-    assert os.environ["RESEARCH_AGENT_JOB_CONFIG"] == str(custom)
+    assert os.environ["CORAGENT_JOB_CONFIG"] == str(custom)
 
 
 def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
-    install_root = tmp_path / "research-agent-install"
+    install_root = tmp_path / "coragent-install"
     package_home = install_root / "."
     suite_root = package_home / "releases/test-suite"
     package_root = suite_root / "agent"
     package_root.mkdir(parents=True)
     (package_root / "package.json").write_text(
-        json.dumps({"name": "@iawnix/research-agent", "version": PACKAGE_VERSION}) + "\n",
+        json.dumps({"name": "@iawnix/coragent", "version": PACKAGE_VERSION}) + "\n",
         encoding="utf-8",
     )
     (package_root / "apps/agent/terminal/themes").mkdir(parents=True)
-    shutil.copy2(ROOT / "apps/agent/terminal/themes/research-agent.json", package_root / "apps/agent/terminal/themes/research-agent.json")
+    shutil.copy2(ROOT / "apps/agent/terminal/themes/coragent.json", package_root / "apps/agent/terminal/themes/coragent.json")
     write_test_suite_manifest(suite_root, version=PACKAGE_VERSION)
-    shutil.copy2(ROOT / "research-agent", package_root / "research-agent")
-    (package_root / "research-agent").chmod(0o755)
+    shutil.copy2(ROOT / "coragent", package_root / "coragent")
+    (package_root / "coragent").chmod(0o755)
     (package_root / "scripts").mkdir()
     shutil.copy2(ROOT / "scripts" / "_bootstrap.py", package_root / "scripts" / "_bootstrap.py")
     (package_root / "apps/agent-cli").mkdir(parents=True)
@@ -218,8 +218,8 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     shutil.copy2(ROOT / "environment.lock.txt", package_root / "environment.lock.txt")
     write_test_runtime_manifest(package_root, install_root)
     (package_home / "current").symlink_to("releases/test-suite")
-    installed_launcher = install_root / "research-agent"
-    installed_launcher.symlink_to("./current/agent/research-agent")
+    installed_launcher = install_root / "coragent"
+    installed_launcher.symlink_to("./current/agent/coragent")
     return install_root, installed_launcher
 
 
@@ -239,13 +239,13 @@ def test_resolve_installation_explains_stale_standalone_agent(tmp_path: Path) ->
     stale_agent = tmp_path / "legacy-agent"
     stale_agent.mkdir()
 
-    with pytest.raises(launcher.ResearchAgentHostError, match="old standalone Agent") as failure:
+    with pytest.raises(launcher.CoRAgentHostError, match="old standalone Agent") as failure:
         launcher.resolve_installation(stale_agent, install_root)
 
     message = str(failure.value)
     assert "launcher=" in message
     assert "selected=" in message
-    assert "restart research-agent.service" in message
+    assert "restart coragent.service" in message
 
 
 def test_model_icon_marker_enables_research_agent_style_and_preserves_explicit_style(
@@ -253,7 +253,7 @@ def test_model_icon_marker_enables_research_agent_style_and_preserves_explicit_s
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     installation = _installation(tmp_path)
-    font = tmp_path / "fonts/ResearchAgent-Model-Icons.ttf"
+    font = tmp_path / "fonts/CoRAgent-Model-Icons.ttf"
     font.parent.mkdir()
     font.write_bytes(b"font fixture")
     marker = installation.model_icons_config
@@ -270,14 +270,14 @@ def test_model_icon_marker_enables_research_agent_style_and_preserves_explicit_s
         ),
         encoding="utf-8",
     )
-    monkeypatch.delenv("RESEARCH_AGENT_ICON_STYLE", raising=False)
+    monkeypatch.delenv("CORAGENT_ICON_STYLE", raising=False)
 
     assert launcher.configure_model_icon_environment(installation) is True
-    assert os.environ["RESEARCH_AGENT_ICON_STYLE"] == "research-agent"
+    assert os.environ["CORAGENT_ICON_STYLE"] == "coragent"
 
-    monkeypatch.setenv("RESEARCH_AGENT_ICON_STYLE", "unicode")
+    monkeypatch.setenv("CORAGENT_ICON_STYLE", "unicode")
     assert launcher.configure_model_icon_environment(installation) is False
-    assert os.environ["RESEARCH_AGENT_ICON_STYLE"] == "unicode"
+    assert os.environ["CORAGENT_ICON_STYLE"] == "unicode"
 
 
 def test_invalid_model_icon_marker_does_not_enable_research_agent_style(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -296,10 +296,10 @@ def test_invalid_model_icon_marker_does_not_enable_research_agent_style(tmp_path
         ),
         encoding="utf-8",
     )
-    monkeypatch.delenv("RESEARCH_AGENT_ICON_STYLE", raising=False)
+    monkeypatch.delenv("CORAGENT_ICON_STYLE", raising=False)
 
     assert launcher.configure_model_icon_environment(installation) is False
-    assert "RESEARCH_AGENT_ICON_STYLE" not in os.environ
+    assert "CORAGENT_ICON_STYLE" not in os.environ
 
 
 def test_host_command_owns_installation_state_and_workspace_root(
@@ -343,14 +343,14 @@ def test_service_host_does_not_require_a_workspace_mode() -> None:
 
 
 def test_launcher_usage_keeps_internal_transport_modes_out_of_daily_help() -> None:
-    assert "research-agent --workspace <name>" in launcher.USAGE
-    assert "research-agent.service" in launcher.USAGE
+    assert "coragent --workspace <name>" in launcher.USAGE
+    assert "coragent.service" in launcher.USAGE
     for internal_mode in ("--service-host", "--app-server", "--app-client", "--gateway", "--standalone"):
         assert internal_mode not in launcher.USAGE
 
 
 def test_standalone_is_removed_and_points_to_host_client() -> None:
-    with pytest.raises(launcher.ResearchAgentHostError, match="--standalone was removed"):
+    with pytest.raises(launcher.CoRAgentHostError, match="--standalone was removed"):
         launcher.parse_launch_request(["--standalone", "--workspace", "reaction-a"])
 
 
@@ -363,7 +363,7 @@ def test_session_selection_is_workspace_scoped_and_explicit() -> None:
     assert latest.continue_latest is True
     assert latest.pi_args == ("--provider", "anthropic")
 
-    with pytest.raises(launcher.ResearchAgentHostError, match="cannot be combined"):
+    with pytest.raises(launcher.CoRAgentHostError, match="cannot be combined"):
         launcher.parse_launch_request([
             "--workspace", "reaction-a", "--continue", "--session-id", "session-1",
         ])
@@ -378,8 +378,8 @@ def test_remote_terminal_options_are_parsed_and_forwarded(
     request = launcher.parse_launch_request([
         "--workspace", "reaction-a",
         "--remote-host", "pi.example",
-        "--remote-host-socket", "/run/user/1000/research-agent/host.sock",
-        "--remote-proxy-path", "/opt/research-agent/apps/agent/transport/ssh.mjs",
+        "--remote-host-socket", "/run/user/1000/coragent/host.sock",
+        "--remote-proxy-path", "/opt/coragent/apps/agent/transport/ssh.mjs",
         "--ssh-config", "/home/test/.ssh/config",
         "--ssh-option", "-i",
         "--ssh-option", "/home/test/.ssh/id_ed25519",
@@ -387,17 +387,17 @@ def test_remote_terminal_options_are_parsed_and_forwarded(
     command = launcher.build_host_client_command(installation, request)
     assert "--socket-path" not in command
     assert command[command.index("--ssh-host") + 1] == "pi.example"
-    assert command[command.index("--remote-host-socket") + 1] == "/run/user/1000/research-agent/host.sock"
+    assert command[command.index("--remote-host-socket") + 1] == "/run/user/1000/coragent/host.sock"
     assert command[command.index("--remote-proxy-path") + 1].endswith("transport/ssh.mjs")
     assert command.count("--ssh-option") == 2
 
 
 def test_remote_terminal_requires_proxy_paths() -> None:
     request = launcher.parse_launch_request(["--workspace", "reaction-a", "--remote-host", "pi.example"])
-    with pytest.raises(launcher.ResearchAgentHostError, match="--remote-host-socket"):
+    with pytest.raises(launcher.CoRAgentHostError, match="--remote-host-socket"):
         launcher._validate_remote_terminal_request(request)
-    with pytest.raises(launcher.ResearchAgentHostError, match="--remote-host is required"):
-        launcher.parse_launch_request(["--workspace", "reaction-a", "--remote-host-socket", "/run/research-agent/host.sock"])
+    with pytest.raises(launcher.CoRAgentHostError, match="--remote-host is required"):
+        launcher.parse_launch_request(["--workspace", "reaction-a", "--remote-host-socket", "/run/coragent/host.sock"])
 
 
 def test_remote_terminal_uses_owner_only_installation_profile(tmp_path: Path) -> None:
@@ -407,8 +407,8 @@ def test_remote_terminal_uses_owner_only_installation_profile(tmp_path: Path) ->
     profile.write_text(json.dumps({
         "schema_version": launcher.REMOTE_HOST_CONFIG_SCHEMA,
         "ssh_host": "pi.example",
-        "host_socket": "/run/research-agent/host.sock",
-        "proxy_path": "/opt/research-agent/apps/agent/transport/ssh.mjs",
+        "host_socket": "/run/coragent/host.sock",
+        "proxy_path": "/opt/coragent/apps/agent/transport/ssh.mjs",
         "ssh_config": None,
         "ssh_options": ["-i", "/home/test/.ssh/id_ed25519"],
     }) + "\n", encoding="utf-8")
@@ -418,7 +418,7 @@ def test_remote_terminal_uses_owner_only_installation_profile(tmp_path: Path) ->
         launcher.parse_launch_request(["--workspace", "reaction-a"]),
     )
     assert configured.remote_host == "pi.example"
-    assert configured.remote_host_socket == "/run/research-agent/host.sock"
+    assert configured.remote_host_socket == "/run/coragent/host.sock"
     assert configured.ssh_options == ("-i", "/home/test/.ssh/id_ed25519")
 
 
@@ -431,7 +431,7 @@ def test_workspace_mode_is_parsed_by_the_public_research_agent_entrypoint(argume
 
 
 def test_workspace_mode_rejects_unknown_values() -> None:
-    with pytest.raises(launcher.ResearchAgentHostError, match="mode selection was removed"):
+    with pytest.raises(launcher.CoRAgentHostError, match="mode selection was removed"):
         launcher.parse_launch_request(["--workspace", "reaction-a", "--mode", "compute"])
 
 
@@ -449,7 +449,7 @@ def test_launcher_binds_and_admits_research_workspace(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("option", ["-r", "--resume"])
 def test_startup_resume_rejects_the_false_selector_semantics(option: str) -> None:
-    with pytest.raises(launcher.ResearchAgentHostError, match="use /resume inside the terminal") as failure:
+    with pytest.raises(launcher.CoRAgentHostError, match="use /resume inside the terminal") as failure:
         launcher.parse_launch_request(["--workspace", "reaction-a", option])
 
     assert failure.value.exit_code == 2
@@ -465,7 +465,7 @@ def test_phone_management_commands_are_parsed_before_workspace_selection() -> No
     assert revoke.phone_action == "revoke"
     assert revoke.phone_device_id == "223e4567-e89b-42d3-a456-426614174000"
 
-    with pytest.raises(launcher.ResearchAgentHostError, match="usage: research-agent phone"):
+    with pytest.raises(launcher.CoRAgentHostError, match="usage: coragent phone"):
         launcher.parse_launch_request(["phone", "revoke"])
 
 
@@ -480,7 +480,7 @@ def test_host_state_prepares_private_pi_workspace_before_root_lock(tmp_path: Pat
 
 
 def test_host_environment_publishes_owner_only_worker_diagnostics(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("RESEARCH_AGENT_PI_RUNTIME_ROOT", raising=False)
+    monkeypatch.delenv("CORAGENT_PI_RUNTIME_ROOT", raising=False)
     installation = _installation(tmp_path)
     pin = json.loads((ROOT / "config/pi-source.json").read_text(encoding="utf-8"))
     commit = pin["commit"]
@@ -493,10 +493,10 @@ def test_host_environment_publishes_owner_only_worker_diagnostics(tmp_path: Path
     original_environment = dict(os.environ)
     try:
         launcher.configure_host_process_environment(installation)
-        assert os.environ["RESEARCH_AGENT_PI_RUNTIME_ROOT"] == str(
+        assert os.environ["CORAGENT_PI_RUNTIME_ROOT"] == str(
             installation.root / "runtimes/pi" / commit
         )
-        assert os.environ["RESEARCH_AGENT_PI_DIAGNOSTIC_FILE"] == str(diagnostic)
+        assert os.environ["CORAGENT_PI_DIAGNOSTIC_FILE"] == str(diagnostic)
         assert diagnostic.is_file()
         assert diagnostic.read_text(encoding="utf-8") == ""
         assert stat.S_IMODE(diagnostic.stat().st_mode) == 0o600
@@ -511,7 +511,7 @@ def test_host_state_rejects_an_insecure_installation_pi_directory(tmp_path: Path
     installation.root.joinpath("var/state").mkdir(mode=0o700, parents=True)
     installation.root.joinpath("var/state").chmod(0o755)
 
-    with pytest.raises(launcher.ResearchAgentHostError, match="must be owner-only"):
+    with pytest.raises(launcher.CoRAgentHostError, match="must be owner-only"):
         launcher._prepare_host_state(installation)
 
 
@@ -523,7 +523,7 @@ def test_host_endpoint_requires_one_unix_socket(
     monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
     monkeypatch.setattr(launcher, "_host_server_id", lambda *_args, **_kwargs: "stale")
     monkeypatch.setattr(launcher, "_host_socket_directory", lambda *_args, **_kwargs: tmp_path / "missing-socket")
-    with pytest.raises(launcher.ResearchAgentHostUnavailableError, match="ResearchAgent Host is not running"):
+    with pytest.raises(launcher.CoRAgentHostUnavailableError, match="CoRAgent Host is not running"):
         launcher.resolve_host_socket(installation)
 
 
@@ -541,7 +541,7 @@ def test_host_endpoint_removes_stale_unix_socket(
     listener.bind(str(endpoint))
     listener.close()
 
-    with pytest.raises(launcher.ResearchAgentHostUnavailableError, match="socket is stale"):
+    with pytest.raises(launcher.CoRAgentHostUnavailableError, match="socket is stale"):
         launcher.resolve_host_socket(installation)
     assert not endpoint.exists()
 
@@ -558,7 +558,7 @@ def test_missing_host_is_started_once_and_waited_until_ready(
         nonlocal resolutions
         resolutions += 1
         if resolutions == 1:
-            raise launcher.ResearchAgentHostUnavailableError("not running")
+            raise launcher.CoRAgentHostUnavailableError("not running")
         return endpoint
 
     commands: list[list[str]] = []
@@ -582,13 +582,13 @@ def test_missing_host_uses_system_scope_when_installation_configures_it(
     installation = replace(
         _installation(tmp_path),
         service_scope="system",
-        host_runtime_dir=Path("/run/research-agent"),
+        host_runtime_dir=Path("/run/coragent"),
     )
     endpoint = tmp_path / "host.sock"
     monkeypatch.setattr(
         launcher,
         "resolve_host_socket",
-        lambda _installation: (_ for _ in ()).throw(launcher.ResearchAgentHostUnavailableError("not running"))
+        lambda _installation: (_ for _ in ()).throw(launcher.CoRAgentHostUnavailableError("not running"))
         if not endpoint.exists()
         else endpoint,
     )
@@ -614,7 +614,7 @@ def test_host_start_failure_preserves_systemd_diagnostic(
     monkeypatch.setattr(
         launcher,
         "resolve_host_socket",
-        lambda _installation: (_ for _ in ()).throw(launcher.ResearchAgentHostUnavailableError("not running")),
+        lambda _installation: (_ for _ in ()).throw(launcher.CoRAgentHostUnavailableError("not running")),
     )
     monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/systemctl" if name == "systemctl" else None)
     monkeypatch.setattr(
@@ -623,7 +623,7 @@ def test_host_start_failure_preserves_systemd_diagnostic(
         lambda command, **_kwargs: subprocess.CompletedProcess(command, 1, "", "unit failed"),
     )
 
-    with pytest.raises(launcher.ResearchAgentHostError, match="unit failed"):
+    with pytest.raises(launcher.CoRAgentHostError, match="unit failed"):
         launcher.ensure_host_running(installation)
 
 
@@ -751,7 +751,7 @@ def test_default_terminal_exports_installation_pinned_pi_source(
         captured["workspace"] = workspace
         raise RuntimeError("stop test client")
 
-    monkeypatch.delenv("RESEARCH_AGENT_PI_RUNTIME_ROOT", raising=False)
+    monkeypatch.delenv("CORAGENT_PI_RUNTIME_ROOT", raising=False)
     monkeypatch.setattr(launcher, "ensure_host_running", lambda _installation: endpoint)
     monkeypatch.setattr(launcher, "exec_pi", stop_exec)
 
@@ -762,12 +762,12 @@ def test_default_terminal_exports_installation_pinned_pi_source(
             installation.workspaces_root / "reaction-a",
         )
 
-    assert os.environ["RESEARCH_AGENT_PI_RUNTIME_ROOT"] == str(source.resolve())
+    assert os.environ["CORAGENT_PI_RUNTIME_ROOT"] == str(source.resolve())
     assert captured["workspace"] == installation.workspaces_root / "reaction-a"
 
 
 def test_native_runtime_flag_is_rejected() -> None:
-    with pytest.raises(launcher.ResearchAgentHostError, match="--native-runtime was removed"):
+    with pytest.raises(launcher.CoRAgentHostError, match="--native-runtime was removed"):
         launcher.parse_launch_request(["--workspace", "reaction-a", "--native-runtime"])
 
 
@@ -784,5 +784,5 @@ def test_invalid_launch_modes_fail_before_installation_resolution(
     arguments: list[str],
     message: str,
 ) -> None:
-    with pytest.raises(launcher.ResearchAgentHostError, match=message):
+    with pytest.raises(launcher.CoRAgentHostError, match=message):
         launcher.launch(arguments, package_root="/missing", install_root="/missing")

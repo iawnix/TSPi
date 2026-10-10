@@ -18,7 +18,7 @@ process.once("exit", () => {
  * Python executable and environment instead of inheriting a shell lookup.
  */
 export function create_jsonl_subprocess_transport({
-  command = process.env.RESEARCH_AGENT_PYTHON || "python3",
+  command = process.env.CORAGENT_PYTHON || "python3",
   args = [],
   cwd = REPOSITORY_ROOT,
   env = process.env,

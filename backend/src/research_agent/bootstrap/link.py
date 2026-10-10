@@ -1,4 +1,4 @@
-"""Installation-owned ResearchAgent Link configuration and Phone authorization commands."""
+"""Installation-owned CoRAgent Link configuration and Phone authorization commands."""
 
 from __future__ import annotations
 
@@ -41,29 +41,29 @@ def load_link_config(install_root: Path, *, required: bool) -> LinkConfig | None
     token_present = token_file.exists() or token_file.is_symlink()
     if not manifest_present and not token_present and not required:
         return None
-    document = _read_private_json(manifest, "ResearchAgent Link manifest")
+    document = _read_private_json(manifest, "CoRAgent Link manifest")
     if set(document) != {"schema_version", "protocol", "relay_url", "host_id"}:
-        raise LinkError(f"ResearchAgent Link manifest has unexpected fields: {manifest}")
-    if document.get("schema_version") != "research-agent-link/1" or document.get("protocol") != LINK_PROTOCOL:
-        raise LinkError(f"unsupported ResearchAgent Link manifest: {manifest}")
+        raise LinkError(f"CoRAgent Link manifest has unexpected fields: {manifest}")
+    if document.get("schema_version") != "coragent-link/1" or document.get("protocol") != LINK_PROTOCOL:
+        raise LinkError(f"unsupported CoRAgent Link manifest: {manifest}")
     relay_url = _validate_relay_url(document.get("relay_url"))
     host_id = document.get("host_id")
     if not isinstance(host_id, str) or HOST_ID.fullmatch(host_id) is None:
-        raise LinkError(f"ResearchAgent Link manifest has an invalid Host ID: {manifest}")
-    token = _read_private_text(token_file, "ResearchAgent Link Host token")
+        raise LinkError(f"CoRAgent Link manifest has an invalid Host ID: {manifest}")
+    token = _read_private_text(token_file, "CoRAgent Link Host token")
     if HOST_TOKEN.fullmatch(token) is None:
-        raise LinkError(f"ResearchAgent Link Host token is invalid: {token_file}")
+        raise LinkError(f"CoRAgent Link Host token is invalid: {token_file}")
     return LinkConfig(relay_url=relay_url, host_id=host_id, token_file=token_file)
 
 
 def configure_link_environment(install_root: Path) -> None:
     config = load_link_config(install_root, required=False)
     if config is None:
-        os.environ.pop("RESEARCH_AGENT_LINK_URL", None)
-        os.environ.pop("RESEARCH_AGENT_LINK_HOST_TOKEN_FILE", None)
+        os.environ.pop("CORAGENT_LINK_URL", None)
+        os.environ.pop("CORAGENT_LINK_HOST_TOKEN_FILE", None)
         return
-    os.environ["RESEARCH_AGENT_LINK_URL"] = config.relay_url
-    os.environ["RESEARCH_AGENT_LINK_HOST_TOKEN_FILE"] = str(config.token_file)
+    os.environ["CORAGENT_LINK_URL"] = config.relay_url
+    os.environ["CORAGENT_LINK_HOST_TOKEN_FILE"] = str(config.token_file)
 
 
 def create_phone_pairing(install_root: Path) -> dict[str, Any]:
@@ -78,7 +78,7 @@ def list_phone_devices(install_root: Path) -> list[dict[str, Any]]:
     response = _relay_request(config, "GET", "/v1/devices")
     devices = response.get("devices")
     if not isinstance(devices, list) or not all(isinstance(item, dict) for item in devices):
-        raise LinkError("ResearchAgent Link Relay returned an invalid device list")
+        raise LinkError("CoRAgent Link Relay returned an invalid device list")
     return devices
 
 
@@ -101,9 +101,9 @@ def format_pairing(result: dict[str, Any]) -> str:
         or not isinstance(relay_url, str)
         or not isinstance(host_id, str)
     ):
-        raise LinkError("ResearchAgent Link Relay returned an invalid pairing")
+        raise LinkError("CoRAgent Link Relay returned an invalid pairing")
     expires = datetime.fromtimestamp(expires_at / 1000).astimezone().isoformat(timespec="seconds")
-    return f"Pairing code: {code}\nResearchAgent Link Relay: {relay_url}\nHost: {host_id}\nExpires: {expires}\n"
+    return f"Pairing code: {code}\nCoRAgent Link Relay: {relay_url}\nHost: {host_id}\nExpires: {expires}\n"
 
 
 def format_devices(devices: list[dict[str, Any]]) -> str:
@@ -127,7 +127,7 @@ def _relay_request(
     *,
     expect_body: bool = True,
 ) -> dict[str, Any]:
-    token = _read_private_text(config.token_file, "ResearchAgent Link Host token")
+    token = _read_private_text(config.token_file, "CoRAgent Link Host token")
     url = urllib.parse.urljoin(config.relay_url + "/", path.lstrip("/"))
     payload = None if body is None else json.dumps(body, separators=(",", ":")).encode("utf-8")
     request = urllib.request.Request(
@@ -145,19 +145,19 @@ def _relay_request(
             raw = response.read(64 * 1024 + 1)
     except urllib.error.HTTPError as exc:
         detail = _http_error_detail(exc)
-        raise LinkError(f"ResearchAgent Link Relay rejected the request ({exc.code}): {detail}") from exc
+        raise LinkError(f"CoRAgent Link Relay rejected the request ({exc.code}): {detail}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise LinkError(f"could not reach ResearchAgent Link Relay at {config.relay_url}: {exc}") from exc
+        raise LinkError(f"could not reach CoRAgent Link Relay at {config.relay_url}: {exc}") from exc
     if not expect_body:
         return {}
     if len(raw) > 64 * 1024:
-        raise LinkError("ResearchAgent Link Relay response is too large")
+        raise LinkError("CoRAgent Link Relay response is too large")
     try:
         value = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise LinkError("ResearchAgent Link Relay returned invalid JSON") from exc
+        raise LinkError("CoRAgent Link Relay returned invalid JSON") from exc
     if not isinstance(value, dict):
-        raise LinkError("ResearchAgent Link Relay response must be a JSON object")
+        raise LinkError("CoRAgent Link Relay response must be a JSON object")
     return value
 
 
@@ -197,15 +197,15 @@ def _read_private_text(path: Path, label: str) -> str:
 
 def _validate_relay_url(value: object) -> str:
     if not isinstance(value, str) or len(value) > 512:
-        raise LinkError("ResearchAgent Link Relay URL is invalid")
+        raise LinkError("CoRAgent Link Relay URL is invalid")
     try:
         parsed = urllib.parse.urlsplit(value)
         _ = parsed.port
     except ValueError as exc:
-        raise LinkError("ResearchAgent Link Relay URL is invalid") from exc
+        raise LinkError("CoRAgent Link Relay URL is invalid") from exc
     loopback = parsed.hostname in {"127.0.0.1", "::1", "localhost"}
     if not parsed.hostname or (parsed.scheme != "https" and not (loopback and parsed.scheme == "http")):
-        raise LinkError("ResearchAgent Link Relay URL must use HTTPS except on loopback")
+        raise LinkError("CoRAgent Link Relay URL must use HTTPS except on loopback")
     if parsed.username or parsed.password or parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
-        raise LinkError("ResearchAgent Link Relay URL must contain only scheme, host, and port")
+        raise LinkError("CoRAgent Link Relay URL must contain only scheme, host, and port")
     return value.rstrip("/")

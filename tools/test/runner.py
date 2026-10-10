@@ -124,7 +124,7 @@ def create_run(root: Path, plan: list[str], reasons: list[dict], replay: Path | 
         subprocess.run(command,cwd=snapshot,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     dirty=bool(subprocess.check_output(['git','status','--porcelain'],cwd=ROOT))
-    record={'dirty':dirty,'schema_version':'research-agent-test-run/1','run_id':run_id,'socket_root':str(socket_root),'temporary_root':str(temporary_root),'source_sha256':digest,'commit':commit,
+    record={'dirty':dirty,'schema_version':'coragent-test-run/1','run_id':run_id,'socket_root':str(socket_root),'temporary_root':str(temporary_root),'source_sha256':digest,'commit':commit,
             'plan':plan,'selection':reasons,'seed':args_seed(),'created':time.time(),'capture_seconds':round(time.monotonic()-capture_started,3),'status':'running',
             'replay_of':replay.name if replay else None,'external':'not-authorized','results':[]}
     write_json(run/'run.json',record)
@@ -137,14 +137,14 @@ def args_seed() -> int:
 
 def child_environment(root: Path, run: Path, dependencies: dict[str,Path]) -> dict[str,str]:
     # Do not inherit provider credentials, user plugins, Python paths or agents.
-    env={name:os.environ[name] for name in ('PATH','LANG','LC_ALL','TERM','CI','GITHUB_ACTIONS','RESEARCH_AGENT_TEST_CONDA') if name in os.environ}
-    env.update({'HOME':str(run/'config/home'),'RESEARCH_AGENT_HOST_ENV_ROOT':str(run/'install/host-envs'),'PYTHONNOUSERSITE':'1','PYTHONDONTWRITEBYTECODE':'1','PYTHONPATH':str(run/'source/backend/src')+os.pathsep+str(run/'source'),
+    env={name:os.environ[name] for name in ('PATH','LANG','LC_ALL','TERM','CI','GITHUB_ACTIONS','CORAGENT_TEST_CONDA') if name in os.environ}
+    env.update({'HOME':str(run/'config/home'),'CORAGENT_HOST_ENV_ROOT':str(run/'install/host-envs'),'PYTHONNOUSERSITE':'1','PYTHONDONTWRITEBYTECODE':'1','PYTHONPATH':str(run/'source/backend/src')+os.pathsep+str(run/'source'),
         'TMPDIR':str((run/'tmp').resolve()),'XDG_CONFIG_HOME':str(run/'config'),'XDG_CACHE_HOME':str(run/'cache'),
         'XDG_DATA_HOME':str(run/'data'),'XDG_RUNTIME_DIR':str((run/'sockets').resolve()),
-        'RESEARCH_AGENT_TEST_SOCKET_ROOT':str((run/'sockets').resolve()),
-        'RESEARCH_AGENT_TEST_ENV_ROOT':str(root),'RESEARCH_AGENT_TEST_ROOT':str((run/'tmp').resolve()),
-        'RESEARCH_AGENT_TEST_RUN_ROOT':str(run),'RESEARCH_AGENT_TEST_DEPENDENCIES':json.dumps([str(path) for path in dependencies.values() if (path/'.prepared.json').is_file()]),'RESEARCH_AGENT_PYTHON':str(dependencies['python']/'bin/python'),
-        'RESEARCH_AGENT_TEST_PI_RUNTIME_ROOT':str(dependencies['pi']),'RESEARCH_AGENT_PI_RUNTIME_ROOT':str(dependencies['pi']),
+        'CORAGENT_TEST_SOCKET_ROOT':str((run/'sockets').resolve()),
+        'CORAGENT_TEST_ENV_ROOT':str(root),'CORAGENT_TEST_ROOT':str((run/'tmp').resolve()),
+        'CORAGENT_TEST_RUN_ROOT':str(run),'CORAGENT_TEST_DEPENDENCIES':json.dumps([str(path) for path in dependencies.values() if (path/'.prepared.json').is_file()]),'CORAGENT_PYTHON':str(dependencies['python']/'bin/python'),
+        'CORAGENT_TEST_PI_RUNTIME_ROOT':str(dependencies['pi']),'CORAGENT_PI_RUNTIME_ROOT':str(dependencies['pi']),
         'PI_CODING_AGENT_DIR':str(run/'config/pi'),'PI_AGENT_DIR':str(run/'config/pi'),
         'npm_config_cache':str(root/'cache/npm'),'npm_config_offline':'true','PIP_CACHE_DIR':str(root/'cache/pip'),
         'CONDA_PKGS_DIRS':str(root/'cache/conda'),'OPENBLAS_NUM_THREADS':'1','OMP_NUM_THREADS':'1','MKL_NUM_THREADS':'1'})
@@ -215,7 +215,7 @@ def execute(args, root: Path, replay: Path | None = None) -> int:
         artifact=args.artifact.resolve()
         directory=run/'install/artifact'
         directory.mkdir()
-        for item in (artifact,artifact.parent/'research-agent-package-release.json'): shutil.copy2(item,directory/item.name)
+        for item in (artifact,artifact.parent/'coragent-package-release.json'): shutil.copy2(item,directory/item.name)
         record['artifact']={'filename':artifact.name,'sha256':hashlib.sha256(artifact.read_bytes()).hexdigest(),'allow_dirty':args.allow_dirty}
         write_json(run/'run.json',record)
     dependencies={name:Path(value) for name,value in previous['dependencies'].items()} if replay else environment.dependency_paths(run/'source',root)
@@ -238,11 +238,11 @@ def execute(args, root: Path, replay: Path | None = None) -> int:
     os.symlink(dependencies['node']/'node_modules',run/'source/node_modules',target_is_directory=True)
     env=child_environment(root,run,dependencies)
     if 'phone' in plan:
-        env.update({'RESEARCH_AGENT_SOURCE':str(run/'source'),
-                    'RESEARCH_AGENT_TEST_FLUTTER_ROOT':record['phone']['flutter'],
+        env.update({'CORAGENT_SOURCE':str(run/'source'),
+                    'CORAGENT_TEST_FLUTTER_ROOT':record['phone']['flutter'],
                     'PUB_CACHE':record['phone']['pub_cache'],
                     'CI':'true','FLUTTER_SUPPRESS_ANALYTICS':'true','DART_SUPPRESS_ANALYTICS':'true'})
-    env['RESEARCH_AGENT_TEST_SEED']=str(record['seed'])
+    env['CORAGENT_TEST_SEED']=str(record['seed'])
     env['PYTHONHASHSEED']=str(record['seed'])
     write_json(root/'registry'/f'lease-{run.name}.json',{'run':str(run),'dependencies':record['dependencies']})
     supervisor=Supervisor(run)
@@ -362,7 +362,7 @@ def gc(root: Path, apply: bool) -> int:
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command',choices=['list','doctor','prepare','plan','check','verify','release','replay','gc',*load_manifest()['suites']])
-    parser.add_argument('--env-root',type=Path,default=Path(os.environ.get('RESEARCH_AGENT_TEST_ENV_ROOT',DEFAULT_ROOT)))
+    parser.add_argument('--env-root',type=Path,default=Path(os.environ.get('CORAGENT_TEST_ENV_ROOT',DEFAULT_ROOT)))
     parser.add_argument('--changed',action='store_true')
     parser.add_argument('--base')
     parser.add_argument('--scope')

@@ -48,9 +48,9 @@ def specification_markers(text):
     lines = text.splitlines()
     markers, malformed = [], False
     for index, line in enumerate(lines):
-        match = re.match(r'^\s*(?:ResearchAgentSpec|TSPiSpec)\s+([0-9a-f]+)(.*)$', line)
+        match = re.match(r'^\s*(?:CoRAgentSpec|CoRAgentSpec)\s+([0-9a-f]+)(.*)$', line)
         if not match:
-            if re.match(r'^\s*(?:ResearchAgentSpec|TSPiSpec)\b', line):
+            if re.match(r'^\s*(?:CoRAgentSpec|CoRAgentSpec)\b', line):
                 malformed = True
             continue
         value, tail = match.groups()

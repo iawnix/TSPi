@@ -490,7 +490,7 @@ Agent 在当前授权范围内可以继续当前回合，依据 Result 选择其
 
 ### 12.1 Skill 分层
 
-继续使用 Pi 原生 Skill 加载。ResearchAgent 提供已登记资源目录、资源摘要校验和准确的 skill 路径解析，不再实现另一套领域 Skill 搜索/执行循环。
+继续使用 Pi 原生 Skill 加载。CoRAgent 提供已登记资源目录、资源摘要校验和准确的 skill 路径解析，不再实现另一套领域 Skill 搜索/执行循环。
 
 核心 Skill 改名为 research-memory，说明五种常见行为：恢复上下文、创建局部问题、继续尝试、表达少量关系、保存有依据的结果。orchestration 说明如何在 Memory、Job、Artifact 和原生文件工具之间工作。
 
@@ -544,10 +544,10 @@ research_agent.research/
 | `job_monitor.py` | Node 关联、移除 Memory sequence 投递条件 |
 | `apps/agent/tools/registry.mjs`、host-api/tools | 五个小研究接口，系统字段由适配层提供 |
 | `pi-session-worker.mjs`、user-sources、decision-context | 原始消息、认证事件、读取依据与按 Node 注入 |
-| `research-agent-host.mjs`、research-agent-harness-backend、input-admission、monitor-admission、pi-monitor-worker | 真正落实 next_run 与独立投递恢复 |
-| `contracts/research-agent-monitor/1/` | 为破坏性字段/语义变更发布新版本，不沿用旧版本伪装兼容 |
+| `coragent-host.mjs`、coragent-harness-backend、input-admission、monitor-admission、pi-monitor-worker | 真正落实 next_run 与独立投递恢复 |
+| `contracts/coragent-monitor/1/` | 为破坏性字段/语义变更发布新版本，不沿用旧版本伪装兼容 |
 | `extensions/core/skills/`、领域与邮件 Skill | 按新交互重写示例，更新资源摘要 |
-| `components/ts-web/`、contracts/ts-web、CLI/TUI | Workspace/Node/Result/map 的统一读取 |
+| `components/coragent-web/`、contracts/coragent-web、CLI/TUI | Workspace/Node/Result/map 的统一读取 |
 | package.json、pyproject、inventory、构建脚本 | namespace、合同、资源和删除清单同步 |
 
 新工作区 manifest 建议使用 `research_workspace/2`，明确 Memory 布局版本。研究记录、Node、Result 和投递合同各有自己的版本，不靠 package 版本猜测磁盘格式。Node 身份不能仅由 goal 文本哈希决定，以免把同目标的独立分支合并。

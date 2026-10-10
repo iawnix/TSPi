@@ -42,18 +42,18 @@ def workspace_id_for(root):
     try:
         return read_manifest(root)["workspace_id"]
     except (OSError, ValueError) as exc:
-        raise WorkspaceCatalogError("workspace is not an initialized Research Agent workspace") from exc
+        raise WorkspaceCatalogError("workspace is not an initialized CoRAgent workspace") from exc
 
 
 class WorkspaceCatalog:
-    SCHEMA = "research-agent-workspace-catalog/1"
+    SCHEMA = "coragent-workspace-catalog/1"
 
     def __init__(self, root, *, discovery_roots=None):
         self.root = lexical_path(root)
         self.roots = [lexical_path(p) for p in (discovery_roots if discovery_roots is not None else [root])]
         if any(path_has_symlink(p) for p in [self.root, *self.roots]):
             raise WorkspaceCatalogError("workspace catalog paths cannot contain symbolic links")
-        self.directory = self.root / ".research-agent-catalog"
+        self.directory = self.root / ".coragent-catalog"
         self.path = self.directory / "workspaces.json"
 
     def _read(self):
@@ -164,7 +164,7 @@ class WorkspaceCatalog:
                 try:
                     row = self._row(source, attach=True)
                 except (OSError, ValueError) as exc:
-                    raise WorkspaceCatalogError("workspace is not an initialized Research Agent workspace") from exc
+                    raise WorkspaceCatalogError("workspace is not an initialized CoRAgent workspace") from exc
                 previous = rows.get(row["workspace_id"])
                 if previous:
                     row.update(label=previous["label"], registered_at=previous["registered_at"])

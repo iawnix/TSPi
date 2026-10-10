@@ -15,7 +15,7 @@ from .config_contract import load_job_config
 
 
 def platforms_from_config(path: str | Path | None = None) -> tuple[dict[str, ExecutionPlatform], str]:
-    configured = path or os.environ.get("RESEARCH_AGENT_JOB_CONFIG")
+    configured = path or os.environ.get("CORAGENT_JOB_CONFIG")
     if not configured:
         raise ValueError("job_config_required: configure the installation job.toml explicitly")
     value = load_job_config(configured)

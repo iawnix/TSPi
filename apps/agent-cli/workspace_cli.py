@@ -17,7 +17,7 @@ from research_agent.research.doctor import inspect_workspace, rebuild
 
 
 def main(argv: list[str] | None = None, **_: Any) -> int:
-    parser = argparse.ArgumentParser(prog="workspace", description="Canonical Research Agent workspace diagnostics")
+    parser = argparse.ArgumentParser(prog="workspace", description="Canonical CoRAgent workspace diagnostics")
     sub = parser.add_subparsers(dest="command", required=True)
 
     for name, help_text in (

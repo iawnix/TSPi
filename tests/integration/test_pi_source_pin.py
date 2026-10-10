@@ -19,13 +19,13 @@ def test_pi_source_pin_is_explicit_and_uses_latest_durable_runtime() -> None:
     }
     patch = "\n".join(path.read_text(encoding="utf-8") for path in sorted((ROOT / "config/pi-patches").glob("*.patch")))
     assert "PI_SESSION_WORKER_ENTRY" in patch
-    assert "RESEARCH_AGENT_PI_DIAGNOSTIC_FILE" in patch
+    assert "CORAGENT_PI_DIAGNOSTIC_FILE" in patch
     assert "workspaceId" in patch
     assert "session.sqlite" in patch
 
 
 def test_prepare_pi_source_verifies_a_matching_checkout() -> None:
-    configured = os.environ.get("RESEARCH_AGENT_TEST_PI_RUNTIME_ROOT")
+    configured = os.environ.get("CORAGENT_TEST_PI_RUNTIME_ROOT")
     if not configured or not Path(configured).is_dir():
         return
     result = subprocess.run(
@@ -38,7 +38,7 @@ def test_prepare_pi_source_verifies_a_matching_checkout() -> None:
 def test_prepare_pi_source_rejects_incorrect_protocol_metadata(monkeypatch) -> None:
     import pytest
     from scripts import prepare_pi_source as prepare
-    source = Path(os.environ["RESEARCH_AGENT_TEST_PI_RUNTIME_ROOT"])
+    source = Path(os.environ["CORAGENT_TEST_PI_RUNTIME_ROOT"])
     descriptor = {**prepare.pin(), "protocolVersion": -1}
     monkeypatch.setattr(prepare, "pin", lambda: descriptor)
     with pytest.raises(prepare.PiSourceError, match="protocol version"):

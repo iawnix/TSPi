@@ -12,7 +12,7 @@
 
 远端环境的 `crest` Backend 绑定必须选择由运维管理、有版本的 CREST binary。激活脚本
 必须在不修改研究 workspace 的情况下提供兼容 xTB executable。部署或环境变化后，以及
-首次计算前，使用 `"$RESEARCH_AGENT_PYTHON" -m research_agent.application.environment_check --config "$RESEARCH_AGENT_JOB_CONFIG" --environment <环境> --backend crest --runtime native` 核对目标，再运行有时限的科学 Job。缺失命令或激活脚本属于运行故障，不是科学结果。
+首次计算前，使用 `"$CORAGENT_PYTHON" -m research_agent.application.environment_check --config "$CORAGENT_JOB_CONFIG" --environment <环境> --backend crest --runtime native` 核对目标，再运行有时限的科学 Job。缺失命令或激活脚本属于运行故障，不是科学结果。
 
 不要从计算任务中安装或升级 CREST。按照[远端计算配置](../../../../../docs/INSTALLATION.zh-CN.md)，
 再运行有边界的计算节点

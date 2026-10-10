@@ -1,5 +1,5 @@
 {
-  "schema_version": "research-agent-command-schemas/1",
+  "schema_version": "coragent-command-schemas/1",
   "tools": {
     "systemPrompt": {
       "type": "object",

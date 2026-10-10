@@ -13,7 +13,7 @@ class ResourceValidationError(ValueError):
 def validate_resources(package_root: str | Path) -> None:
     root = Path(package_root).resolve()
     manifest = json.loads((root / "config/resources.json").read_text())
-    if manifest["schema_version"] != "research-agent-resources/1":
+    if manifest["schema_version"] != "coragent-resources/1":
         raise ResourceValidationError("unsupported resource inventory")
     for name, expected in manifest["files"].items():
         relative = Path(name)

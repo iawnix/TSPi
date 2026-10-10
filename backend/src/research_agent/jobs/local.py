@@ -65,7 +65,7 @@ class LocalProcessPlatform(ExecutionPlatform):
         with self._process_lock:
             self._processes[job_id] = proc
             if self._reaper is None:
-                self._reaper = threading.Thread(target=self._reap_loop, name="research-agent-job-reaper", daemon=True)
+                self._reaper = threading.Thread(target=self._reap_loop, name="coragent-job-reaper", daemon=True)
                 self._reaper.start()
 
     def probe(self, spec: JobSpec) -> dict[str, Any]:
@@ -102,7 +102,7 @@ class LocalProcessPlatform(ExecutionPlatform):
         supervisor_command = [sys.executable, str(Path(__file__).with_name("worker.py"))]
         proc = None
         if self.supervisor == "systemd":
-            unit = "research-agent-job-" + hashlib.sha256(str(spec.cwd.resolve()).encode()).hexdigest()[:32] + ".service"
+            unit = "coragent-job-" + hashlib.sha256(str(spec.cwd.resolve()).encode()).hexdigest()[:32] + ".service"
             payload["receipt"]["metadata"] = {**payload["receipt"]["metadata"], "systemd_unit": unit}
             self._write(spec.cwd / "supervisor.json", payload)
             (spec.cwd / "supervisor.json").chmod(0o600)

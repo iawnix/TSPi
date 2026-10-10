@@ -8,7 +8,7 @@ import { RelayStore } from "./store.mjs";
 const { command, options } = parseArguments(process.argv.slice(2));
 
 if (command === "--version") {
-  process.stdout.write(`ResearchAgent Relay ${packageMetadata.version}\n`);
+  process.stdout.write(`CoRAgent Relay ${packageMetadata.version}\n`);
 } else if (command === "serve") {
   const relay = createRelayServer({
     statePath: required(options, "state"),
@@ -17,7 +17,7 @@ if (command === "--version") {
     publicUrl: required(options, "public-url"),
   });
   const address = await relay.start();
-  process.stdout.write(`ResearchAgent Link Relay listening on ${typeof address === "string" ? address : `${address.address}:${address.port}`}\n`);
+  process.stdout.write(`CoRAgent Link Relay listening on ${typeof address === "string" ? address : `${address.address}:${address.port}`}\n`);
   let stopping = false;
   const stop = async () => {
     if (stopping) return;
@@ -68,7 +68,7 @@ function integer(value, label) {
 function usage() {
   process.stderr.write(
     "Usage:\n" +
-      "  research-agent-relay serve --state <relay.db> --public-url <https://relay.example> [--listen 127.0.0.1] [--port 8788]\n" +
-      "  research-agent-relay enrollment create --state <relay.db> [--ttl 600]\n",
+      "  coragent-relay serve --state <relay.db> --public-url <https://relay.example> [--listen 127.0.0.1] [--port 8788]\n" +
+      "  coragent-relay enrollment create --state <relay.db> [--ttl 600]\n",
   );
 }

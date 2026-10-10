@@ -1,12 +1,12 @@
 # Maintainer Guide
 
-ResearchAgent uses native Pi Harness. Host binds workspaces, authenticated input and durable scheduling; Python Research Memory stores original requirements, problem Nodes, immutable Results and relations. `runtime-bridge` only transports commands; TS Web consumes the same read-only queries. See [architecture](ARCHITECTURE.md) for refactor acceptance status.
+CoRAgent uses native Pi Harness. Host binds workspaces, authenticated input and durable scheduling; Python Research Memory stores original requirements, problem Nodes, immutable Results and relations. `runtime-bridge` only transports commands; CoRAgent Web consumes the same read-only queries. See [architecture](ARCHITECTURE.md) for refactor acceptance status.
 
 ## Development Setup
 
 Install the pinned Pi source and the separate test environment with
 `python3 tools/test/runner.py prepare`. It uses `tools/test/environment.lock.txt`
-under `/home/iaw/project/TSPi/local_debug` (override with `RESEARCH_AGENT_TEST_ENV_ROOT`).
+under `/home/iaw/project/TSPi/local_debug` (override with `CORAGENT_TEST_ENV_ROOT`).
 The root `environment.lock.txt` belongs to the minimal Host and does not include
 scientific or pytest dependencies. Run the fast test suite before changing package layout:
 
@@ -18,7 +18,7 @@ npm run lint:public
 The full suite uses `python3 tools/test/runner.py source -- -q`. Use
 `python3 tools/test/runner.py list` to inspect all lanes. The native lane
 exercises the Harness Host, native Pi client, history isolation/import, Monitor
-delivery, ResearchAgent Link, and the pinned Pi extension/provider boundaries. Use the pinned dependencies prepared in the private test root:
+delivery, CoRAgent Link, and the pinned Pi extension/provider boundaries. Use the pinned dependencies prepared in the private test root:
 
 ```bash
 python3 tools/test/runner.py prepare
@@ -55,9 +55,9 @@ Job Runtime owns execution receipts; Artifact Store owns bytes and provenance. M
 Inspect the workspace, rebuild derived views when the diagnostic identifies a projection problem, then inspect again:
 
 ```bash
-"$RESEARCH_AGENT_PYTHON" apps/agent-cli/workspace.py doctor --root /absolute/workspace
-"$RESEARCH_AGENT_PYTHON" apps/agent-cli/workspace.py rebuild --root /absolute/workspace
-"$RESEARCH_AGENT_PYTHON" apps/agent-cli/workspace.py doctor --root /absolute/workspace
+"$CORAGENT_PYTHON" apps/agent-cli/workspace.py doctor --root /absolute/workspace
+"$CORAGENT_PYTHON" apps/agent-cli/workspace.py rebuild --root /absolute/workspace
+"$CORAGENT_PYTHON" apps/agent-cli/workspace.py doctor --root /absolute/workspace
 ```
 
 Rebuild uses immutable records and results to restore Node/map indexes, search and readable views. It does not invent scientific results, change execution/email receipts or migrate old workspace formats. Missing or inconsistent originals require repairing the actual source. Use public tools for research changes; the CLI has no expected-version / observed-sequence global-progress arguments.
@@ -100,10 +100,10 @@ Maintain English `SKILL.md` and Chinese translations together: English is the di
 - `docs/INSTALLATION.md` — installer, services, upgrades, and recovery.
 - `docs/TERMINAL.md` — Native Pi TUI, Host, Phone, and Monitor usage.
 - `skills/` and `domains/chemical/skills/` — user-facing scientific procedures and references.
-- `contracts/ts-web/` — optional browser transport schemas for Memory context, Nodes, Results and records.
+- `contracts/coragent-web/` — optional browser transport schemas for Memory context, Nodes, Results and records.
 
-TS Phone documentation and mobile release tooling are maintained in the
-independent `ts-phone` repository. ResearchAgent owns the small authenticated Host bridge
+CoRHub documentation and mobile release tooling are maintained in the
+independent `corhub` repository. CoRAgent owns the small authenticated Host bridge
 and optional browser gateway; it must not add a second Pi renderer, Phone
 broker, or alternate session owner.
 
@@ -111,7 +111,7 @@ broker, or alternate session owner.
 
 | Change | Required updates |
 | --- | --- |
-| ResearchAgent Host protocol or service | `apps/agent/`, launcher tests, TS Phone client, architecture docs |
+| CoRAgent Host protocol or service | `apps/agent/`, launcher tests, CoRHub client, architecture docs |
 | Workspace schema | Research Memory runtime contract, bootstrap, validation tests, workspace references |
 | Scientific software | Skill scripts/parsers, environment configuration, focused Skill references, tests |
 | Scientific analysis | script, validator/profile manifest when applicable, input and output validation, scientific counterexamples, execution and Skill resource digests |

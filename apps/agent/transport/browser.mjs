@@ -99,7 +99,7 @@ async function main(args) {
     server.once("close", () => peer.close());
     const stop = () => { server.close(); server.closeAllConnections(); };
     for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.once(signal, stop);
-    process.stdout.write(`ResearchAgent gateway: http://${authority(options.host, server.address().port)}\n`);
+    process.stdout.write(`CoRAgent gateway: http://${authority(options.host, server.address().port)}\n`);
   } catch (error) { peer.close(); throw error; }
 }
 

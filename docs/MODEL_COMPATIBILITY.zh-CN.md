@@ -2,26 +2,26 @@
 
 [English](MODEL_COMPATIBILITY.md) | [简体中文](MODEL_COMPATIBILITY.zh-CN.md)
 
-模型接入由 Pi 统一管理。ResearchAgent 专注于研究工作流：每个安装目录运行一个 Host，终端、
-TS Phone 与 Monitor 连接同一个 Pi Harness lane，因此共享同一套模型配置。
+模型接入由 Pi 统一管理。CoRAgent 专注于研究工作流：每个安装目录运行一个 Host，终端、
+CoRHub 与 Monitor 连接同一个 Pi Harness lane，因此共享同一套模型配置。
 
-自定义模型按照 Pi 的 `models.json` 和常规认证机制配置。ResearchAgent 不另外维护模型目录、
+自定义模型按照 Pi 的 `models.json` 和常规认证机制配置。CoRAgent 不另外维护模型目录、
 凭据存储或 provider API adapter。
 
 ## 兼容矩阵
 
-| 模型系列 | ResearchAgent 状态 | Pi provider 或接入方式 |
+| 模型系列 | CoRAgent 状态 | Pi provider 或接入方式 |
 |---|---|---|
 | OpenAI GPT | 继承 Pi，内置 | `openai` 或 `openai-codex` |
 | Google Gemini | 继承 Pi，内置 | `google` 或 `google-vertex` |
-| DeepSeek | 继承 Pi，内置 | `deepseek`；ResearchAgent 还会在 thinking turn 避免不兼容的 named `tool_choice` |
+| DeepSeek | 继承 Pi，内置 | `deepseek`；CoRAgent 还会在 thinking turn 避免不兼容的 named `tool_choice` |
 | GLM / 智谱 | 取决于固定 Pi 版本的目录 | `zai`、`zai-coding-cn`，或经过验证的 OpenAI-compatible 自定义模型 |
 | Kimi | 继承 Pi，内置 | `kimi-coding`；也可使用 OpenRouter 等目录路由 |
 | 其他 OpenAI-compatible 对话模型 | 条件支持 | 在 Pi `models.json` 中正确配置 `api`、`baseUrl`、认证和 `compat` |
-| SeedDance / Seedream | 不能作为 Agent 模型 | 它们是媒体生成 API，不是对话/工具调用 LLM；ResearchAgent 不宣称其可作为 Root、Compute 或 Review 模型 |
+| SeedDance / Seedream | 不能作为 Agent 模型 | 它们是媒体生成 API，不是对话/工具调用 LLM；CoRAgent 不宣称其可作为 Root、Compute 或 Review 模型 |
 
 “继承 Pi”仍有三个前提：模型存在于固定 Pi 版本的目录或合法的自定义配置中，Host
-运行账户能取得认证，而且 endpoint 支持 ResearchAgent 所需的工具调用。只有 provider 品牌名称
+运行账户能取得认证，而且 endpoint 支持 CoRAgent 所需的工具调用。只有 provider 品牌名称
 并不能证明兼容。
 
 ## 配置和验证
@@ -31,10 +31,10 @@ TS Phone 与 Monitor 连接同一个 Pi Harness lane，因此共享同一套模�
 可通过 Pi 设置选择默认模型，然后重启 Host：
 
 ```bash
-systemctl --user restart ts-app-server-research-agent.service  # user scope
-systemctl restart ts-app-server-research-agent.service         # system scope
+systemctl --user restart coragent.service  # user scope
+systemctl restart coragent.service         # system scope
 ```
 
-生产使用前，应执行一次真实会话并实际调用 `read`、`write`、`bash` 和至少一个 ResearchAgent
+生产使用前，应执行一次真实会话并实际调用 `read`、`write`、`bash` 和至少一个 CoRAgent
 工具。仓库中的 recording-provider 测试可以验证 adapter 合约和错误分类，但不能证明
 第三方 endpoint 当前的凭证、额度、模型可用性或工具调用行为。

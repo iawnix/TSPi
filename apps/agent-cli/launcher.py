@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Installed research-agent terminal launcher entrypoint."""
+"""Installed coragent terminal launcher entrypoint."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from _bootstrap import activate_source_package
 def main(argv: list[str] | None = None) -> int:
     if not (ROOT / "package.json").is_file():
         print(
-            "research-agent: no installed Agent component; install a validated Research Agent package before starting",
+            "coragent: no installed Agent component; install a validated CoRAgent package before starting",
             file=sys.stderr,
         )
         return 1
@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     if forwarded[:1] == ["--"]:
         forwarded.pop(0)
     if forwarded == ["--version"]:
-        print("ResearchAgent " + json.loads((ROOT / "package.json").read_text())["version"])
+        print("CoRAgent " + json.loads((ROOT / "package.json").read_text())["version"])
         return 0
     # The launcher uses only the standard library until it has selected an
     # execution mode. A thin UI must not initialize the scientific environment.

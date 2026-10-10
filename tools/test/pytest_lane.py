@@ -12,9 +12,9 @@ import xml.etree.ElementTree as ET
 
 
 def run(files, extra, *, workers, name, overlay=None):
-    run_root=Path(os.environ['RESEARCH_AGENT_TEST_RUN_ROOT'])
+    run_root=Path(os.environ['CORAGENT_TEST_RUN_ROOT'])
     files=list(files)
-    random.Random(int(os.environ['RESEARCH_AGENT_TEST_SEED'])).shuffle(files)
+    random.Random(int(os.environ['CORAGENT_TEST_SEED'])).shuffle(files)
     count=min(workers,len(files))
     if count < 1: raise ValueError('No test files selected')
     children=[]
@@ -33,7 +33,7 @@ def run(files, extra, *, workers, name, overlay=None):
         env=dict(os.environ)
         if overlay:
             env.pop('PYTHONPATH',None)
-            env['RESEARCH_AGENT_PYTHON']=str(overlay/'bin/python')
+            env['CORAGENT_PYTHON']=str(overlay/'bin/python')
         log=(run_root/'logs'/f'{shard}.log').open('wb')
         child=subprocess.Popen(command,env=env,stdout=log,stderr=subprocess.STDOUT)
         children.append((child,log,shard))

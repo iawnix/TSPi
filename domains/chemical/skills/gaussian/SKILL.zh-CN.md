@@ -9,11 +9,11 @@ XYZ 的 `sp`、`opt`、`opt-sp` 使用 `chemical.gaussian@1`，默认采用
 M062X/6-31G**、Opt=Tight 或 SP、SCF=Tight、Int=UltraFine。完整显式
 输入使用 `chemical.gaussian-input@1`，两者都采用目标的 `gaussian` 绑定。
 
-用 `"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --executor chemical.gaussian-input --version 1 --help` 查看 runner 参数。
+用 `"$CORAGENT_PYTHON" -m research_agent.application.executors --executor chemical.gaussian-input --version 1 --help` 查看 runner 参数。
 需要诊断软件时，对此入口与所选环境执行[定向环境检查](../method-selection/references/runtime_environment.zh-CN.md)。
 
 ```bash
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.gaussian --version 1 --input geometry=input.xyz --output prepared/gaussian.json -- --task opt-sp --charge 0 --multiplicity 1
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config "$CORAGENT_JOB_CONFIG" --environment local --executor chemical.gaussian --version 1 --input geometry=input.xyz --output prepared/gaussian.json -- --task opt-sp --charge 0 --multiplicity 1
 ```
 
 将返回的请求文件和摘要连同对应 node_id 交给 `job_start`。输出和电子态语义见
@@ -29,7 +29,7 @@ M062X/6-31G**、Opt=Tight 或 SP、SCF=Tight、Int=UltraFine。完整显式
 只引用相对暂存路径，并收集后续计算需要的 checkpoint。
 
 ```bash
-"$RESEARCH_AGENT_PYTHON" -m research_agent.application.executors --config "$RESEARCH_AGENT_JOB_CONFIG" --environment local --executor chemical.gaussian-input --version 1 --input input=ts.gjf --collect results/ts.chk --output prepared/ts.json -- --method M062X --basis '6-31G**' --charge 0 --multiplicity 1 --threads 12 --memory-mb 4000 --validation saddle
+"$CORAGENT_PYTHON" -m research_agent.application.executors --config "$CORAGENT_JOB_CONFIG" --environment local --executor chemical.gaussian-input --version 1 --input input=ts.gjf --collect results/ts.chk --output prepared/ts.json -- --method M062X --basis '6-31G**' --charge 0 --multiplicity 1 --threads 12 --memory-mb 4000 --validation saddle
 ```
 
 `--validation opt/sp/frequency/minimum/saddle/irc/none` 选择 runner 检查。

@@ -199,7 +199,7 @@ export function buildSshProxyArgs({
 /** Local socket forwarding to a remote private socket, owned by one terminal. */
 export async function createSshUnixProxy({ label = "socket", ...options }) {
   const args = buildSshProxyArgs(options);
-  const directory = await mkdtemp(join(tmpdir(), "research-agent-ssh-"));
+  const directory = await mkdtemp(join(tmpdir(), "coragent-ssh-"));
   const socketPath = join(directory, `${label}.sock`);
   const clients = new Set();
   const children = new Map();
@@ -275,12 +275,12 @@ export async function connectHost({ socketPath, timeoutMs = 30_000, initialize =
 
 async function initializeHostPeer(peer, { timeoutMs, expectedReleaseId }) {
   const hello = await peer.request("initialize", { protocol: HOST_PROTOCOL }, { timeoutMs });
-  if (hello?.protocol !== HOST_PROTOCOL) throw protocolError("protocol_mismatch", "Unsupported ResearchAgent Host protocol");
+  if (hello?.protocol !== HOST_PROTOCOL) throw protocolError("protocol_mismatch", "Unsupported CoRAgent Host protocol");
   if (expectedReleaseId !== undefined && hello?.release_id !== expectedReleaseId) {
     const actual = typeof hello?.release_id === "string" && hello.release_id.length > 0 ? hello.release_id : "unknown";
     throw protocolError(
       "host_release_mismatch",
-      `ResearchAgent Host release mismatch: expected ${expectedReleaseId}, running ${actual}; restart the ResearchAgent Host and retry`,
+      `CoRAgent Host release mismatch: expected ${expectedReleaseId}, running ${actual}; restart the CoRAgent Host and retry`,
       true,
     );
   }

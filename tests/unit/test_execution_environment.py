@@ -24,14 +24,14 @@ from tests.unit.test_job_recovery import workspace
 
 
 def target():
-    settings = load_job_config(os.environ['RESEARCH_AGENT_JOB_CONFIG'])
+    settings = load_job_config(os.environ['CORAGENT_JOB_CONFIG'])
     return settings, resolve_binding(settings, 'local', 'validation', runtime='python')
 
 
 def request(tmp_path):
     script = tmp_path / 'science.py'
     script.write_text("from pathlib import Path\nPath('result.txt').write_text('computed once')\n")
-    return prepare_script(os.environ['RESEARCH_AGENT_JOB_CONFIG'], 'local', 'validation', script, collect=['result.txt'])
+    return prepare_script(os.environ['CORAGENT_JOB_CONFIG'], 'local', 'validation', script, collect=['result.txt'])
 
 
 def stage(tmp_path, request):
@@ -83,7 +83,7 @@ def test_target_changes_are_detected_without_trusting_runner_self_reports(change
     if changed == 'lock':
         Path(python['lock_ref']).write_text('@EXPLICIT\nhttps://fixture.invalid/changed.conda\n')
     elif changed == 'receipt':
-        (Path(python['prefix']) / 'research-agent-environment.json').unlink()
+        (Path(python['prefix']) / 'coragent-environment.json').unlink()
     elif changed == 'inventory':
         site = next(Path(python['prefix']).glob('lib/python*/site-packages'))
         package = site / 'unlocked-1.0.dist-info'
@@ -99,12 +99,12 @@ def test_queued_python_job_rechecks_receipt_and_guard_code_before_script(tmp_pat
     prepared = request(tmp_path)
     cwd = stage(tmp_path, prepared)
     selected = prepared['metadata']['execution_binding']
-    receipt = Path(selected['python']['prefix']) / 'research-agent-environment.json'
+    receipt = Path(selected['python']['prefix']) / 'coragent-environment.json'
     receipt.write_text(receipt.read_text() + '\n')
     result = run_guard(cwd, prepared['command'])
     assert result.returncode == 125 and 'execution_environment_changed' in result.stderr
     assert not (cwd / 'result.txt').exists()
-    (cwd / '.research-agent/environment_probe.py').write_text("raise SystemExit(0)\n")
+    (cwd / '.coragent/environment_probe.py').write_text("raise SystemExit(0)\n")
     assert run_guard(cwd, prepared['command']).returncode == 125
     assert not (cwd / 'result.txt').exists()
 
@@ -139,7 +139,7 @@ def test_submission_rejects_drift_before_attempt_but_replay_returns_original_rec
     prepared = request(tmp_path)
     params = {**prepared}
     selected = prepared['metadata']['execution_binding']
-    receipt = Path(selected['python']['prefix']) / 'research-agent-environment.json'
+    receipt = Path(selected['python']['prefix']) / 'coragent-environment.json'
     original = receipt.read_bytes()
     receipt.write_bytes(original + b'\n')
     with pytest.raises(ValueError, match='execution_environment_changed'):
@@ -203,7 +203,7 @@ def test_execution_binding_cannot_be_a_claim_without_the_guard(tmp_path):
 def test_identical_guard_copy_can_cross_wheel_and_source_submission(tmp_path):
     from research_agent.application.execution_environment import check_binding
     prepared = request(tmp_path)
-    guard = next(row for row in prepared['inputs'] if row['destination'] == '.research-agent/environment_probe.py')
+    guard = next(row for row in prepared['inputs'] if row['destination'] == '.coragent/environment_probe.py')
     other_installation_copy = tmp_path / 'wheel-environment-probe.py'
     shutil.copyfile(guard['source'], other_installation_copy)
     guard['source'] = str(other_installation_copy)
@@ -239,10 +239,10 @@ def test_ssh_probe_runs_target_checks_and_cleans_remote_scratch(tmp_path, monkey
     target_settings.update(kind='remote', ssh_host='fixture.invalid', remote_root=str(tmp_path / 'new-remote-root'),
                            ssh_config=str(tmp_path / 'ssh-config'), submission={'queue': 'science'})
     activation = tmp_path / 'activate.sh'
-    activation.write_text('test -z "${RESEARCH_AGENT_FIXTURE_PROVIDER_SECRET:-}"\nexport REMOTE_TEST_READY=1\n')
+    activation.write_text('test -z "${CORAGENT_FIXTURE_PROVIDER_SECRET:-}"\nexport REMOTE_TEST_READY=1\n')
     target_settings['backends']['validation']['activation_script'] = str(activation)
     selected = resolve_binding(settings, 'local', 'validation', runtime='python')
-    monkeypatch.setenv('RESEARCH_AGENT_FIXTURE_PROVIDER_SECRET', 'test-only-secret')
+    monkeypatch.setenv('CORAGENT_FIXTURE_PROVIDER_SECRET', 'test-only-secret')
     from research_agent.jobs import environment
     original, calls = environment._capture, []
     def ssh_transport(command, **kwargs):
@@ -255,7 +255,7 @@ def test_ssh_probe_runs_target_checks_and_cleans_remote_scratch(tmp_path, monkey
     assert calls and 'fixture.invalid' in calls[0] and '-F' in calls[0]
     assert (tmp_path / 'new-remote-root').is_dir()
     assert not list((tmp_path / 'new-remote-root').glob('.environment-*'))
-    receipt = Path(selected['python']['prefix']) / 'research-agent-environment.json'
+    receipt = Path(selected['python']['prefix']) / 'coragent-environment.json'
     receipt.unlink()
     with pytest.raises(ValueError, match='environment_receipt_missing'):
         probe_binding(settings, selected, {'python': '>=3.11'})

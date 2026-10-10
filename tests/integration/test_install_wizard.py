@@ -66,7 +66,7 @@ def test_existing_unmanaged_host_is_migrated_to_user_service(tmp_path: Path) -> 
     service_config = root / "etc/service.json"
     service_config.parent.mkdir(parents=True)
     service_config.write_text(
-        json.dumps({"schema_version": "research-agent-service/1", "scope": "none", "runtime_dir": None}),
+        json.dumps({"schema_version": "coragent-service/1", "scope": "none", "runtime_dir": None}),
         encoding="utf-8",
     )
     args = wizard.parse_args(["--install-root", str(root)])
@@ -300,7 +300,7 @@ def test_interactive_integer_prompt_retries_invalid_values(monkeypatch: pytest.M
     monkeypatch.setattr(wizard, "ask", lambda _prompt, default="": next(values))
     monkeypatch.setattr(wizard, "note", lambda message, **_kwargs: warnings.append(message))
 
-    assert wizard._ask_int("TS Web port", 8766, minimum=1, maximum=65535) == 8777
+    assert wizard._ask_int("CoRAgent Web port", 8766, minimum=1, maximum=65535) == 8777
     assert len(warnings) == 2
 
 
@@ -311,7 +311,7 @@ def test_menu_defaults_read_existing_configuration(tmp_path: Path) -> None:
     marker.parent.mkdir(parents=True)
     marker.write_text(json.dumps({"enabled": True}), encoding="utf-8")
     layout_paths(root).initialize().update_config(workspace_root=str(workspace))
-    (root / "TSWeb").write_text("launcher", encoding="utf-8")
+    (root / "coragent-web").write_text("launcher", encoding="utf-8")
     args = wizard.parse_args(["--install-root", str(root)])
 
     wizard._load_existing_menu_defaults(args)
@@ -422,7 +422,7 @@ def test_model_icon_options_are_mutually_exclusive(tmp_path: Path) -> None:
 
 
 def test_bundled_model_icon_font_avoids_the_nerd_font_private_use_range() -> None:
-    with TTFont(ROOT / "assets/fonts/research-agent-model-icons.ttf") as font:
+    with TTFont(ROOT / "assets/fonts/coragent-model-icons.ttf") as font:
         codepoints = set(font.getBestCmap() or {})
         revision = font["head"].fontRevision
 
@@ -436,7 +436,7 @@ def test_model_icon_font_install_writes_private_marker_and_handles_missing_fc_ca
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     package = tmp_path / "package"
-    source = package / "assets/fonts/research-agent-model-icons.ttf"
+    source = package / "assets/fonts/coragent-model-icons.ttf"
     source.parent.mkdir(parents=True)
     source.write_bytes(b"font fixture")
     install_root = tmp_path / "install"
@@ -447,7 +447,7 @@ def test_model_icon_font_install_writes_private_marker_and_handles_missing_fc_ca
 
     result = wizard.install_model_icon_font(package, install_root, enabled=True)
 
-    target = data_home / "fonts/research-agent/ResearchAgent-Model-Icons.ttf"
+    target = data_home / "fonts/coragent/CoRAgent-Model-Icons.ttf"
     marker = install_root / "etc/model-icons.json"
     assert result["status"] == "installed_cache_unavailable"
     assert result["enabled"] is True
@@ -463,7 +463,7 @@ def test_model_icon_font_install_writes_private_marker_and_handles_missing_fc_ca
 
 def test_model_icon_font_can_be_disabled_without_removing_shared_font(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     package = tmp_path / "package"
-    source = package / "assets/fonts/research-agent-model-icons.ttf"
+    source = package / "assets/fonts/coragent-model-icons.ttf"
     source.parent.mkdir(parents=True)
     source.write_bytes(b"font fixture")
     install_root = tmp_path / "install"
@@ -474,7 +474,7 @@ def test_model_icon_font_can_be_disabled_without_removing_shared_font(tmp_path: 
     result = wizard.install_model_icon_font(package, install_root, enabled=False)
 
     assert result["status"] == "disabled"
-    assert (tmp_path / "xdg-data/fonts/research-agent/ResearchAgent-Model-Icons.ttf").is_file()
+    assert (tmp_path / "xdg-data/fonts/coragent/CoRAgent-Model-Icons.ttf").is_file()
     assert json.loads((install_root / "etc/model-icons.json").read_text(encoding="utf-8"))["enabled"] is False
 
 
@@ -485,12 +485,12 @@ def test_update_preserves_workspace_root_and_link_defaults(tmp_path: Path) -> No
     phone = root / "var/state/host/link.json"
     phone.parent.mkdir(parents=True, exist_ok=True)
     phone.write_text(json.dumps({
-        "schema_version": "research-agent-link/1",
-        "protocol": "research-agent-link.v1",
+        "schema_version": "coragent-link/1",
+        "protocol": "coragent-link.v1",
         "relay_url": "https://relay.example.test",
         "host_id": "123e4567-e89b-42d3-a456-426614174000",
     }), encoding="utf-8")
-    (phone.parent / "host.token").write_text("rah_" + "a" * 43, encoding="utf-8")
+    (phone.parent / "host.token").write_text("cah_" + "a" * 43, encoding="utf-8")
     args = wizard.parse_args([
         "--install-root", str(root), "--without-web", "--service-scope", "none", "--non-interactive",
     ])
@@ -506,7 +506,7 @@ def test_explicit_phone_link_uses_discovered_relay_url(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    relay_root = tmp_path / "research-agent-link"
+    relay_root = tmp_path / "coragent-link"
     monkeypatch.setattr(
         wizard,
         "discover_link_relay",
@@ -765,16 +765,16 @@ def test_app_server_service_is_one_installation_host(tmp_path: Path) -> None:
     unit = wizard.app_server_unit(args)
 
     assert f"WorkingDirectory={root}" in unit
-    assert f'ExecStart="{root / "current/agent/libexec/research-agent-host"}"' in unit
-    assert "Environment=RESEARCH_AGENT_SYSTEMD_HOST=1" in unit
-    assert "RESEARCH_AGENT_SERVER_EXTENSIONS" not in unit
+    assert f'ExecStart="{root / "current/agent/libexec/coragent-host"}"' in unit
+    assert "Environment=CORAGENT_SYSTEMD_HOST=1" in unit
+    assert "CORAGENT_SERVER_EXTENSIONS" not in unit
     assert 'Environment="XDG_RUNTIME_DIR=' in unit
     assert f'PI_CODING_AGENT_DIR={root / "etc/pi"}' in unit
-    assert str(Path(os.environ["XDG_RUNTIME_DIR"]) / "ra") in unit
+    assert str(Path(os.environ["XDG_RUNTIME_DIR"]) / "coragent") in unit
     assert f'ReadWritePaths="{root / "var/state"}"' in unit
     assert f'ReadWritePaths="{root / "workspaces"}"' in unit
     assert "WantedBy=default.target" in unit
-    assert "TSPhone" not in unit
+    assert "CoRHub" not in unit
     assert "session-host" not in unit
 
 
@@ -784,7 +784,7 @@ def test_web_service_uses_installed_launcher_and_workspace_root(tmp_path: Path) 
     unit = wizard.web_unit(args)
 
     assert f"WorkingDirectory={root}" in unit
-    assert f'ExecStart="{root / "TSWeb"}"' in unit
+    assert f'ExecStart="{root / "coragent-web"}"' in unit
     assert '"--provider"' in unit
     assert '"--binding"' not in unit
     assert str(root / "workspaces") in unit
@@ -809,17 +809,17 @@ def test_service_runtime_configuration_records_scope_and_socket_directory(
 
     assert configured["scope"] == "user"
     document = layout_paths(args.install_root).read_config()["service"]
-    assert document["schema_version"] == "research-agent-service/1"
+    assert document["schema_version"] == "coragent-service/1"
     assert document["scope"] == "user"
-    assert document["runtime_dir"] == str(runtime_parent / "ra")
+    assert document["runtime_dir"] == str(runtime_parent / "coragent")
 
 
 def test_remote_terminal_profile_is_written_private_and_reloaded(tmp_path: Path) -> None:
     args = wizard.parse_args([
         "--install-root", str(tmp_path / "install"),
         "--remote-host", "pi.example",
-        "--remote-host-socket", "/run/research-agent/host.sock",
-        "--remote-proxy-path", "/opt/research-agent/apps/agent/transport/ssh.mjs",
+        "--remote-host-socket", "/run/coragent/host.sock",
+        "--remote-proxy-path", "/opt/coragent/apps/agent/transport/ssh.mjs",
         "--ssh-option=-i",
         "--ssh-option", "/home/test/.ssh/id_ed25519",
         "--without-web", "--service-scope", "none", "--non-interactive", "--yes",
@@ -838,7 +838,7 @@ def test_remote_terminal_profile_is_written_private_and_reloaded(tmp_path: Path)
     ])
     wizard.validate_options(reloaded)
     assert reloaded.remote_host == "pi.example"
-    assert reloaded.remote_host_socket == "/run/research-agent/host.sock"
+    assert reloaded.remote_host_socket == "/run/coragent/host.sock"
     assert wizard.configure_remote_host(reloaded)["status"] == "configured"
 
 
@@ -930,16 +930,16 @@ def test_configure_services_installs_and_starts_host_and_web(
 
     services = wizard.configure_services(args)
 
-    assert (unit_dir / "ts-app-server-research-agent.service").is_file()
-    assert (unit_dir / "ts-web-research-agent.service").is_file()
+    assert (unit_dir / "coragent.service").is_file()
+    assert (unit_dir / "coragent-web.service").is_file()
     assert calls == [
         ("daemon-reload",),
-        ("enable", "ts-app-server-research-agent.service"),
-        ("enable", "ts-web-research-agent.service"),
-        ("restart", "ts-app-server-research-agent.service"),
-        ("restart", "ts-web-research-agent.service"),
+        ("enable", "coragent.service"),
+        ("enable", "coragent-web.service"),
+        ("restart", "coragent.service"),
+        ("restart", "coragent-web.service"),
     ]
-    assert services[0]["name"] == "ts-app-server-research-agent.service"
+    assert services[0]["name"] == "coragent.service"
     assert services[0]["active"] == "active"
 
 
@@ -950,7 +950,7 @@ def test_configure_services_stops_concrete_legacy_app_server_instances(
     args = _options(tmp_path)
     unit_dir = tmp_path / "units"
     unit_dir.mkdir()
-    (unit_dir / "ts-app-server-research-agent@.service").write_text(
+    (unit_dir / "coragent@.service").write_text(
         f"[Service]\nWorkingDirectory={args.install_root}\n",
         encoding="utf-8",
     )
@@ -958,8 +958,8 @@ def test_configure_services_stops_concrete_legacy_app_server_instances(
     monkeypatch.setattr(wizard, "_service_unit_directory", lambda _scope: unit_dir)
     monkeypatch.setattr(wizard, "verify_service_units", lambda *_args: None)
     monkeypatch.setattr(wizard, "app_server_service_instances", lambda _scope: [
-        "ts-app-server-research-agent@reaction-a.service",
-        "ts-app-server-research-agent@reaction-b.service",
+        "coragent@reaction-a.service",
+        "coragent@reaction-b.service",
     ])
     monkeypatch.setattr(wizard, "_run_systemctl", lambda _scope, *values: calls.append(values))
     monkeypatch.setattr(
@@ -970,9 +970,9 @@ def test_configure_services_stops_concrete_legacy_app_server_instances(
 
     wizard.configure_services(args)
 
-    assert not (unit_dir / "ts-app-server-research-agent@.service").exists()
-    assert ("disable", "--now", "ts-app-server-research-agent@reaction-a.service") in calls
-    assert ("disable", "--now", "ts-app-server-research-agent@reaction-b.service") in calls
+    assert not (unit_dir / "coragent@.service").exists()
+    assert ("disable", "--now", "coragent@reaction-a.service") in calls
+    assert ("disable", "--now", "coragent@reaction-b.service") in calls
 
 
 def test_configure_services_removes_owned_web_unit_when_web_is_disabled(
@@ -988,7 +988,7 @@ def test_configure_services_removes_owned_web_unit_when_web_is_disabled(
     wizard.validate_options(args)
     unit_dir = tmp_path / "units"
     unit_dir.mkdir()
-    (unit_dir / "ts-web-research-agent.service").write_text(
+    (unit_dir / "coragent-web.service").write_text(
         f"[Service]\nWorkingDirectory={args.install_root}\n",
         encoding="utf-8",
     )
@@ -1004,9 +1004,9 @@ def test_configure_services_removes_owned_web_unit_when_web_is_disabled(
 
     wizard.configure_services(args)
 
-    assert not (unit_dir / "ts-web-research-agent.service").exists()
-    assert ("stop", "ts-web-research-agent.service") in calls
-    assert ("disable", "ts-web-research-agent.service") in calls
+    assert not (unit_dir / "coragent-web.service").exists()
+    assert ("stop", "coragent-web.service") in calls
+    assert ("disable", "coragent-web.service") in calls
 
 
 def test_service_ownership_rejects_a_different_installation(
@@ -1016,7 +1016,7 @@ def test_service_ownership_rejects_a_different_installation(
     args = _options(tmp_path)
     unit_dir = tmp_path / "units"
     unit_dir.mkdir()
-    (unit_dir / "ts-app-server-research-agent.service").write_text(
+    (unit_dir / "coragent.service").write_text(
         "[Service]\nWorkingDirectory=/another/install\n",
         encoding="utf-8",
     )
@@ -1032,14 +1032,14 @@ def test_component_summary_exposes_app_server_and_phone_connection(tmp_path: Pat
         args,
         {"runtime": {"env_prefix": "/runtime", "runtime_probe": {"modules": {}, "commands": {}}}},
         runtime,
-        [{"name": "ts-app-server-research-agent.service", "scope": "user", "enabled": "enabled", "active": "active"}],
+        [{"name": "coragent.service", "scope": "user", "enabled": "enabled", "active": "active"}],
         {"web_http": {"path": "/token", "status": "created", "mode": "0600"}},
     )
     assert components["app_server"]["runtime"] == str(runtime)
     assert components["app_server"]["server_id"].endswith("/var/state/host/server-id")
-    assert components["app_server"]["start"] == "systemctl --user start ts-app-server-research-agent.service"
+    assert components["app_server"]["start"] == "systemctl --user start coragent.service"
     assert components["phone"]["tool_access"] == "same_as_terminal"
-    assert components["phone"]["protocol"] == "research-agent-link.v1"
+    assert components["phone"]["protocol"] == "coragent-link.v1"
     assert components["runtime"]["status"] == "not_probed"
     assert components["job"]["status"] == "not_configured"
     assert "render" not in components
@@ -1086,20 +1086,20 @@ def test_link_manifest_is_secret_free_and_host_token_is_private(tmp_path: Path, 
     host_id = wizard.ensure_host_identity(root).read_text(encoding="ascii").strip()
     monkeypatch.setattr(wizard, "_redeem_link_enrollment", lambda *_args: {
         "hostId": host_id,
-        "protocol": "research-agent-link.v1",
-        "hostToken": "rah_" + "a" * 43,
+        "protocol": "coragent-link.v1",
+        "hostToken": "cah_" + "a" * 43,
     })
 
     result = wizard.configure_phone_connection(args)
 
     manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
     assert manifest["relay_url"] == "https://relay.example.test"
-    assert manifest["protocol"] == "research-agent-link.v1"
+    assert manifest["protocol"] == "coragent-link.v1"
     assert result["tool_access"] == "same_as_terminal"
     assert "token" not in manifest
     assert "secret" not in manifest
     token_file = root / "var/state/host/host.token"
-    assert token_file.read_text(encoding="utf-8").strip().startswith("rah_")
+    assert token_file.read_text(encoding="utf-8").strip().startswith("cah_")
     assert stat.S_IMODE(token_file.stat().st_mode) == 0o600
 
 
@@ -1109,12 +1109,12 @@ def test_changing_relay_requires_a_new_host_enrollment(tmp_path: Path) -> None:
     state = root / "var/state/host"
     state.mkdir(parents=True)
     (state / "link.json").write_text(json.dumps({
-        "schema_version": "research-agent-link/1",
-        "protocol": "research-agent-link.v1",
+        "schema_version": "coragent-link/1",
+        "protocol": "coragent-link.v1",
         "relay_url": "https://old-relay.example.test",
         "host_id": "123e4567-e89b-42d3-a456-426614174000",
     }), encoding="utf-8")
-    (state / "host.token").write_text("rah_" + "a" * 43, encoding="ascii")
+    (state / "host.token").write_text("cah_" + "a" * 43, encoding="ascii")
     args.phone_access = "link"
     args.link_url = "https://new-relay.example.test"
     args.link_enrollment_code = None
@@ -1231,7 +1231,7 @@ def test_job_toml_is_validated_and_written_private(tmp_path: Path) -> None:
         'ssh_host = "cluster"',
         f'ssh_config = "{ssh_config}"',
         'scheduler = "torque"',
-        'remote_root = "/srv/research-agent"',
+        'remote_root = "/srv/coragent"',
         'allowed_queues = ["batch"]',
         '',
     ]) + "\n", encoding="utf-8")
@@ -1437,15 +1437,15 @@ def test_install_binds_local_resolver_and_preserves_explicit_and_remote_settings
     raw = ('default_environment="local.cpu"\n[environments."local.cpu"]\nkind="local"\npython=' + python + '\n'
            '[environments."local.cpu".backends]\nstructure={environment={OMP_NUM_THREADS="2"}}\n'
            '[environments.custom]\nkind="local"\npython=' + python + '\n'
-           '[environments.custom.backends.structure.environment]\nRESEARCH_AGENT_NAME_RESOLVER_CONFIG="/custom/resolver.toml"\n'
+           '[environments.custom.backends.structure.environment]\nCORAGENT_NAME_RESOLVER_CONFIG="/custom/resolver.toml"\n'
            '[environments.explicit_root]\nkind="local"\npython=' + python + '\n'
-           '[environments.explicit_root.backends.structure.environment]\nRESEARCH_AGENT_INSTALL_ROOT="/custom/install"\n'
+           '[environments.explicit_root.backends.structure.environment]\nCORAGENT_INSTALL_ROOT="/custom/install"\n'
            '[environments.cluster]\nkind="remote"\nssh_host="example.invalid"\nremote_root="/scratch/jobs"\npython=' + python + '\n'
            '[environments.cluster.submission]\nqueue="batch"\n[environments.cluster.backends.structure]\n')
     source = tmp_path / 'source.toml' if imported else destination
     source.write_text(raw)
     expected = copy.deepcopy(tomllib.loads(raw))
-    expected['environments']['local.cpu']['backends']['structure']['environment']['RESEARCH_AGENT_NAME_RESOLVER_CONFIG'] = str(root/'etc/name-resolver.toml')
+    expected['environments']['local.cpu']['backends']['structure']['environment']['CORAGENT_NAME_RESOLVER_CONFIG'] = str(root/'etc/name-resolver.toml')
     args = SimpleNamespace(install_root=str(root), job_config=str(source) if imported else None)
     configs = wizard.configure_backend_configs(args)
     assert tomllib.loads(destination.read_text()) == expected
@@ -1468,7 +1468,7 @@ def test_install_uninstaller_copies_recovery_files_and_marks_ownership(tmp_path:
     assert uninstaller.is_file()
     assert (root / "runtimes/maintenance/uninstall.py").is_file()
     marker = json.loads((root / "etc/installation.json").read_text(encoding="utf-8"))
-    assert marker["schema_version"] == "research-agent-installation/2"
+    assert marker["schema_version"] == "coragent-installation/2"
 
 
 def test_configured_update_preserves_existing_relay_host_enrollment(tmp_path, monkeypatch):
@@ -1480,7 +1480,7 @@ def test_configured_update_preserves_existing_relay_host_enrollment(tmp_path, mo
     relay_url = 'https://relay.example'
     (state / 'server-id').write_text(host_id)
     (state / 'host.token').write_text('existing-token')
-    (state / 'link.json').write_text(json.dumps({'schema_version':'research-agent-link/1','relay_url':relay_url,'host_id':host_id}))
+    (state / 'link.json').write_text(json.dumps({'schema_version':'coragent-link/1','relay_url':relay_url,'host_id':host_id}))
     monkeypatch.setattr(_install_relay, 'discover_link_relay', lambda path: {
         'service_root': str(root / 'runtimes/link-relay/current/services/relay'), 'relay_url':relay_url,
         'state': str(root / 'var/state/link-relay/relay.db')})

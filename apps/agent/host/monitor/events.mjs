@@ -112,7 +112,7 @@ async function monitorWorkspaceIdentity(project) {
 
 function validMonitorBinding(binding, monitorId, identity) {
   return Boolean(binding && typeof binding === "object" && !Array.isArray(binding)
-    && binding.schema_version === "research-agent-job-monitor/2"
+    && binding.schema_version === "coragent-job-monitor/2"
     && binding.monitor_id === monitorId
     && binding.workspace_id === identity.canonical
     && typeof binding.job_id === "string" && /^job_[A-Za-z0-9_.:-]+$/u.test(binding.job_id)
@@ -128,7 +128,7 @@ function validMonitorBinding(binding, monitorId, identity) {
 
 function validMonitorEvent(event, eventId, monitorId, identity, binding) {
   return Boolean(event && typeof event === "object" && !Array.isArray(event)
-    && event.schema_version === "research-agent-job-monitor-event/2"
+    && event.schema_version === "coragent-job-monitor-event/2"
     && validResearchBinding(event)
     && event.node_id === binding.node_id && event.node_revision === binding.node_revision
     && !Object.hasOwn(event, "intent_id") && !Object.hasOwn(event, "intent_digest")

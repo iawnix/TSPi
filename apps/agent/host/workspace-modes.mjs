@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { validate_workspace_files, validate_workspace_manifest } from "./workspace.mjs";
 
 /**
- * Read the immutable framework mode bound by ResearchAgent.
+ * Read the immutable framework mode bound by CoRAgent.
  *
  * Every Host workspace is initialized by the canonical workspace initializer.
  * A missing or incomplete manifest is therefore a configuration error; mode

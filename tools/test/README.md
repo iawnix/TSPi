@@ -12,7 +12,7 @@ defaults to `structure,wrapper`. The installation tests use those caches offline
 cover package activation, ordinary structure Jobs, repeat installation, and purge.
 
 ```bash
-export RESEARCH_AGENT_TEST_CONDA=/home/iaw/soft/miniconda/26.7.1-1/bin/conda
+export CORAGENT_TEST_CONDA=/home/iaw/soft/miniconda/26.7.1-1/bin/conda
 python3 tools/test/runner.py prepare
 python3 tools/test/runner.py doctor
 python3 tools/test/runner.py plan --changed --base origin/main
@@ -23,7 +23,7 @@ python3 tools/test/runner.py source -- -q
 python3 tools/test/runner.py verify
 python3 tools/test/runner.py replay --run RUN_ID --failed
 python3 tools/test/runner.py release --artifact /absolute/path/to/package.tar.gz
-python3 tools/test/runner.py phone --phone-source /absolute/path/to/ts-phone --flutter-root /home/iaw/project/TSPi/local_debug/deps/flutter/3.44.0 --pub-cache /home/iaw/project/TSPi/local_debug/deps/flutter-pub
+python3 tools/test/runner.py phone --phone-source /absolute/path/to/corhub --flutter-root /home/iaw/project/TSPi/local_debug/deps/flutter/3.44.0 --pub-cache /home/iaw/project/TSPi/local_debug/deps/flutter-pub
 python3 tools/test/runner.py gc --dry-run
 python3 tools/test/runner.py gc --apply
 ```
@@ -68,7 +68,7 @@ retained-run dependency references, current environments and `KEEP` markers.
 `source` builds a content-addressed wheel once, verifies its digest, creates a
 fresh overlay and proves first-party imports come from that wheel. It retains
 the overlay after failure. `release` accepts only the complete package archive
-with its adjacent `research-agent-package-release.json`, invokes the real
+with its adjacent `coragent-package-release.json`, invokes the real
 installer, verifies external-cwd startup and installed Python origins, and
 runs the native terminal startup/resume/quit and Worker research-flow drivers
 against the installed product and Pi runtime. The deterministic local model

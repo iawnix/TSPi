@@ -59,7 +59,7 @@ def run_job(root, request, timeout):
             if not collected_outputs:
                 execute('job.collect', root, {'job_id': receipt['job_id']})
             from research_agent.jobs.remote import TorqueSSHPlatform
-            settings = load_job_config(os.environ['RESEARCH_AGENT_JOB_CONFIG'])
+            settings = load_job_config(os.environ['CORAGENT_JOB_CONFIG'])
             target = settings['environments'][request['platform']]
             remote = receipt['metadata']['remote_dir']
             scope = hashlib.sha256(str(Path(receipt['cwd']).resolve()).encode()).hexdigest()[:24]
@@ -70,12 +70,12 @@ def run_job(root, request, timeout):
 
 
 def accept(config, package, directory, targets, timeout, *, bindings_only=False):
-    os.environ['RESEARCH_AGENT_JOB_CONFIG'] = str(config)
-    os.environ['RESEARCH_AGENT_PACKAGE_ROOT'] = str(package)
+    os.environ['CORAGENT_JOB_CONFIG'] = str(config)
+    os.environ['CORAGENT_PACKAGE_ROOT'] = str(package)
     settings = load_job_config(config)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     available = profiles(package)
-    report = {'schema_version': 'research-agent-job-readiness/1', 'checked_at': datetime.now(timezone.utc).isoformat(),
+    report = {'schema_version': 'coragent-job-readiness/1', 'checked_at': datetime.now(timezone.utc).isoformat(),
               'configuration_sha256': binding_digest(settings), 'external_services': 'not_checked', 'targets': {}}
     for name, target in settings['environments'].items():
         if name not in targets:

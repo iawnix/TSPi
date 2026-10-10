@@ -3,7 +3,7 @@
 ## Supported Versions
 
 Security fixes target the latest revision on `main` and the latest published
-ResearchAgent release. Older releases may not receive fixes for the Host, Link Relay,
+CoRAgent release. Older releases may not receive fixes for the Host, Link Relay,
 Native Pi Harness, or workspace formats.
 
 ## Reporting A Vulnerability

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly LAUNCHER_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
+readonly PACKAGE_ROOT="$(dirname -- "$LAUNCHER_PATH")"
+readonly LAUNCHER_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+if [[ -n "${CORAGENT_INSTALL_ROOT:-}" ]]; then
+  readonly INSTALL_ROOT="$CORAGENT_INSTALL_ROOT"
+else
+  readonly INSTALL_ROOT="$LAUNCHER_DIR"
+fi
+readonly LAUNCHER="$PACKAGE_ROOT/apps/agent-cli/launcher.py"
+
+if [[ ! -f "$LAUNCHER" ]]; then
+  printf 'coragent: launcher is missing from the active package: %s\n' "$LAUNCHER" >&2
+  exit 1
+fi
+exec python3 "$LAUNCHER" --install-root "$INSTALL_ROOT" -- "$@"

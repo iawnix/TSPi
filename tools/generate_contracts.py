@@ -74,12 +74,12 @@ def ts_type(schema, depth=0):
 
 def outputs():
     documents = {path.name: json.loads(path.read_text()) for path in SOURCE.glob('*.json')}
-    if documents['results.json']['schema_version'] != 'research-agent-command-results/1':
+    if documents['results.json']['schema_version'] != 'coragent-command-results/1':
         raise ValueError('invalid command result schemas')
     commands, examples = [], []
     for name in ('research', 'jobs', 'artifacts'):
         source = documents[name + '.json']
-        if source['schema_version'] != 'research-agent-command-source/1':
+        if source['schema_version'] != 'coragent-command-source/1':
             raise ValueError('invalid command source: ' + name)
         for definition in source['commands']:
             schema = resolve(definition['schema'], documents)
@@ -96,9 +96,9 @@ def outputs():
     if len({item['id'] for item in commands}) != len(commands):
         raise ValueError('duplicate command identity')
     slash = documents['slash.json']['commands']
-    catalog = {'schema_version': 'research-agent-command-catalog/1', 'commands': commands, 'slash_commands': slash}
+    catalog = {'schema_version': 'coragent-command-catalog/1', 'commands': commands, 'slash_commands': slash}
     shared = documents['shared.json']
-    if shared['schema_version'] != 'research-agent-command-schemas/1':
+    if shared['schema_version'] != 'coragent-command-schemas/1':
         raise ValueError('invalid shared command schemas')
     tools = resolve(shared['tools'], documents)
     tool_types = HEADER + 'export interface ToolParameters {\n' + '\n'.join(
@@ -159,7 +159,7 @@ export function slashCompletions(name: string, prefix?: string): Array<{ value: 
         ROOT / 'apps/agent/tools/command-catalog.json': encoded(catalog),
         ROOT / 'apps/agent/tools/parameters.d.mts': tool_types,
         ROOT / 'apps/agent/tools/commands.d.mts': command_types,
-        ROOT / 'contracts/generated/command-fixtures.json': encoded({'schema_version': 'research-agent-command-fixtures/1', 'cases': examples}),
+        ROOT / 'contracts/generated/command-fixtures.json': encoded({'schema_version': 'coragent-command-fixtures/1', 'cases': examples}),
         ROOT / 'contracts/commands/README.md': '\n'.join(index) + '\n',
     }
 

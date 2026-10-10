@@ -33,7 +33,7 @@
 
 后续清理说明：2026-10-09 用户明确要求删除旧测试环境，以下历史路径已不可用；本记录不代表新测试根已经重建或重新验收。
 
-wheel 测试环境记录：`/home/iaw/debug/research-agent-test-env/test-results/source-test-0352688781020e92.json`。测试安装、环境和工作目录均位于指定测试根目录。原生测试的 Host/Worker/Monitor 服务已退出；邮件测试的本地 SMTP 服务由 teardown 关闭。
+wheel 测试环境记录：`/home/iaw/debug/coragent-test-env/test-results/source-test-0352688781020e92.json`。测试安装、环境和工作目录均位于指定测试根目录。原生测试的 Host/Worker/Monitor 服务已退出；邮件测试的本地 SMTP 服务由 teardown 关闭。
 
 ## 关键行为的实际覆盖
 

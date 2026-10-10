@@ -97,7 +97,7 @@ def test_killed_supervisor_cannot_leave_a_detached_namespace_child(tmp_path):
 
 def test_shared_dependency_mounts_are_read_only():
     import errno
-    paths=json.loads(os.environ['RESEARCH_AGENT_TEST_DEPENDENCIES'])
+    paths=json.loads(os.environ['CORAGENT_TEST_DEPENDENCIES'])
     assert paths
     for directory in paths:
         destination=Path(directory)/f'.mutation-probe-{os.getpid()}'

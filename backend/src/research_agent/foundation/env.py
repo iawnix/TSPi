@@ -1,4 +1,4 @@
-"""Conda runtime discovery for the ResearchAgent package.
+"""Conda runtime discovery for the CoRAgent package.
 
 The package code and its Python environment live in separate roots. Public
 scripts call ``ensure_runtime_python`` before importing heavier workflow
@@ -16,19 +16,19 @@ from collections.abc import MutableMapping
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-ENV_OVERRIDE = "RESEARCH_AGENT_PYTHON"
-DISABLE_REEXEC = "RESEARCH_AGENT_DISABLE_RUNTIME_REEXEC"
-ENV_ROOT_OVERRIDE = "RESEARCH_AGENT_ENV_ROOT"
-RUNTIME_HOME_OVERRIDE = "RESEARCH_AGENT_RUNTIME_HOME"
-RUNTIME_MANIFEST_OVERRIDE = "RESEARCH_AGENT_RUNTIME_MANIFEST"
-PACKAGE_ROOT_OVERRIDE = "RESEARCH_AGENT_PACKAGE_ROOT"
-WORKSPACE_ROOT_OVERRIDE = "RESEARCH_AGENT_WORKSPACE_ROOT"
+ENV_OVERRIDE = "CORAGENT_PYTHON"
+DISABLE_REEXEC = "CORAGENT_DISABLE_RUNTIME_REEXEC"
+ENV_ROOT_OVERRIDE = "CORAGENT_ENV_ROOT"
+RUNTIME_HOME_OVERRIDE = "CORAGENT_RUNTIME_HOME"
+RUNTIME_MANIFEST_OVERRIDE = "CORAGENT_RUNTIME_MANIFEST"
+PACKAGE_ROOT_OVERRIDE = "CORAGENT_PACKAGE_ROOT"
+WORKSPACE_ROOT_OVERRIDE = "CORAGENT_WORKSPACE_ROOT"
 MANIFEST_VERSION = "agent-runtime/3"
-RUNTIME_PROBE_VERSION = "research-agent-runtime-probe/4"
-PACKAGE_NAMESPACE = "research-agent"
+RUNTIME_PROBE_VERSION = "coragent-runtime-probe/4"
+PACKAGE_NAMESPACE = "coragent"
 BASE_ENV_DIRECTORY = "base"
 KERNEL_ENV_DIRECTORY = "kernels"
-PYTHON_DISTRIBUTION = "research-agent"
+PYTHON_DISTRIBUTION = "coragent"
 PYTHON_SOURCE_ROOTS = {"research_agent": Path("backend/src/research_agent")}
 PYTHON_PACKAGE_NAMES = frozenset(PYTHON_SOURCE_ROOTS)
 PYTHON_PAYLOAD_SUFFIXES = frozenset({".css", ".html", ".js", ".json", ".py", ".svg", ".toml"})
@@ -56,7 +56,7 @@ def package_root_from_file(path: str | Path) -> Path:
             and (parent / "config/identity.json").is_file()
         ):
             return parent
-    raise RuntimeEnvironmentError(f"cannot locate ResearchAgent package root from: {path}")
+    raise RuntimeEnvironmentError(f"cannot locate CoRAgent package root from: {path}")
 
 
 def seed_installation_runtime(
@@ -65,7 +65,7 @@ def seed_installation_runtime(
     environ: MutableMapping[str, str] | None = None,
     authoritative: bool = False,
 ) -> Path:
-    """Bind runtime paths owned by one ResearchAgent installation root."""
+    """Bind runtime paths owned by one CoRAgent installation root."""
 
     root = Path(installation_root).expanduser().resolve()
     from .layout import paths
@@ -215,9 +215,9 @@ def default_runtime_home(
     if workspace_root is not None:
         from .layout import paths
         return paths(workspace_root).runtime_home
-    if os.environ.get("RESEARCH_AGENT_INSTALL_ROOT"):
+    if os.environ.get("CORAGENT_INSTALL_ROOT"):
         from .layout import paths
-        return paths(os.environ["RESEARCH_AGENT_INSTALL_ROOT"]).runtime_home
+        return paths(os.environ["CORAGENT_INSTALL_ROOT"]).runtime_home
     return resolve_package_root(package_root).parent / "var/state/installation/python"
 
 
@@ -245,10 +245,10 @@ def default_env_store(
     if workspace_root is not None:
         from .layout import paths
         return paths(workspace_root).env_root
-    if os.environ.get("RESEARCH_AGENT_INSTALL_ROOT"):
+    if os.environ.get("CORAGENT_INSTALL_ROOT"):
         from .layout import paths
-        return paths(os.environ["RESEARCH_AGENT_INSTALL_ROOT"]).env_root
-    return Path(os.environ["RESEARCH_AGENT_HOST_ENV_ROOT"]) if os.environ.get("RESEARCH_AGENT_HOST_ENV_ROOT") else resolve_package_root(package_root).parent / "host-envs"
+        return paths(os.environ["CORAGENT_INSTALL_ROOT"]).env_root
+    return Path(os.environ["CORAGENT_HOST_ENV_ROOT"]) if os.environ.get("CORAGENT_HOST_ENV_ROOT") else resolve_package_root(package_root).parent / "host-envs"
 
 
 def default_env_prefix(
@@ -491,7 +491,7 @@ def ensure_runtime_python(
     try:
         python = require_runtime_python(package_root) if required else configured_python(package_root)
     except RuntimeEnvironmentError:
-        if required or os.environ.get("RESEARCH_AGENT_INSTALL_ROOT") or os.environ.get(RUNTIME_MANIFEST_OVERRIDE):
+        if required or os.environ.get("CORAGENT_INSTALL_ROOT") or os.environ.get(RUNTIME_MANIFEST_OVERRIDE):
             raise
         return None
     if python is None:

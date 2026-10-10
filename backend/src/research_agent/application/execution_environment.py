@@ -14,7 +14,7 @@ def check_configuration(params):
         if evidence_fields & metadata.keys():
             raise ValueError("execution_binding_required")
         return
-    settings = load_job_config(os.environ["RESEARCH_AGENT_JOB_CONFIG"])
+    settings = load_job_config(os.environ["CORAGENT_JOB_CONFIG"])
     expected = resolve_binding(settings, selected["environment"], selected["backend"], runtime=selected["runtime"])
     if selected != expected or metadata.get("configuration_sha256") != binding_digest(expected):
         raise ValueError("execution_binding_changed: prepare again with the current configuration")

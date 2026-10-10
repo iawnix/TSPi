@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Canonical ResearchAgent command entry point for hosts and interactive clients."""
+"""Canonical CoRAgent command entry point for hosts and interactive clients."""
 
 from __future__ import annotations
 

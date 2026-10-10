@@ -1,16 +1,16 @@
 import { createHash } from "node:crypto";
 import { ConversationBusy, defineDoc, defineDocFamily } from "@earendil-works/pi-durable";
 
-export const INPUT_ADMISSION_SERVICE_ID = "research-agent.input-admission";
+export const INPUT_ADMISSION_SERVICE_ID = "coragent.input-admission";
 
 // Immutable provenance complements Pi's submission. No input lifecycle state
 // is stored here; acceptance, placement and completion remain Pi-owned.
 export const InputProvenance = defineDocFamily({
-  kind: "research-agent.input-provenance", version: 1, family: true,
+  kind: "coragent.input-provenance", version: 1, family: true,
   scope: "conversation", history: "latest", fork: "initial", initial: () => ({}),
 });
 // An index into Pi-owned records, never a copy of their status.
-export const InputHead = defineDoc({ kind: "research-agent.input-head", version: 1,
+export const InputHead = defineDoc({ kind: "coragent.input-head", version: 1,
   scope: "conversation", history: "latest", fork: "initial", initial: () => ({}) });
 
 const queueModes = { steeringMode: "one-at-a-time", followUpMode: "one-at-a-time" };

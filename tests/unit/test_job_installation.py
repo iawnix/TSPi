@@ -30,7 +30,7 @@ def test_fresh_plan_generates_default_bindings_and_no_files(tmp_path):
     assert structure['python']['prefix'].startswith(str(tmp_path/'software/structure-'))
     assert plan['targets'] == ['local']
     assert plan['configuration_source'] == 'generated'
-    assert structure['environment']['RESEARCH_AGENT_NAME_RESOLVER_CONFIG'] == str(tmp_path/'install/etc/name-resolver.toml')
+    assert structure['environment']['CORAGENT_NAME_RESOLVER_CONFIG'] == str(tmp_path/'install/etc/name-resolver.toml')
     assert not (tmp_path/'install').exists()
     assert not (tmp_path/'software').exists()
     assert jobs.plan(options(tmp_path, '--without-default-job-environment'))['environments'] == []
@@ -48,7 +48,7 @@ def test_profile_completes_partial_native_binding_and_rejects_unknown_target(tmp
 
 
 def test_explicit_repeatable_options_override_environment_defaults(tmp_path, monkeypatch):
-    monkeypatch.setenv('RESEARCH_AGENT_JOB_PROFILE','local:render,local:pyscf')
+    monkeypatch.setenv('CORAGENT_JOB_PROFILE','local:render,local:pyscf')
     args = wizard.parse_args(['--job-profile','local:structure','--job-profile','local:wrapper'])
     assert args.job_profile == ['local:structure','local:wrapper']
     assert wizard.parse_args([]).job_profile == ['local:render','local:pyscf']
@@ -101,7 +101,7 @@ def test_bootstrap_validation_works_without_site_packages(tmp_path):
 
 def test_candidate_and_published_config_work_inside_real_jobs(tmp_path):
     from scripts._job_acceptance import accept
-    config = tomllib.loads(Path(os.environ['RESEARCH_AGENT_JOB_CONFIG']).read_text())
+    config = tomllib.loads(Path(os.environ['CORAGENT_JOB_CONFIG']).read_text())
     local = config['environments']['local']
     local['backends'] = {'structure': local['backends']['structure']}
     source = tmp_path/'job.toml'
@@ -113,7 +113,7 @@ def test_candidate_and_published_config_work_inside_real_jobs(tmp_path):
     resolver = stage/'resolver.toml'
     resolver.write_text(plan['resolver'])
     candidate = copy.deepcopy(plan['settings'])
-    candidate['environments']['local']['backends']['structure']['environment']['RESEARCH_AGENT_NAME_RESOLVER_CONFIG'] = str(resolver)
+    candidate['environments']['local']['backends']['structure']['environment']['CORAGENT_NAME_RESOLVER_CONFIG'] = str(resolver)
     staged = stage/'job.toml'
     staged.write_bytes(jobs.toml_bytes(candidate))
     report = accept(staged, ROOT, stage/'jobs', ['local'], 20)
@@ -136,7 +136,7 @@ def test_ssh_payload_contains_only_selected_target_resources(tmp_path, monkeypat
         assert set(payload['bundle']) == {'scripts/_job_target.py','scripts/install_job_environment.py',
             'backend/src/research_agent/jobs/config_contract.py','backend/src/research_agent/jobs/environment_probe.py'}
         assert 'models.json' not in kwargs['input'] and 'auth.json' not in kwargs['input']
-        return subprocess.CompletedProcess(command, 0, 'RESEARCH_AGENT_PROVISION={"status":"environment_verified"}\n', '')
+        return subprocess.CompletedProcess(command, 0, 'CORAGENT_PROVISION={"status":"environment_verified"}\n', '')
     monkeypatch.setattr(subprocess, 'run', run)
     assert jobs.invoke_target(target, request, ROOT)['status'] == 'environment_verified'
 
@@ -146,11 +146,11 @@ def test_remote_acceptance_uses_scheduler_collects_results_and_removes_test_jobs
     from scripts._job_acceptance import accept
     from research_agent.jobs import environment
     platform, calls, remote_root = cluster
-    local = tomllib.loads(Path(os.environ['RESEARCH_AGENT_JOB_CONFIG']).read_text())['environments']['local']
+    local = tomllib.loads(Path(os.environ['CORAGENT_JOB_CONFIG']).read_text())['environments']['local']
     resolver = tmp_path/'remote-resolver.toml'
     resolver.write_text('default_resolver="auto"\n')
     structure = {**local['backends']['structure'],
-                 'environment': {'RESEARCH_AGENT_NAME_RESOLVER_CONFIG': str(resolver)}}
+                 'environment': {'CORAGENT_NAME_RESOLVER_CONFIG': str(resolver)}}
     target = {'kind':'remote', **platform.config, 'scheduler':scheduler,
               'submission':{'queue':'batch','resources':{'cpus':1,'walltime':'00:00:20'}},
               'backends':{'structure':structure}}
@@ -207,13 +207,13 @@ def test_target_provisioning_reuses_verified_environment_and_recovers_interrupte
         assert kwargs['offline']
         calls.append(prefix.exists())
         prefix.mkdir(exist_ok=True)
-        (prefix/'research-agent-environment.json').write_text('{}')
+        (prefix/'coragent-environment.json').write_text('{}')
         return {'lock_sha256':digest,'inventory_sha256':'fixture'}
     monkeypatch.setattr(target, 'install', install)
     assert target.provision(request)['status'] == 'environment_verified'
     assert target.provision(request)['status'] == 'environment_verified'
     assert calls == [False,True]
-    (prefix/'research-agent-environment.json').unlink()
+    (prefix/'coragent-environment.json').unlink()
     (prefix/'partial').write_text('interrupted')
     (store/('.'+prefix.name+'.pending')).write_text(json.dumps({'installation_id':'fixture'},sort_keys=True)+'\n')
     target.provision(request)

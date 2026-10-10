@@ -71,7 +71,7 @@ def capture_source_tree(root: Path, destination: Path, *, allow_dirty: bool) -> 
 def inspect_source(root: Path) -> tuple[str, bool, list[bytes], str]:
     top_level = run_git(root, ["rev-parse", "--show-toplevel"], "locate source repository")
     if Path(os.fsdecode(top_level).strip()).resolve() != root:
-        raise SourceCaptureError("source root must be the top level of the ResearchAgent Git repository")
+        raise SourceCaptureError("source root must be the top level of the CoRAgent Git repository")
     revision = run_git(root, ["rev-parse", "--verify", "HEAD"], "read source commit")
     commit = revision.decode("ascii", errors="strict").strip()
     if len(commit) not in GIT_OBJECT_ID_LENGTHS or any(character not in "0123456789abcdef" for character in commit):
@@ -102,7 +102,7 @@ def inspect_source(root: Path) -> tuple[str, bool, list[bytes], str]:
 
 def source_tree_sha256(root: Path, relative_names: Iterable[bytes]) -> str:
     digest = hashlib.sha256()
-    digest.update(b"research-agent-release-source/1\0")
+    digest.update(b"coragent-release-source/1\0")
     for raw_name in relative_names:
         relative = safe_relative(os.fsdecode(raw_name))
         source = root.joinpath(*relative.parts)

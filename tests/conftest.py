@@ -39,7 +39,7 @@ def restore_tmp_path_permissions(tmp_path: Path, request):
 
 @pytest.fixture(autouse=True)
 def isolate_installation_environment_paths(tmp_path, monkeypatch):
-    monkeypatch.setenv('RESEARCH_AGENT_HOST_ENV_ROOT', str(tmp_path / 'host-envs'))
+    monkeypatch.setenv('CORAGENT_HOST_ENV_ROOT', str(tmp_path / 'host-envs'))
     monkeypatch.setenv('XDG_RUNTIME_DIR', str(tmp_path / 'xdg'))
     previous = dict(os.environ)
     yield

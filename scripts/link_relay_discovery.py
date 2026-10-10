@@ -1,6 +1,6 @@
-"""Discover an already-installed ResearchAgent Link Relay.
+"""Discover an already-installed CoRAgent Link Relay.
 
-The Relay is intentionally installed separately from a ResearchAgent Host.  This small
+The Relay is intentionally installed separately from a CoRAgent Host.  This small
 module only reads its installation and service metadata so the Host installer
 can reuse a local Relay instead of asking for a URL that is already available
 on the machine.
@@ -15,10 +15,10 @@ from typing import Any
 
 
 DEFAULT_RELAY_ROOTS = (
-    Path("/home/iaw/soft/research-agent-link"),
-    Path("/home/soft/research-agent-link"),
-    Path("/opt/research-agent-relay"),
-    Path.home() / ".local/share/research-agent-relay",
+    Path("/home/iaw/soft/coragent-link"),
+    Path("/home/soft/coragent-link"),
+    Path("/opt/coragent-relay"),
+    Path.home() / ".local/share/coragent-relay",
 )
 
 
@@ -54,9 +54,9 @@ def _inspect_root(root: Path) -> dict[str, str] | None:
         return None
 
     unit_paths = (
-        root / "research-agent-relay.service",
-        Path.home() / ".config/systemd/user/research-agent-relay.service",
-        Path("/etc/systemd/system/research-agent-relay.service"),
+        root / "coragent-relay.service",
+        Path.home() / ".config/systemd/user/coragent-relay.service",
+        Path("/etc/systemd/system/coragent-relay.service"),
     )
     unit_text = ""
     for unit in unit_paths:
@@ -103,10 +103,10 @@ def _unit_argument(text: str, name: str) -> str | None:
 
 def _default_state_paths(root: Path) -> list[Path]:
     return [
-        root.parent / "research-agent-link-state" / "relay.db",
+        root.parent / "coragent-link-state" / "relay.db",
         root / "state" / "relay.db",
-        Path("/var/lib/research-agent-relay/relay.db"),
-        Path.home() / ".local/state/research-agent-relay/relay.db",
+        Path("/var/lib/coragent-relay/relay.db"),
+        Path.home() / ".local/state/coragent-relay/relay.db",
     ]
 
 

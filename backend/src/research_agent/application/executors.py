@@ -79,7 +79,7 @@ def _relative(value):
     path = Path(value)
     if not value or path.is_absolute() or ".." in path.parts or path.as_posix() != value or value == ".":
         raise ValueError("executor_destination_invalid: use a relative Job path")
-    if path.parts[0] in {"spec.json", "receipt.json", "status.json", "input_manifest.json", "logs", ".research-agent"}:
+    if path.parts[0] in {"spec.json", "receipt.json", "status.json", "input_manifest.json", "logs", ".coragent"}:
         raise ValueError("executor_destination_reserved")
     return path
 

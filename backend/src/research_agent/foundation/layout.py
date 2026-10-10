@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 
-SCHEMA = 'research-agent-installation/2'
+SCHEMA = 'coragent-installation/2'
 
 class AppLayout:
     def __init__(self, root):
@@ -45,7 +45,7 @@ class AppLayout:
     @property
     def guards(self):
         service = self.read_config().get('service') or {}
-        base = service.get('runtime_dir') or str(Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')) / 'ra')
+        base = service.get('runtime_dir') or str(Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')) / 'coragent')
         return Path(base) / self.identity / 'guards'
     @property
     def identity(self): return hashlib.sha256(os.fsencode(self.root)).hexdigest()[:16]
@@ -67,7 +67,7 @@ class AppLayout:
     @property
     def env_root(self):
         configured = self.read_config().get('env_root')
-        value = Path(configured or os.environ.get('RESEARCH_AGENT_HOST_ENV_ROOT', str(Path.home() / 'soft/research-agent/host-envs' / self.identity))).expanduser()
+        value = Path(configured or os.environ.get('CORAGENT_HOST_ENV_ROOT', str(Path.home() / 'soft/coragent/host-envs' / self.identity))).expanduser()
         if not value.is_absolute() or value.is_symlink():
             raise ValueError('Host environment store must be an absolute physical path')
         resolved = value.resolve()
