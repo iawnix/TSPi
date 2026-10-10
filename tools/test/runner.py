@@ -186,6 +186,16 @@ def inspect_case_results(run: Path, result: dict) -> None:
     source = run / 'source'
     paths = {str(Path(path).relative_to(source)): Path(path) for path in suite_paths(result['suite'], source)}
     failed_files = set()
+    failure_locations = set()
+    def locate(text):
+        import re
+        for relative, absolute in paths.items():
+            pattern = r'(?<![\w/.-])(?:file://)?(?:' + re.escape(str(absolute)) + '|' + re.escape(relative) + r'):([1-9]\d*):'
+            lines = len(absolute.read_text().splitlines())
+            for match in re.finditer(pattern, text):
+                line = int(match[1])
+                if line <= lines:
+                    failure_locations.add(f'{relative}:{line}')
     path=run/'report'/f'{result["suite"]}.xml'
     if path.is_file():
         cases=list(ET.parse(path).iter('testcase'))
@@ -197,6 +207,8 @@ def inspect_case_results(run: Path, result: dict) -> None:
         for case in cases:
             if case.find('failure') is None and case.find('error') is None:
                 continue
+            for failure in [*case.findall('failure'), *case.findall('error')]:
+                locate(failure.text or '')
             classname = case.get('classname', '')
             for relative, absolute in paths.items():
                 module = relative.removesuffix('.py').replace('/', '.')
@@ -210,6 +222,7 @@ def inspect_case_results(run: Path, result: dict) -> None:
             match=re.search(r'^# '+key+r' (\d+)$',text,re.M)
             if match: result[key]=int(match.group(1))
         for block in re.split(r'^not ok \d+ - ', text, flags=re.M)[1:]:
+            locate(block)
             location = re.search(r"^  location: ['\"]?(.+?):\d+:\d+['\"]?$", block, re.M)
             if location:
                 for relative, absolute in paths.items():
@@ -218,6 +231,8 @@ def inspect_case_results(run: Path, result: dict) -> None:
         if result.get('skipped',0) and result['status']=='passed': result['status']='incomplete'
     if failed_files:
         result['failed_files'] = sorted(failed_files)
+    if failure_locations:
+        result['failure_locations'] = sorted(failure_locations)
 
 
 def execute(args, root: Path, replay: Path | None = None) -> int:
@@ -283,7 +298,7 @@ def execute(args, root: Path, replay: Path | None = None) -> int:
             inspect_case_results(run,result)
             record['results'].append(result)
             write_json(run/'run.json',record)
-            public_keys = ('suite','status','seconds','cases','tests','pass','fail','failures','errors','skipped','failed_files')
+            public_keys = ('suite','status','seconds','cases','tests','pass','fail','failures','errors','skipped','failed_files','failure_locations')
             print(json.dumps({key:result[key] for key in public_keys if key in result}),flush=True)
             if supervisor.cancelled: break
     finally:
