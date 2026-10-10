@@ -5,6 +5,10 @@ This file records user-visible changes. Current architecture is documented in
 
 ## Unreleased
 
+- Add authenticated Host `files/list`, `files/stat`, `files/read` and `files/pin`
+  capabilities for CoRHub 0.20.0+64: bounded material browsing and version-checked
+  file snapshots over the existing Link, without waking Pi or exposing state files.
+
 - **0.19.0 breaking rename:** the product and repository are CoRAgent / `coragent`.
   Commands, package identities, services, installation metadata and environment
   variables use `coragent` / `CORAGENT_`; no legacy aliases or fallback readers.

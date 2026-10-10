@@ -17,6 +17,9 @@ def dispatch(method, payload):
     if not isinstance(workspace_root, str) or not workspace_root:
         raise ValueError("workspace_root is required")
     root = Path(workspace_root).expanduser().resolve()
+    if method == "workspace_files":
+        from research_agent.application.workspace_files import dispatch as dispatch_files
+        return dispatch_files(workspace_root, payload)
     if method == "workspace_catalog":
         from research_agent.research.workspace_catalog import dispatch as dispatch_catalog
         return dispatch_catalog(workspace_root, payload)
@@ -87,7 +90,7 @@ for line in sys.stdin:
         method = request.get("method")
         if not isinstance(request_id, str) or not request_id:
             raise ValueError("bridge request id is required")
-        if method not in {"workspace_catalog", "workspace_initialize", "workspace_attach", "workspace_admit", "execute_command", "transaction_get", "transaction_recover", "transaction_begin", "transaction_prepare", "transaction_commit", "transaction_abort", "transaction_commit_files"}:
+        if method not in {"workspace_files", "workspace_catalog", "workspace_initialize", "workspace_attach", "workspace_admit", "execute_command", "transaction_get", "transaction_recover", "transaction_begin", "transaction_prepare", "transaction_commit", "transaction_abort", "transaction_commit_files"}:
             raise ValueError("unsupported kernel bridge method: " + str(method))
         result = dispatch(method, _object(request.get("payload", {}), "bridge payload"))
         print(json.dumps({"id": request_id, "ok": True, "result": result}, ensure_ascii=False, separators=(",", ":")), flush=True)
