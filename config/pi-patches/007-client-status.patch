@@ -11,14 +11,20 @@
 +	matchesKey,
  	type Component,
  	Container,
-@@ -43,5 +44,5 @@
+@@ -21,4 +22,5 @@
+ 	Text,
+ 	type TUI,
++	VStack,
+ } from "@earendil-works/pi-tui";
+ import type { ClientCommand } from "../cli/experimental/commands/client.ts";
+@@ -43,5 +45,5 @@
  } from "./services/connection.ts";
  import { PresentationPlugins } from "./services/plugins.ts";
 -import { PresentationUI } from "./services/presentation-ui.ts";
-+import { PresentationUI, type CommandPresentation, type CommandFeedbackKind } from "./services/presentation-ui.ts";
++import { PresentationUI, type CommandPresentation, type CommandFeedbackKind, type PresentationDocument, type PresentationSurface } from "./services/presentation-ui.ts";
  import { SessionDirectory, SessionManagement, type SessionSummary } from "./services/sessions.ts";
  import { SlashCommands } from "./services/slash-commands.ts";
-@@ -78,4 +79,10 @@
+@@ -78,4 +80,10 @@
  	readonly presentationPlugins: JsonValue;
  }
 +
@@ -29,14 +35,14 @@
 +const COMMAND_RUN = createContextKey<CommandRun>("pi.command-presentation");
  
  interface PendingSelection {
-@@ -104,5 +111,22 @@
+@@ -104,6 +112,25 @@
  	readonly #statusContainer = new Container();
  	readonly #editorContainer = new Container();
 -	readonly #footerComponent = new Text("", 1, 0);
 +	readonly #defaultFooter = new Text("", 1, 0);
 +	#customFooter: Component | undefined;
 +	#customActivity: Component | undefined;
-+	#customDocument: Component | undefined;
++	#customDocument: PresentationDocument | undefined;
 +	#commandPresentation: CommandPresentation | undefined;
 +	#commandRun: CommandRun | undefined;
 +	#commandFeedback: Component | undefined;
@@ -52,26 +58,96 @@
 +		invalidate: () => (this.#customFooter ?? this.#defaultFooter).invalidate(),
 +	};
  	readonly #layoutRoot: Component;
++	readonly #chatViewport: ReturnType<typeof createChatViewport>;
++	#savedTranscript: { top: number; following: boolean } | undefined;
  	readonly #sharedFacets: LoadedFacets;
-@@ -115,5 +139,5 @@
+ 	readonly #keybindings = KeybindingsManager.create();
+@@ -115,5 +142,5 @@
  	#controller: AgentController | undefined;
  	readonly #chatInput: CustomEditor;
 -	#selectList: SelectList | undefined;
-+	#selectList: Component | undefined;
++	#selectList: PresentationSurface | undefined;
  	#selection: PendingSelection | undefined;
  	#screen: "select" | "chat" = "chat";
-@@ -147,4 +171,9 @@
- 			this.#chatInput.setText("");
+@@ -148,8 +175,16 @@
  			void this.#queueFollowUp(text);
-+		});
+ 		});
 +		// Mouse clicks may focus a nested editor. Keep its delegating container
 +		// in charge of keyboard routing when a command replaces that editor.
 +		Object.assign(this.#editorContainer, {
 +			handleInput: (data: string) => this.handleInput(data),
- 		});
++		});
  		this.#editorContainer.addChild(this.#chatInput);
-@@ -204,4 +233,9 @@
+-		this.#layoutRoot = createChatViewport({
++		this.#chatViewport = createChatViewport({
+ 			document: this.#documentContainer,
+-			pendingMessages: this.#pendingMessagesContainer,
++			pendingMessages: {
++				render: (width) => this.#customDocument || this.#selection ? [] : this.#pendingMessagesContainer.render(width),
++				invalidate: () => this.#pendingMessagesContainer.invalidate(),
++			},
+ 			status: this.#statusContainer,
+ 			editor: this.#editorContainer,
+@@ -157,5 +192,15 @@
+ 			scrollbarTrackStyle: (text) => theme.fg("scrollbarTrack", text),
+ 			scrollbarThumbStyle: (text) => theme.fg("scrollbarThumb", text),
+-		}).root;
++		});
++		const reader = new VStack([
++			{ component: this.#editorContainer, basis: 0, grow: 1, shrink: 1, minSize: 1 },
++			{ component: this.#footerComponent, shrink: 0 },
++		]);
++		this.#layoutRoot = new VStack([
++			{ component: this.#chatViewport.root, basis: 0, grow: 1,
++				visible: ({ width, height }) => !this.#sizeCommandSurface(width, height) },
++			{ component: reader, basis: 0, grow: 1,
++				visible: ({ width, height }) => this.#sizeCommandSurface(width, height) },
++		]);
+ 		this.#rebuild();
+ 	}
+@@ -194,7 +239,10 @@
  
+ 	render(width: number): string[] {
++		if (this.#sizeCommandSurface(width, this.#ui.terminal.rows)) {
++			return [...this.#editorContainer.render(width), ...this.#footerComponent.render(width)];
++		}
+ 		return [
+ 			...this.#documentContainer.render(width),
+-			...this.#pendingMessagesContainer.render(width),
++			...(this.#customDocument || this.#selection ? [] : this.#pendingMessagesContainer.render(width)),
+ 			...this.#statusContainer.render(width),
+ 			...this.#editorContainer.render(width),
+@@ -203,5 +251,38 @@
+ 	}
+ 
++	#sizeCommandSurface(width: number, height: number): boolean {
++		// Stack measurement may use an unbounded height; actual frames supply terminal dimensions.
++		if (height === Number.MAX_SAFE_INTEGER) height = this.#ui.terminal.rows;
++		const available = Math.max(4, height - this.#footerComponent.render(width).length);
++		const panelHeight = Math.max(4, Math.min(15, Math.floor(available * 0.65)));
++		const document = this.#customDocument;
++		const page = document?.mode === "page" || (document?.mode === "auto"
++			&& (document.preferredHeight?.(width) ?? 0) > panelHeight);
++		document?.setViewport?.(page ? available : panelHeight, page);
++		this.#selectList?.setViewport?.(panelHeight);
++		if (!document && !this.#selection && this.#savedTranscript) {
++			const saved = this.#savedTranscript;
++			this.#savedTranscript = undefined;
++			const transcript = this.#chatViewport.transcript;
++			const dockHeight = this.#pendingMessagesContainer.render(width).length
++				+ this.#statusContainer.render(width).length + this.#editorContainer.render(width).length;
++			transcript.updateLayout(this.#documentContainer.render(width).length, Math.max(1, available - dockHeight), this.#requestRender);
++			if (saved.following) transcript.scrollToEnd();
++			else transcript.scrollTo(saved.top, { disableFollow: true });
++		}
++		return page;
++	}
++
++	#saveTranscriptPosition(): void {
++		const transcript = this.#chatViewport.transcript;
++		this.#savedTranscript ??= { top: transcript.scrollTop, following: transcript.isFollowingEnd };
++	}
++
  	handleInput(data: string): void {
 +		if (this.#customDocument) {
 +			this.#customDocument.handleInput?.(data);
@@ -80,7 +156,7 @@
 +		}
  		if (this.#busy) {
  			if (
-@@ -218,5 +252,6 @@
+@@ -218,5 +299,6 @@
  			return;
  		}
 -		this.#selectList?.handleInput(data);
@@ -88,7 +164,7 @@
 +		this.#requestRender();
  	}
  
-@@ -277,13 +312,64 @@
+@@ -277,13 +359,68 @@
  			setup: (env) => {
  				env.provide(PresentationUI, {
 -					select: (title, items, selectedValue) =>
@@ -127,6 +203,7 @@
 +						this.#commandFeedback = undefined;
 +						if (this.#customDocument || this.#selection)
 +							throw new Error("A document or selector is already open");
++						this.#saveTranscriptPosition();
 +						return new Promise<void>((resolve) => {
 +							const close = () => {
 +								if (run) run.dismissed = true;
@@ -138,6 +215,9 @@
 +							};
 +							this.#resolveDocument = close;
 +							this.#customDocument = {
++								mode: component.mode,
++								preferredHeight: (width) => component.preferredHeight?.(width) ?? 0,
++								setViewport: (height, fullPage) => component.setViewport?.(height, fullPage),
 +								render: (width) => component.render(width),
 +								invalidate: () => component.invalidate(),
 +								handleInput: (data) => {
@@ -161,23 +241,33 @@
 +						}
  					},
  				});
-@@ -346,4 +432,5 @@
+@@ -346,4 +483,5 @@
  	async #close(): Promise<void> {
  		this.#closed = true;
 +		this.#dismissCommand();
  		this.#completeSelection(undefined);
  		const errors: unknown[] = [];
-@@ -375,5 +462,5 @@
+@@ -375,27 +513,31 @@
  	#rebuild(): void {
  		this.#sessionHeading.setText(
 -			this.#sessionId === undefined || this.#selectedServerId === undefined
 +			this.#customFooter !== undefined || this.#sessionId === undefined || this.#selectedServerId === undefined
  				? ""
  				: theme.fg("dim", `Server: ${this.#selectedServerId}\nSession: ${this.#sessionId}`),
-@@ -384,18 +471,19 @@
- 		}
- 		if (this.#chatView !== undefined) this.#statusContainer.addChild(this.#chatView.status);
+ 		);
+ 		this.#statusContainer.clear();
+-		if (this.#status.length > 0) {
+-			this.#statusContainer.addChild(new Text(theme.fg("dim", this.#status), 1, 0));
+-		}
+-		if (this.#chatView !== undefined) this.#statusContainer.addChild(this.#chatView.status);
 -		this.#footerComponent.setText(theme.fg("dim", this.#footer()));
++		// A command owns the key hints while open; background updates must not reintroduce Esc to abort.
++		if (!this.#customDocument && !this.#selection) {
++			if (this.#status.length > 0) {
++				this.#statusContainer.addChild(new Text(theme.fg("dim", this.#status), 1, 0));
++			}
++			if (this.#chatView !== undefined) this.#statusContainer.addChild(this.#chatView.status);
++		}
 +		this.#defaultFooter.setText(theme.fg("dim", this.#footer()));
  		this.#editorContainer.clear();
 -		if (this.#screen === "select" && this.#selection !== undefined) {
@@ -206,7 +296,7 @@
 +			if (this.#selectList) this.#editorContainer.addChild(this.#selectList);
  		} else {
  			this.#selectList = undefined;
-@@ -407,11 +495,90 @@
+@@ -407,11 +549,91 @@
  	}
  
 -	#select(title: string, items: readonly SelectItem[], selectedValue?: string): Promise<string | undefined> {
@@ -219,6 +309,7 @@
 +		signal?: AbortSignal,
 +	): Promise<string | undefined> {
 +		if (this.#selection || this.#customDocument) throw new Error("A command panel is already active");
++		this.#saveTranscriptPosition();
  		return new Promise((resolve) => {
 -			this.#selection = { title, items, ...(selectedValue === undefined ? {} : { selectedValue }), resolve };
 +			const cancel = () => {
@@ -300,25 +391,25 @@
 +		if (!this.#closed) this.#rebuild();
  	}
  
-@@ -464,4 +631,5 @@
+@@ -464,4 +686,5 @@
  		this.#busy = true;
  		this.#status = state.status === "connecting" ? "Reconnecting to Radius…" : "Radius disconnected; retrying…";
 +		this.#dismissCommand();
  		this.#queueRecovery(() => this.#closeLane());
  		this.#rebuild();
-@@ -531,4 +699,5 @@
+@@ -531,4 +754,5 @@
  
  	async #closeLane(): Promise<void> {
 +		this.#dismissCommand();
  		this.#laneUnsubscribe?.();
  		this.#laneUnsubscribe = undefined;
-@@ -547,4 +716,5 @@
+@@ -547,4 +771,5 @@
  			const name = prompt.slice(1, separator === -1 ? undefined : separator);
  			const args = separator === -1 ? "" : prompt.slice(separator + 1).trim();
 +			this.#chatInput.setText("");
  			await this.#executeSlashCommand(name, args);
  			return;
-@@ -560,26 +730,51 @@
+@@ -560,26 +785,51 @@
  
  	async #executeSlashCommand(name: string, args: string): Promise<void> {
 +		this.#dismissCommand();
@@ -379,13 +470,13 @@
 +		if (this.#commandFeedbackKind !== "running") this.#dismissCommand();
  		const controller = this.#selectedController();
  		if (controller === undefined) throw new Error("No Session AgentController service is available");
-@@ -594,4 +789,5 @@
+@@ -594,4 +844,5 @@
  
  	async #queueFollowUp(text: string): Promise<void> {
 +		if (this.#commandFeedbackKind !== "running") this.#dismissCommand();
  		const controller = this.#selectedController();
  		if (controller === undefined) return;
-@@ -617,4 +813,5 @@
+@@ -617,4 +868,5 @@
  
  	#interrupt(): void {
 +		if (this.#commandFeedback) this.#dismissCommand();
@@ -397,12 +488,22 @@
 +import type { Component } from "@earendil-works/pi-tui";
  import { type Context, defineService } from "@earendil-works/chord";
  
-@@ -5,4 +6,18 @@
+@@ -5,4 +6,28 @@
  	readonly label: string;
  	readonly description?: string;
 +}
 +
 +export type CommandFeedbackKind = "running" | "success" | "error" | "info";
++
++/** Optional sizing for an interactive command surface. */
++export interface PresentationSurface extends Component {
++	setViewport?(height: number, fullPage?: boolean): void;
++}
++
++export interface PresentationDocument extends PresentationSurface {
++	readonly mode?: "panel" | "page" | "auto";
++	preferredHeight?(width: number): number;
++}
 +
 +export interface CommandPresentation {
 +	selection(options: {
@@ -412,18 +513,18 @@
 +		selectedValue: string | undefined;
 +		onSelect(value: string): void;
 +		onCancel(): void;
-+	}): Component;
++	}): PresentationSurface;
 +	feedback(options: { command: string; message: string; kind: CommandFeedbackKind }): Component;
  }
  
-@@ -15,5 +30,9 @@
+@@ -15,5 +40,9 @@
  		context: Context,
  	): Promise<string | undefined>;
 -	showStatus(message: string, context: Context): void;
 +	setCommandPresentation(presentation: CommandPresentation | undefined): void;
 +	setFooter(component: Component | undefined): void;
 +	setActivity(component: Component | undefined): void;
-+	showDocument(component: Component, context: Context): Promise<void>;
++	showDocument(component: PresentationDocument, context: Context): Promise<void>;
 +	showStatus(message: string, context: Context, kind?: CommandFeedbackKind): void;
  }
  

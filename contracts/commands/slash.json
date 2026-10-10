@@ -28,9 +28,15 @@
       "usage": "/quit",
       "completions": []
     },
+    "monitor": {
+      "name": "monitor",
+      "description": "Inspect this session's jobs and monitor deliveries.",
+      "usage": "/monitor",
+      "completions": []
+    },
     "usage": {
       "name": "usage",
-      "description": "Inspect session token usage and monitor health.",
+      "description": "Inspect session token usage.",
       "usage": "/usage",
       "completions": []
     }

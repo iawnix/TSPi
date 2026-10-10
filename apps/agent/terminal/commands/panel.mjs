@@ -19,10 +19,12 @@ export function createCommandPresentation(options) {
     selection({ command, title, items, selectedValue, onSelect, onCancel }) {
       let index = Math.max(0, items.findIndex(item => item.value === selectedValue));
       let size = 1;
+      let viewport;
       return {
+        setViewport(height) { viewport = height; },
         invalidate() {},
         render(width) {
-          size = Math.max(1, Math.floor((rows() - 10) / 2));
+          size = Math.max(1, Math.min(6, Math.floor(((viewport ?? Math.min(15, rows() - 5)) - 3) / 2)));
           const start = Math.max(0, Math.min(index - Math.floor(size / 2), items.length - size));
           const body = items.slice(start, start + size).flatMap((item, i) => {
             const focused = start + i === index;

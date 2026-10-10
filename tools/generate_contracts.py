@@ -142,7 +142,7 @@ export function createCommandService(transport: {
 export function validateCommandInvocation(command: string, params?: Record<string, unknown>): CommandInvocation;
 export function commandArguments(command: string, params?: Record<string, unknown>): string[];
 export function parseSlashCommand(name: string, input?: string): CommandInvocation | {
-  readonly command: "client.sys-prompt" | "client.resume" | "client.quit" | "client.usage";
+  readonly command: "client.sys-prompt" | "client.resume" | "client.quit" | "client.usage" | "client.monitor";
   readonly params: Readonly<Record<string, unknown>>;
 };
 export function slashCompletions(name: string, prefix?: string): Array<{ value: string; label: string }> | null;

@@ -23,8 +23,9 @@ export function activityStatus({ monitor, monitorError, monitorErrorSince, telem
   const rows = (monitor?.monitors || []).filter(row => row.session_id === sessionId);
   const pending = (monitor?.pending_deliveries || []).filter(row => row.session_id === sessionId);
   const active = rows.filter(row => ACTIVE_JOB_STATES.has(row.last_state));
-  const running = active.filter(row => row.last_state === 'running').length;
-  const queued = active.length - running;
+  const countsKnown = Array.isArray(monitor?.monitors);
+  const running = countsKnown ? active.filter(row => row.last_state === 'running').length : null;
+  const queued = countsKnown ? active.length - running : null;
   const relevant = active.length > 0 || pending.length > 0 || (telemetry?.research?.running_jobs?.length || 0) > 0;
   const health = monitor?.host_worker_health;
   const supervisor = monitor?.supervisor_health;
@@ -33,7 +34,7 @@ export function activityStatus({ monitor, monitorError, monitorErrorSince, telem
   let symbol = '✓', color = 'muted', reason = 'Healthy';
   if (pending.some(row => row.error) || health?.last_error || (supervisor?.state && supervisor.state !== 'running')) {
     symbol = '×'; color = 'error';
-    reason = pending.find(row => row.error)?.error || health?.last_error || `Shared monitor supervisor: ${supervisor.state}`;
+    reason = pending.find(row => row.error)?.error || (health?.last_error ? `Shared monitor worker: ${health.last_error}` : `Shared monitor supervisor: ${supervisor.state}`);
   } else if (monitorError && Number.isFinite(monitorErrorSince) && now - monitorErrorSince >= 30_000) {
     symbol = '×'; color = 'error'; reason = 'Monitor unavailable for at least 30 seconds';
   } else if (health && (!Number.isFinite(lastPoll) || now - lastPoll > staleAfter)) {
@@ -46,7 +47,7 @@ export function activityStatus({ monitor, monitorError, monitorErrorSince, telem
   } else if (monitorError || !health || !supervisor?.state) {
     symbol = '…'; reason = monitorError ? 'Reconnecting to monitor' : 'Checking monitor health';
   }
-  return { text: relevant ? `Monitor ${symbol}${pending.length ? ` · ↑${pending.length}` : ''}` : '',
+  return { text: relevant ? `Monitor ${symbol} · ⚙${running ?? '—'}${pending.length ? ` · ↑${pending.length}` : ''}` : '',
     symbol, color, reason, running, queued, pending: pending.length };
 }
 
@@ -90,7 +91,7 @@ export function createStatusPresentation({ session, theme, truncateToWidth, visi
     const state = activityStatus({telemetry,monitor,monitorError,monitorErrorSince,sessionId:session.sessionId});
     if (!state.text) return [];
     const text = monochrome ? state.text
-      : `${theme.fg('muted','Monitor ')}${theme.fg(state.color,state.symbol)}${theme.fg('muted',state.pending ? ` · ↑${state.pending}` : '')}`;
+      : `${theme.fg('muted','Monitor ')}${theme.fg(state.color,state.symbol)}${theme.fg('muted',` · ⚙${state.running ?? '—'}${state.pending ? ` · ↑${state.pending}` : ''}`)}`;
     return width > 0 ? [truncateToWidth(` ${text}`,width)] : [];
   } };
   return { footer, activity,
@@ -104,24 +105,26 @@ export function createStatusPresentation({ session, theme, truncateToWidth, visi
         monitorError = value.monitorError;
       }
     },
-    details() {
+    usageDetails() {
       const totals = usageTotals(view?.docs?.['pi.usage']);
+      const count = value => Number.isFinite(value) ? value.toLocaleString('en-US') : '—';
+      const current = contextMatches(view, telemetry);
+      const rows = Object.entries(view?.docs?.['pi.usage']?.models || {})
+        .map(([model, usage]) => `${model}: ${count(usage.totalTokens)}`);
+      return [`Total tokens: ${count(totals?.totalTokens)}`,
+        `Input: ${count(totals?.input)} · Output: ${count(totals?.output)}`,
+        `Cache read: ${count(totals?.cacheRead)} · Cache write: ${count(totals?.cacheWrite)}`,
+        `Reasoning: ${count(totals?.reasoning)}`,
+        `Context: ${count(current ? telemetry.contextTokens : null)} / ${count(current ? telemetry.contextWindow : null)}`,
+        ...(rows.length ? ['', 'By model', ...rows] : [])].join('\n');
+    },
+    monitorDetails() {
       const state = activityStatus({telemetry,monitor,monitorError,monitorErrorSince,sessionId:session.sessionId});
-      const rows = Object.entries(view?.docs?.['pi.usage']?.models || {}).map(([model,usage]) => `${model}: ${formatTokens(usage.totalTokens)} tokens`);
-      return ['Session usage', `Workspace: ${session.workspaceId}`, `Session: ${session.sessionId}`, '',
-        ...Object.entries({input:'Input tokens',output:'Output tokens',cacheRead:'Cache read',cacheWrite:'Cache write',reasoning:'Reasoning tokens',totalTokens:'Total tokens'})
-          .map(([key,label]) => `${label}: ${totals?.[key] ?? 'Unknown'}`), '',
-        ...rows, '', 'Totals are provider-reported model usage for this session, including compaction calls.',
-        'Cached input is recorded separately. Reasoning may be included in output; do not add it again.',
-        'Tool usage is excluded from model totals. Missing provider counters are unknown.',
-        'Context is Pi’s compaction-aware estimate, not an exact tokenizer count or a billing total.',
-        '', 'Monitor', `Status: ${state.symbol} ${state.reason}`,
-        `This session: ${state.running} running · ${state.queued} queued · ${state.pending} pending deliveries`,
-        '↑N counts monitor events awaiting delivery, not events already received by the Agent.',
-        `Last successful poll: ${monitor?.host_worker_health?.last_successful_poll || 'Unknown'}`,
-        ...(monitorError ? [`Connection: ${monitorError}`] : []),
-        'Worker and supervisor health are shared across workspaces.',
-        JSON.stringify({worker:monitor?.host_worker_health || null,supervisor:monitor?.supervisor_health || null},null,2)].join('\n');
+      return [`Status: ${state.symbol} ${state.reason}`,
+        `Running: ${state.running ?? '—'} · Queued: ${state.queued ?? '—'}`,
+        `Pending delivery: ${Array.isArray(monitor?.pending_deliveries) ? state.pending : '—'}`,
+        `Last check: ${monitor?.host_worker_health?.last_successful_poll || '—'}`,
+        ...(monitorError ? [`Connection: ${monitorError}`] : [])].join('\n');
     },
   };
 }

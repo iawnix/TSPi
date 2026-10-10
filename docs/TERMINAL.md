@@ -90,9 +90,11 @@ context marker; it does not print the internal summary as an ordinary reply.
 
 ResearchAgent command names, arguments, and completions share one catalogue:
 
-- `/research`: read-only queries in the attached worker, for Memory context and records, including a remote workspace over SSH. Use the command help for supported selectors. Long results use the native Pi selector for paging.
+- `/research`: read-only queries in the attached worker, for Memory context and records, including a remote workspace over SSH. Use the command help for supported selectors. Long results open a separate reading page.
 - `/sys-prompt`: inspect the current worker's ResearchAgent system prompt manifest and sources without a model request.
 - `/resume [session-id]`: select or specify a session in the current workspace. Cancelling keeps the current session.
+- `/usage`: inspect session token totals, context and usage by model in a compact panel.
+- `/monitor`: inspect this session's running and queued jobs, pending deliveries and last check in a live panel.
 - `/quit`: disconnect this terminal while leaving the worker and its tasks running.
 
 The nonfunctional `/debug` placeholder has been removed.
@@ -103,13 +105,22 @@ a message clears completed command feedback. With a selector or document open, E
 returns to chat. In ordinary chat, Esc interrupts the running turn even when command
 feedback is visible.
 
+Usage and monitor panels stay near the input; model, thinking and resume selectors
+show a bounded list. The system prompt and long research results use the main screen
+with a fixed heading and Back/scroll hints. Arrow keys scroll content without changing
+the panel height; short documents only show Back. Closing restores the draft, cursor
+and transcript reading position. Background task cancellation hints are hidden while
+a command surface owns Esc.
+
 While this session has background jobs or pending deliveries, a compact line above
 the input shows `Monitor ✓` (healthy), `Monitor …` (checking or briefly reconnecting),
-`Monitor !` (warning), or `Monitor ×` (error). An optional `· ↑N` counts monitor events
+`Monitor !` (warning), or `Monitor ×` (error). `· ⚙2` means two jobs are running in this
+session; queued jobs are counted separately in `/monitor`. `⚙0` means none are running
+and `⚙—` means the count is unavailable. An optional `· ↑N` counts monitor events
 awaiting delivery; ordinary pending delivery is not a warning. The line hides when
 irrelevant or while a selector/document is open, and restores the latest state on
 return. Background refreshes preserve selection, reading position and input focus.
-`/usage` explains the symbols and shows job counts, warning reasons and the last
+`/monitor` shows job counts, warning reasons and the last
 successful poll. Counts belong to this session; worker health is shared across workspaces.
 
 At launch, `-c` selects the latest writable SQLite durable session and

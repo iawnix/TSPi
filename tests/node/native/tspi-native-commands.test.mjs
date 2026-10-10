@@ -117,6 +117,24 @@ test("document commands pass complete text to the document surface", async () =>
   assert.match(shown[0].body,/line 39/);
 });
 
+test("usage and monitor use separate live panels while documents choose reading surfaces", async () => {
+  const shown=[];
+  let usage='Total tokens: 10', monitor='Running: 1';
+  const commands=createTerminalCommands({
+    ui:{showStatus(message){throw new Error(message);}}, session:{sessionId:'one'},
+    show:async (title,body,context,command,scope,mode)=>shown.push({title,body,command,scope,mode}),
+    usage:()=>usage,monitor:()=>monitor,
+    queries:{async systemPrompt(){return {session_id:'one',result:{effective:'prompt'}};},
+      async research(){return {session_id:'one',result:{note:'result'}};}},
+  });
+  for(const name of ['usage','monitor','sys-prompt','research']) await commands.find(c=>c.name===name).run('',{});
+  assert.deepEqual(shown.map(item=>item.mode),['panel','panel','page','auto']);
+  assert.equal(shown[0].body(),'Total tokens: 10');assert.equal(shown[1].body(),'Running: 1');
+  usage='Total tokens: 20';monitor='Running: 2';
+  assert.equal(shown[0].body(),'Total tokens: 20');assert.equal(shown[1].body(),'Running: 2');
+  assert.throws(()=>parseSlashCommand('monitor','unexpected'),/Usage/);
+});
+
 test("closing a presentation prevents a delayed Host response from reopening it", async () => {
   let session;
   let reply;

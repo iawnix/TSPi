@@ -136,11 +136,14 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
           }}));
         });
       }});
+      let monitorRunning=1, monitorPending=0, refreshMonitor;
       const facet = await createResearchAgentNativeClientFacet({ sourceRoot, session: {
         workspaceId: "startup", sessionId: created.session.session_id, quit() { quit = true; },
         async monitorStatus() { return {workspace_id:'startup',
-          monitors:[{session_id:created.session.session_id,last_state:'running',enabled:true}],
+          monitors:Array.from({length:monitorRunning},()=>({session_id:created.session.session_id,last_state:'running',enabled:true})),
+          pending_deliveries:Array.from({length:monitorPending},()=>({session_id:created.session.session_id})),
           host_worker_health:{last_successful_poll:new Date().toISOString()},supervisor_health:{state:'running'}}; },
+        subscribeMonitor(onChange) { refreshMonitor=onChange; return ()=>{refreshMonitor=undefined;}; },
         async list() { return [...await backend.listSessions("startup"), {session_id:'another-session'}]; },
         async resume() { throw new Error("Selecting the current session should be a no-op"); },
       } });
@@ -156,7 +159,7 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         }
         assert.fail(component.render(100).join("\n"));
       };
-      const submit = (text) => { terminal.sendInput(text); terminal.sendInput("\u001b"); terminal.sendInput("\r"); };
+      const submit = (text) => { terminal.sendInput(text); terminal.sendInput("\r"); };
       try {
         ui.addChild(component); ui.setLayoutRoot(component.layoutRoot); ui.setFocus(component); ui.start();
         const clickEditor = async () => {
@@ -176,6 +179,11 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         testUI.setActivity({render:()=>['Monitor ✓ · ↑1'],invalidate(){}});
         submit("/usage");
         await waitFor(() => component.render(100).join("\n").includes("Session usage"));
+        const usageFrame=renderLayoutFrame(component.layoutRoot,100,24,()=>{});
+        assert.ok(usageFrame.lines.findIndex(line=>line.includes('/usage'))>0);
+        assert.doesNotMatch(usageFrame.lines.join('\n'),/Scroll|provider-reported|Monitor|compaction-aware/);
+        for(let i=0;i<20;i++) terminal.sendInput('\x1b[B');
+        assert.deepEqual(renderLayoutFrame(component.layoutRoot,100,24,()=>{}).lines,usageFrame.lines);
         assert.doesNotMatch(component.render(100).join('\n'),/Monitor ✓ · ↑1/);
         const beforeRefresh=component.render(100).join('\n');
         const documentFocus=ui.getFocusedComponent();
@@ -185,6 +193,17 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         terminal.sendInput("\u001b");
         await waitFor(()=>component.render(100).join('\n').includes('Monitor ✓ · ↑2'));
         await new Promise(resolve => setImmediate(resolve));
+        submit('/monitor');
+        await waitFor(()=>component.render(100).join('\n').includes('Running: 1'));
+        const monitorFocus=ui.getFocusedComponent();
+        monitorRunning=2;monitorPending=1;refreshMonitor();
+        await waitFor(()=>component.render(100).join('\n').includes('Running: 2'));
+        assert.equal(ui.getFocusedComponent(),monitorFocus);
+        assert.match(component.render(100).join('\n'),/Pending delivery: 1/);
+        assert.doesNotMatch(component.render(100).join('\n'),/Total tokens:.*\n.*Status:|Monitor ✓ · ⚙/);
+        terminal.sendInput('\x1b');
+        await waitFor(()=>component.render(100).join('\n').includes('Monitor ✓ · ⚙2 · ↑1'));
+        await new Promise(resolve=>setImmediate(resolve));
         submit("/research read");
         await waitFor(() => component.render(100).join("\n").includes("Research state"));
         terminal.sendInput("\u001b");
@@ -196,16 +215,17 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         testUI.setActivity({render:()=>['Monitor !'],invalidate(){}});
         assert.equal(component.render(100).join('\n'),scrolledDocument);
         terminal.sendInput('\x1b[H');
-        const originalRows=process.stdout.rows;
-        try {
-          for (const [width,height] of [[80,24],[120,30],[32,12],[20,10]]) {
-            process.stdout.rows=height;
-            const frame=renderLayoutFrame(component.layoutRoot,width,height,()=>{});
-            assert.equal(frame.lines.length,height);
-            assert.match(frame.lines.join('\n'),/\/sys-prompt/);
-            assert.match(frame.lines.join('\n'),/Esc Back/);
-          }
-        } finally { process.stdout.rows=originalRows; }
+        for (const [width,height] of [[80,24],[120,30],[32,12],[20,10]]) {
+          const frame=renderLayoutFrame(component.layoutRoot,width,height,()=>{});
+          assert.equal(frame.lines.length,height);
+          assert.match(frame.lines[0],/\/sys-prompt/);
+          assert.match(frame.lines[height-3],/Esc Back/);
+          assert.equal(frame.primaryScrollView,undefined);
+          component.handleInput('\x1b[F');
+          const end=renderLayoutFrame(component.layoutRoot,width,height,()=>{});
+          for(let i=0;i<10;i++) component.handleInput('\x1b[B');
+          assert.deepEqual(renderLayoutFrame(component.layoutRoot,width,height,()=>{}).lines,end.lines);
+        }
         terminal.sendInput("\u001b");
         await new Promise((resolve) => setImmediate(resolve));
         await clickEditor();
@@ -297,10 +317,30 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         assert.equal(modelRequests,0);
         submit('/feedback');
         await waitFor(()=>component.render(100).join('\n').includes('Fixture completed'));
-        terminal.sendInput('Run the local deterministic fixture'); terminal.sendInput('\r');
+        terminal.sendInput('\x1b[200~Run the local deterministic fixture\n'+'Local fixture line\n'.repeat(50)+'\x1b[201~'); terminal.sendInput('\r');
         assert.doesNotMatch(component.render(100).join('\n'),/Fixture completed/);
         await waitFor(()=>modelRequests===1,10000);
         await waitFor(()=>component.render(100).join('\n').includes('Working'),10000);
+        const transcript=renderLayoutFrame(component.layoutRoot,100,24,()=>{}).primaryScrollView;
+        transcript.scrollTo(5,{disableFollow:true});
+        const position=transcript.scrollTop;
+        assert.equal(position,5);
+        submit('/monitor');
+        await waitFor(()=>component.render(100).join('\n').includes('/monitor ·'));
+        refreshMonitor();
+        await new Promise(resolve=>setTimeout(resolve,100));
+        assert.doesNotMatch(renderLayoutFrame(component.layoutRoot,100,24,()=>{}).lines.join('\n'),/Esc to abort|Working/);
+        terminal.sendInput('\x1b');
+        await new Promise(resolve=>setImmediate(resolve));
+        const restored=renderLayoutFrame(component.layoutRoot,100,24,()=>{}).primaryScrollView;
+        assert.equal(restored,transcript);assert.equal(restored.scrollTop,position);assert.equal(restored.isFollowingEnd,false);
+        assert.equal((await backend.readSession('startup',created.session.session_id)).session.is_streaming,true);
+        submit('/sys-prompt');
+        await waitFor(()=>component.render(100).join('\n').includes('You are ResearchAgent'));
+        assert.ok(!renderLayoutFrame(component.layoutRoot,100,24,()=>{}).primaryScrollView);
+        terminal.sendInput('\x1b');
+        await new Promise(resolve=>setImmediate(resolve));
+        assert.equal(renderLayoutFrame(component.layoutRoot,100,24,()=>{}).primaryScrollView.scrollTop,position);
         submit('/feedback');
         await waitFor(()=>component.render(100).join('\n').includes('Fixture completed'));
         terminal.sendInput('\x1b');

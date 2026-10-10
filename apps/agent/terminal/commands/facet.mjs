@@ -62,9 +62,9 @@ export async function createResearchAgentNativeClientFacet({ sourceRoot, session
           status.update({monitorError:"Monitor unavailable"}); redraw();
         }));
         env.own(() => { stopped = true; lifetime.abort(); clearTimeout(timer); ui.setFooter(undefined); ui.setActivity(undefined); ui.setCommandPresentation(undefined); });
-        const show = (title, body, context, command, scope) => ui.showDocument(createDocumentView({ title, body, command, scope,
+        const show = (title, body, context, command, scope, mode) => ui.showDocument(createDocumentView({ title, body, command, scope, mode,
           ...components, wrapText: components.wrapTextWithAnsi }), context);
-        for (const command of createTerminalCommands({ ui, queries, session, show, usage: () => status.details() })) {
+        for (const command of createTerminalCommands({ ui, queries, session, show, usage: () => status.usageDetails(), monitor: () => status.monitorDetails() })) {
           env.own(commands.replace(command));
         }
       });
@@ -72,7 +72,7 @@ export async function createResearchAgentNativeClientFacet({ sourceRoot, session
   });
 }
 
-export function createTerminalCommands({ ui, queries, session, show, usage }) {
+export function createTerminalCommands({ ui, queries, session, show, usage, monitor }) {
   return Object.values(SLASH_COMMAND_DEFINITIONS).map((definition) => ({
     name: definition.name,
     description: definition.description,
@@ -83,7 +83,11 @@ export function createTerminalCommands({ ui, queries, session, show, usage }) {
         const invocation = parseSlashCommand(definition.name, args);
         if (definition.name === "quit") { session.quit(); return; }
         if (definition.name === "usage") {
-          await show("Usage", usage(), context, 'usage', 'Session');
+          await show("Session usage", usage, context, 'usage', 'Session', 'panel');
+          return;
+        }
+        if (definition.name === "monitor") {
+          await show("Monitor", monitor, context, 'monitor', 'Session', 'panel');
           return;
         }
         if (definition.name === "resume") {
@@ -110,7 +114,7 @@ export function createTerminalCommands({ ui, queries, session, show, usage }) {
         if (response.error) throw new Error(response.error.message);
         const title = definition.name === "sys-prompt" ? "System prompt" : "Research state";
         const body = definition.name === "sys-prompt" ? formatPrompt(response.result) : formatResearch(response.result);
-        await show(title, body, context, `${definition.name}${args ? ` ${args}` : ''}`, definition.name === 'research' ? 'Workspace' : 'Session');
+        await show(title, body, context, `${definition.name}${args ? ` ${args}` : ''}`, definition.name === 'research' ? 'Workspace' : 'Session', definition.name === 'sys-prompt' ? 'page' : 'auto');
       } catch (error) {
         if (!session.signal?.aborted) ui.showStatus(error instanceof Error ? error.message : String(error), context, 'error');
       }
