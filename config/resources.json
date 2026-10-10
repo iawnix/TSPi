@@ -147,7 +147,7 @@
     "domains/chemical/skills/xtb/scripts/cli.py": "sha256:c1dec3cb29f2e30a5bcc66180efc793e9f3dd30fa542bc215fd7ef850decc016",
     "domains/chemical/skills/xtb/scripts/parser.py": "sha256:5922d0093eddf05b166d11be7b17220dc2da30e5d78a36ce887bfd67c34fc677",
     "domains/chemical/skills/xtb/scripts/run.py": "sha256:0d42f9865ff3fdbf18e0cb84f1c3aeaa1aae48aba8532a85f4215b006b2a2114",
-    "prompts/coragent.md": "sha256:0bba899aaf315607630b95852d346d05d8031d52d39ebfe2f4de4a07a43c7c5d",
-    "prompts/coragent.zh-CN.md": "sha256:5f0998f61e0eeb317c0b9bc3afda08cd2173313e4e5736de4f100c95456edd0f"
+    "prompts/coragent.md": "sha256:c3cfb789788eac2c1c7451240a24b7fae4e4ed9c5db466d7058599de4990a182",
+    "prompts/coragent.zh-CN.md": "sha256:a05deb6fbe18aee20e419009f643667410e754383d1fb0cdab80e41661840b5e"
   }
 }
