@@ -33,26 +33,26 @@ test('compact monitor is session-scoped and distinguishes delivery from agent in
  const monitor={monitors:[{session_id:'s',enabled:true,last_state:'running'},{session_id:'other',last_state:'running'}],
  host_worker_health:{last_successful_poll:new Date(now).toISOString(),last_error:null},supervisor_health:{state:'running'}};
  const state={monitor,sessionId:'s',now};
- assert.equal(activityStatus(state).text,'Monitor ✓ · ⚙1');
+ assert.equal(activityStatus(state).text,'Monitor ✓ · ↻1');
  const pending={...monitor,pending_deliveries:[{session_id:'s'},{session_id:'other'}]};
- assert.equal(activityStatus({...state,monitor:pending}).text,'Monitor ✓ · ⚙1 · ↑1');
+ assert.equal(activityStatus({...state,monitor:pending}).text,'Monitor ✓ · ↻1 · ↑1');
  assert.equal(activityStatus({...state,monitor:pending}).color,'muted');
- assert.equal(activityStatus({...state,view:{docs:{'pi.inbox':{items:[{mode:'followUp',content:'A compute monitor event requires attention.'}]}}}}).text,'Monitor ✓ · ⚙1');
- assert.equal(activityStatus({...state,sessionId:'absent'}).text,'Monitor ✓ · ⚙0');
- assert.equal(activityStatus({...state,monitor:{...monitor,monitors:[{session_id:'s',last_state:'succeeded'}]}}).text,'Monitor ✓ · ⚙0');
- assert.equal(activityStatus({...state,now:now+31000}).text,'Monitor ! · ⚙1');
- assert.equal(activityStatus({...state,monitorError:'offline',monitorErrorSince:now}).text,'Monitor … · ⚙1');
- assert.equal(activityStatus({...state,monitorError:'offline',monitorErrorSince:now-30000}).text,'Monitor × · ⚙1');
+ assert.equal(activityStatus({...state,view:{docs:{'pi.inbox':{items:[{mode:'followUp',content:'A compute monitor event requires attention.'}]}}}}).text,'Monitor ✓ · ↻1');
+ assert.equal(activityStatus({...state,sessionId:'absent'}).text,'Monitor ✓ · ↻0');
+ assert.equal(activityStatus({...state,monitor:{...monitor,monitors:[{session_id:'s',last_state:'succeeded'}]}}).text,'Monitor ✓ · ↻0');
+ assert.equal(activityStatus({...state,now:now+31000}).text,'Monitor ! · ↻1');
+ assert.equal(activityStatus({...state,monitorError:'offline',monitorErrorSince:now}).text,'Monitor … · ↻1');
+ assert.equal(activityStatus({...state,monitorError:'offline',monitorErrorSince:now-30000}).text,'Monitor × · ↻1');
  for (const last_state of ['running','queued','held','pending','submitted']) {
-   assert.equal(activityStatus({...state,monitor:{...monitor,monitors:[{session_id:'s',last_state,enabled:false}]}}).text,`Monitor ! · ⚙${last_state === 'running' ? 1 : 0}`);
+   assert.equal(activityStatus({...state,monitor:{...monitor,monitors:[{session_id:'s',last_state,enabled:false}]}}).text,`Monitor ! · ↻${last_state === 'running' ? 1 : 0}`);
  }
- assert.equal(activityStatus({...state,monitor:{...monitor,host_worker_health:null}}).text,'Monitor … · ⚙1');
- assert.equal(activityStatus({...state,monitor:{...monitor,supervisor_health:null}}).text,'Monitor … · ⚙1');
- assert.equal(activityStatus({...state,monitor:{...monitor,host_worker_health:{...monitor.host_worker_health,last_error:'poll failed'}}}).text,'Monitor × · ⚙1');
- assert.equal(activityStatus({...state,monitor:{...monitor,supervisor_health:{state:'stopped'}}}).text,'Monitor × · ⚙1');
- assert.equal(activityStatus({...state,monitor:{...pending,pending_deliveries:[{session_id:'s',error:'wake failed'}]}}).text,'Monitor × · ⚙1 · ↑1');
- assert.equal(activityStatus({...state,monitor:{...monitor,monitors:[]},telemetry:{research:{running_jobs:['job']}}}).text,'Monitor ! · ⚙0');
- assert.equal(activityStatus({...state,monitor:undefined,telemetry:{research:{running_jobs:['job']}}}).text,'Monitor … · ⚙—');
+ assert.equal(activityStatus({...state,monitor:{...monitor,host_worker_health:null}}).text,'Monitor … · ↻1');
+ assert.equal(activityStatus({...state,monitor:{...monitor,supervisor_health:null}}).text,'Monitor … · ↻1');
+ assert.equal(activityStatus({...state,monitor:{...monitor,host_worker_health:{...monitor.host_worker_health,last_error:'poll failed'}}}).text,'Monitor × · ↻1');
+ assert.equal(activityStatus({...state,monitor:{...monitor,supervisor_health:{state:'stopped'}}}).text,'Monitor × · ↻1');
+ assert.equal(activityStatus({...state,monitor:{...pending,pending_deliveries:[{session_id:'s',error:'wake failed'}]}}).text,'Monitor × · ↻1 · ↑1');
+ assert.equal(activityStatus({...state,monitor:{...monitor,monitors:[]},telemetry:{research:{running_jobs:['job']}}}).text,'Monitor ! · ↻0');
+ assert.equal(activityStatus({...state,monitor:undefined,telemetry:{research:{running_jobs:['job']}}}).text,'Monitor … · ↻—');
 });
 
 test('monitor colors only the symbol, fits narrow terminals and explains details',()=>{
@@ -61,17 +61,17 @@ test('monitor colors only the symbol, fits narrow terminals and explains details
  const status=createStatusPresentation({session:{workspaceId:'w',sessionId:'s'},monochrome:false,theme:{fg:(color,text)=>{colors.push([color,text]);return text;}},...tui});
  status.update({monitor:{monitors:[{session_id:'s',last_state:'running',enabled:false}],pending_deliveries:[{session_id:'s'}],
  host_worker_health:{last_successful_poll:new Date(now).toISOString()},supervisor_health:{state:'running'}}});
- assert.equal(status.activity.render(80).join(''),' Monitor ! · ⚙1 · ↑1');
- assert.deepEqual(colors,[['muted','Monitor '],['warning','!'],['muted',' · ⚙1 · ↑1']]);
+ assert.equal(status.activity.render(80).join(''),' Monitor ! · ↻1 · ↑1');
+ assert.deepEqual(colors,[['muted','Monitor '],['warning','!'],['muted',' · ↻1 · ↑1']]);
  for (const width of [0,1,2,8,12,20,80]) for (const line of status.activity.render(width)) assert.ok(tui.visibleWidth(line)<=width);
  assert.match(status.monitorDetails(),/1 active job monitor\(s\) paused/);
  assert.match(status.monitorDetails(),/Running: 1 · Queued: 0\nPending delivery: 1/);
  assert.doesNotMatch(status.monitorDetails(),/worker.*\{|poll_interval_ms/);
  status.update({monitor:undefined,telemetry:null});
- assert.deepEqual(status.activity.render(80),[' Monitor … · ⚙—']);
+ assert.deepEqual(status.activity.render(80),[' Monitor … · ↻—']);
  const plain=createStatusPresentation({session:{sessionId:'s'},monochrome:true,theme:{fg(){throw new Error('monochrome must not color activity');}},...tui});
  plain.update({monitor:{monitors:[{session_id:'s',last_state:'running'}]}});
- assert.deepEqual(plain.activity.render(80),[' Monitor … · ⚙1']);
+ assert.deepEqual(plain.activity.render(80),[' Monitor … · ↻1']);
 });
 
 test('document pages resize without overflowing or losing their logical anchor',()=>{
@@ -133,7 +133,7 @@ test('usage and monitor details stay separate with unknown counters and session 
  const status=createStatusPresentation({session:{workspaceId:'w',sessionId:'s'},theme,...tui});
  status.update({view,telemetry,monitor:{monitors:[{session_id:'s',last_state:'queued'},{session_id:'other',last_state:'running'}],
  pending_deliveries:[{session_id:'s'}],host_worker_health:{last_successful_poll:new Date().toISOString()},supervisor_health:{state:'running'}}});
- assert.match(status.activity.render(80).join(''),/Monitor ✓ · ⚙0 · ↑1/);
+ assert.match(status.activity.render(80).join(''),/Monitor ✓ · ↻0 · ↑1/);
  const usage=status.usageDetails();
  assert.match(usage,/Total tokens: 60/);assert.match(usage,/Reasoning: —/);assert.match(usage,/Context: 48,000 \/ 200,000/);
  assert.doesNotMatch(usage,/Monitor|Pending|provider-reported|compaction-aware|Tool usage|do not add/);
@@ -145,14 +145,14 @@ test('usage and monitor details stay separate with unknown counters and session 
 
 test('idle monitor keeps its row through startup, disconnects and completed jobs',()=>{
  const status=createStatusPresentation({session:{sessionId:'s'},theme,...tui,monochrome:true});
- assert.deepEqual(status.activity.render(80),[' Monitor … · ⚙—']);
+ assert.deepEqual(status.activity.render(80),[' Monitor … · ↻—']);
  status.update({monitor:{monitors:[],pending_deliveries:[],host_worker_health:{last_successful_poll:new Date().toISOString()},supervisor_health:{state:'running'}}});
- assert.deepEqual(status.activity.render(80),[' Monitor ✓ · ⚙0']);
+ assert.deepEqual(status.activity.render(80),[' Monitor ✓ · ↻0']);
  status.update({monitorError:'offline'});
- assert.deepEqual(status.activity.render(80),[' Monitor … · ⚙0']);
+ assert.deepEqual(status.activity.render(80),[' Monitor … · ↻0']);
  status.update({monitorError:null,monitor:{monitors:[{session_id:'s',last_state:'succeeded'}],pending_deliveries:[{session_id:'s'}],
    host_worker_health:{last_successful_poll:new Date().toISOString()},supervisor_health:{state:'running'}}});
- assert.deepEqual(status.activity.render(80),[' Monitor ✓ · ⚙0 · ↑1']);
+ assert.deepEqual(status.activity.render(80),[' Monitor ✓ · ↻0 · ↑1']);
 });
 
 test('monitor subscription refreshes on reconnect and cleans up its connection',async()=>{

@@ -116,9 +116,9 @@ task cancellation hints are hidden while a command surface owns Esc.
 
 A permanent row immediately above the input shows `Monitor ✓` (healthy),
 `Monitor …` (checking or briefly reconnecting),
-`Monitor !` (warning), or `Monitor ×` (error). `· ⚙2` means two jobs are running in this
-session; queued jobs are counted separately in `/monitor`. `⚙0` means none are running
-and `⚙—` means the count is unavailable. An optional `· ↑N` counts monitor events
+`Monitor !` (warning), or `Monitor ×` (error). `· ↻2` means two jobs are running in this
+session; queued jobs are counted separately in `/monitor`. `↻0` means none are running
+and `↻—` means the count is unavailable. An optional `· ↑N` counts monitor events
 awaiting delivery; ordinary pending delivery is not a warning. The row remains
 visible when idle and during command use. Completion lists retain Pi's keyboard and
 mouse behavior in their own area above it. Background refreshes preserve selection,

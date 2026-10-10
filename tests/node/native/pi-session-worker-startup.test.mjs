@@ -197,7 +197,7 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         terminal.sendInput('\x1b[B');
         const completion=withoutMonitor(renderedText());
         const completionFocus=ui.getFocusedComponent();
-        testUI.setActivity({render:()=>['Monitor ✓ · ⚙9'],invalidate(){}});
+        testUI.setActivity({render:()=>['Monitor ✓ · ↻9'],invalidate(){}});
         assert.equal(withoutMonitor(renderedText()),completion);
         assert.equal(ui.getFocusedComponent(),completionFocus);assertDock(frameAt());
         terminal.sendInput('\x1b');terminal.sendInput('\x15');
@@ -246,9 +246,9 @@ test("real worker terminal isolates monitor refresh, command feedback and task c
         assert.equal(ui.getFocusedComponent(),monitorFocus);
         assert.match(renderedText(),/Pending delivery: 1/);
         assertDock(frameAt());
-        assert.match(renderedText(),/Monitor ✓ · ⚙2 · ↑1/);
+        assert.match(renderedText(),/Monitor ✓ · ↻2 · ↑1/);
         terminal.sendInput('\x1b');
-        await waitFor(()=>renderedText().includes('Monitor ✓ · ⚙2 · ↑1'));
+        await waitFor(()=>renderedText().includes('Monitor ✓ · ↻2 · ↑1'));
         await new Promise(resolve=>setImmediate(resolve));
         submit("/research read");
         await waitFor(() => renderedText().includes("Research state"));
